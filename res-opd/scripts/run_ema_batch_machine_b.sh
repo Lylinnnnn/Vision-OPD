@@ -29,7 +29,7 @@ run_experiment() {
     TEACHER_MODE=ema \
     ALPHA=0.5 \
     ROLLOUT_N=4 \
-    TOTAL_EPOCHS=1 \
+    TOTAL_EPOCHS=2 \
     SAVE_FREQ=20 \
     TEST_FREQ=20 \
     bash res-opd/scripts/run_res_opd.sh 2>&1 | tee "$log_file"

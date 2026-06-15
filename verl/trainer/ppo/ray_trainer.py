@@ -2611,16 +2611,22 @@ class RayPPOTrainer:
                 )
                 # Check if the conditions for saving a checkpoint are met.
                 # The conditions include a mandatory condition (1) and
-                # one of the following optional conditions (2/3/4):
+                # one of the following optional conditions (2/3/4/5):
                 # 1. The save frequency is set to a positive value.
                 # 2. It's the last training step.
                 # 3. The current step number is a multiple of the save frequency.
                 # 4. The ESI(Elastic Server Instance)/training plan is close to expiration.
-                if is_last_step or (self.config.trainer.save_freq > 0 and (
+                # 5. End of an epoch (save at epoch boundary without eval).
+                steps_per_epoch = len(self.train_dataloader)
+                is_epoch_end = (steps_per_epoch > 0 and self.global_steps % steps_per_epoch == 0
+                                and not is_last_step)
+                if is_last_step or is_epoch_end or (self.config.trainer.save_freq > 0 and (
                     self.global_steps % self.config.trainer.save_freq == 0 or esi_close_to_expiration
                 )):
                     if esi_close_to_expiration:
                         print("Force saving checkpoint: ESI instance expiration approaching.")
+                    if is_epoch_end:
+                        print(f"Saving checkpoint at epoch boundary (step {self.global_steps})")
                     with marked_timer("save_checkpoint", timing_raw, color="green"):
                         self._save_checkpoint()
 
