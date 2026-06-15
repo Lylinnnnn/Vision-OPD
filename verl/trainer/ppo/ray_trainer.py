@@ -2593,10 +2593,14 @@ class RayPPOTrainer:
                         self._log_rollout_data(batch, reward_extra_infos_dict, timing_raw, rollout_data_dir)
 
                 # validate
+                test_at_epoch_end = self.config.trainer.get("test_at_epoch_end", False)
+                should_test_at_epoch = (test_at_epoch_end and steps_per_epoch > 0
+                                        and self.global_steps % steps_per_epoch == 0
+                                        and not is_last_step)
                 if (
                     self.val_reward_fn is not None
                     and self.config.trainer.test_freq > 0
-                    and (is_last_step or self.global_steps % self.config.trainer.test_freq == 0)
+                    and (is_last_step or should_test_at_epoch or self.global_steps % self.config.trainer.test_freq == 0)
                 ):
                     with marked_timer("testing", timing_raw, color="green"):
                         val_metrics: dict = self._validate()
@@ -2616,9 +2620,11 @@ class RayPPOTrainer:
                 # 2. It's the last training step.
                 # 3. The current step number is a multiple of the save frequency.
                 # 4. The ESI(Elastic Server Instance)/training plan is close to expiration.
-                # 5. End of an epoch (save at epoch boundary without eval).
+                # 5. End of an epoch (opt-in via trainer.save_at_epoch_end).
                 steps_per_epoch = len(self.train_dataloader)
-                is_epoch_end = (steps_per_epoch > 0 and self.global_steps % steps_per_epoch == 0
+                save_at_epoch_end = self.config.trainer.get("save_at_epoch_end", False)
+                is_epoch_end = (save_at_epoch_end and steps_per_epoch > 0
+                                and self.global_steps % steps_per_epoch == 0
                                 and not is_last_step)
                 if is_last_step or is_epoch_end or (self.config.trainer.save_freq > 0 and (
                     self.global_steps % self.config.trainer.save_freq == 0 or esi_close_to_expiration
