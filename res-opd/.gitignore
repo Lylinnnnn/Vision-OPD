@@ -1,0 +1,29 @@
+# Checkpoints and weights
+checkpoints/
+eval_ckpts/
+
+# Evaluation results
+eval_results/
+eval_results_v4/
+
+# Training logs
+logs/
+*.log
+
+# Rollout data
+rollouts/
+
+# OSS util artifacts
+.ossutil_checkpoint/
+ossutil_output/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Data files (large)
+data/*.parquet
+
+# Temp files
+*.tmp
+*.temp
