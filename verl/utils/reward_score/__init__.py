@@ -107,6 +107,33 @@ def default_compute_score(
 
         res = search_r1_like_qa_em.compute_score(solution_str, ground_truth)
 
+    elif data_source == "coco_res_opd":
+        import sys, os
+        eval_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "res-opd", "eval")
+        if eval_dir not in sys.path:
+            sys.path.insert(0, eval_dir)
+        from robust_chair_analysis import (
+            parse_official_synonyms,
+            build_double_word_dict,
+            compute_per_sample,
+            aggregate_from_arrays,
+        )
+        gt_objects = set(extra_info.get("objects", [])) if extra_info else set()
+        record = {"image_id": extra_info.get("image_id", 0) if extra_info else 0,
+                  "generated_text": solution_str, "gt_objects": gt_objects}
+        mscoco_objects, inverse_synonym_dict = parse_official_synonyms()
+        double_word_dict = build_double_word_dict()
+        sample_dicts = compute_per_sample([record], mscoco_objects, inverse_synonym_dict, double_word_dict)
+        indices = list(sample_dicts.keys())
+        metrics = aggregate_from_arrays(sample_dicts, indices)
+        res = {
+            "score": float(metrics.get("ObjF1", 0.0)),
+            "chair_i": float(metrics.get("CHAIRi", 0.0)),
+            "chair_s": float(metrics.get("CHAIRs", 0.0)),
+            "obj_f1": float(metrics.get("ObjF1", 0.0)),
+            "obj_precision": float(metrics.get("ObjPrec", 0.0)),
+            "obj_recall": float(metrics.get("ObjRecall", 0.0)),
+        }
     else:
         raise NotImplementedError(f"Reward function is not implemented for {data_source=}")
 

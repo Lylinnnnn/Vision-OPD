@@ -1168,6 +1168,47 @@ def compute_self_distillation_loss(
         log_ratio = student_log_probs - teacher_log_probs
         raw_per_token_loss = log_ratio.detach() * student_log_probs
 
+    # ----------------------------------------------------------------
+    # Token-level divergence masking: drop highest-divergence tokens
+    # ----------------------------------------------------------------
+    # token_mask_pct (float in [0,1]): fraction of tokens to mask out
+    #   e.g. 0.1 = mask top-10% highest-divergence tokens per sample
+    # token_mask_metric: which per-token score to threshold on
+    #   "loss" (default) = raw_per_token_loss itself
+    # These are fully decoupled from the loss type (JSD/RKL/FKL) and
+    # from the sample-level self_distillation_mask.
+    # ----------------------------------------------------------------
+    token_mask_pct = self_distillation_config.get("token_mask_pct", 0.0)
+    if token_mask_pct > 0.0:
+        with torch.no_grad():
+            token_mask_metric = self_distillation_config.get("token_mask_metric", "loss")
+            if token_mask_metric == "loss":
+                divergence_scores = raw_per_token_loss.detach()
+            else:
+                divergence_scores = raw_per_token_loss.detach()
+
+            # Compute per-sample quantile threshold (only over valid tokens)
+            keep_quantile = 1.0 - token_mask_pct
+            batch_size = divergence_scores.shape[0]
+            token_keep_mask = torch.ones_like(loss_mask)
+            for sample_idx in range(batch_size):
+                valid = loss_mask[sample_idx] > 0
+                if valid.sum() < 2:
+                    continue
+                valid_scores = divergence_scores[sample_idx][valid]
+                threshold = torch.quantile(valid_scores.float(), keep_quantile)
+                # Mask out tokens with divergence > threshold
+                too_high = (divergence_scores[sample_idx] > threshold) & valid
+                token_keep_mask[sample_idx][too_high] = 0.0
+
+            # Apply token-level mask on top of existing loss_mask
+            loss_mask = loss_mask * token_keep_mask
+
+        metrics["self_distillation/token_mask_pct"] = token_mask_pct
+        metrics["self_distillation/token_mask_kept_frac"] = (
+            token_keep_mask.sum() / token_keep_mask.numel()
+        ).item()
+
     weighted_per_token_loss = raw_per_token_loss
 
     is_clip = self_distillation_config.is_clip

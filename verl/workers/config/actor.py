@@ -45,7 +45,7 @@ class SelfDistillationConfig(BaseConfig):
         alpha (float): KL interpolation coefficient. 0.0=forward KL, 1.0=reverse KL, in-between=JSD.
         gamma (float): Weight applied to the SDPO loss.
         success_reward_threshold (float): Minimum sequence reward to be considered successful.
-        teacher_regularization (str): Teacher regularization mode. Options: "ema", "trust-region", "progressive".
+        teacher_regularization (str): Teacher regularization mode. Options: "ema", "none", "trust-region", "progressive".
         teacher_update_rate (float): EMA update rate for teacher weights, or trust-region mixing coefficient.
         teacher_update_interval (Optional[int]): Hard-sync the teacher to the current student every N actor updates
             when teacher_regularization="progressive".
@@ -120,7 +120,7 @@ class SelfDistillationConfig(BaseConfig):
             raise ValueError(f"self_distillation.alpha must be in [0,1], got {self.alpha}")
         if self.gamma < 0.0:
             raise ValueError(f"self_distillation.gamma must be non-negative, got {self.gamma}")
-        valid_teacher_regularization = ["ema", "trust-region", "progressive"]
+        valid_teacher_regularization = ["ema", "none", "trust-region", "progressive"]
         if self.teacher_regularization not in valid_teacher_regularization:
             raise ValueError(
                 "self_distillation.teacher_regularization must be one of "

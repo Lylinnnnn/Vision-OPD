@@ -1,0 +1,72 @@
+defaults:
+  - ppo_trainer
+  - user
+  - _self_
+
+# =============================================================================
+# Res-OPD: Resolution-Aware On-Policy Self-Distillation
+#
+# Extends Vision-OPD for resolution-based self-distillation.
+# All Vision-OPD features are preserved. Additional features:
+#   - Online image degradation via custom ResOPDDataset
+#   - Configurable student_px / target_px resolution
+#   - Configurable teacher mode: ema / frozen / co-evolving
+#   - Configurable loss alpha: 0.5=JSD, 1.0=RKL, 0.0=FKL
+#
+# Teacher mode control (set via CLI overrides):
+#   EMA (default):    teacher_model_source=legacy, teacher_regularization=ema
+#   Frozen:           teacher_model_source=legacy, teacher_regularization=none
+#   Co-evolving:      teacher_model_source=actor,  teacher_regularization=none
+# =============================================================================
+
+max_model_len: 9728
+
+actor_rollout_ref:
+  actor:
+    ppo_mini_batch_size: 32
+    policy_loss:
+      loss_mode: vopd
+    self_distillation:
+      max_reprompt_len: 10240
+      is_clip: 2.0
+      teacher_image_key: hires_images
+      teacher_always_on: True
+      dont_reprompt_on_self_success: True
+      include_environment_feedback: False
+      distillation_topk: 100
+      alpha: 0.5
+      teacher_model_source: legacy
+      teacher_regularization: ema
+      teacher_update_rate: 0.05
+    optim:
+      lr: 2e-6
+  rollout:
+    n: 1
+    calculate_log_probs: True
+
+algorithm:
+  adv_estimator: grpo
+  norm_adv_by_std_in_grpo: False
+  use_kl_in_reward: False
+  rollout_correction:
+    rollout_is: token
+    rollout_is_threshold: 2.0
+
+data:
+  train_batch_size: 32
+  image_key: images
+  dataloader_num_workers: 0
+  # Custom dataset for online resolution degradation
+  custom_cls:
+    path: null            # set via CLI: res-opd/res_opd_dataset.py
+    name: ResOPDDataset
+  # Resolution params consumed by ResOPDDataset
+  student_px: 224         # 0 = no degradation (student sees original)
+  teacher_px: 0           # 0 = use target_px as-is (no teacher degradation)
+  target_px: 448
+
+reward_model:
+  enable: False
+
+trainer:
+  val_before_train: False

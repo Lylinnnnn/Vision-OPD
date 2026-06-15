@@ -1,0 +1,22 @@
+# Outputs & results
+outputs/
+res-opd/data/
+
+# Checkpoints
+*.ckpt
+checkpoint/
+checkpoints/
+
+# Logs
+tensorboard_log/
+swanlog/
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+verl.egg-info/
+
+# Misc generated files
+=2.0,

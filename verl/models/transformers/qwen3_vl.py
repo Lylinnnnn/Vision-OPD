@@ -145,6 +145,12 @@ def _get_input_embeds(
     image_grid_thw: Optional[torch.LongTensor] = None,
     video_grid_thw: Optional[torch.LongTensor] = None,
 ):
+    # Disable cuDNN to avoid libcudnn_graph.so.9 symbol mismatch (cudnnGetLibConfig)
+    if not torch.backends.cudnn.enabled:
+        pass  # already disabled
+    else:
+        torch.backends.cudnn.enabled = False
+
     inputs_embeds = model.get_input_embeddings()(input_ids)
     image_mask, video_mask = None, None
     if pixel_values is not None:
