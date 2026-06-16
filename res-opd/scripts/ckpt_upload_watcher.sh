@@ -1,11 +1,18 @@
 #!/bin/bash
 # =============================================================================
 # Checkpoint Upload Watcher
-# Monitors all Res-OPD checkpoint directories for new global_step_* folders,
+# Monitors checkpoint directories for new global_step_* folders,
 # merges them, uploads to OSS, and deletes the merged safetensors to free disk.
 #
-# Usage: bash res-opd/scripts/ckpt_upload_watcher.sh
-# Run in a separate tmux session alongside training.
+# Usage:
+#   # Monitor ALL experiments (legacy mode)
+#   bash res-opd/scripts/ckpt_upload_watcher.sh
+#
+#   # Monitor a SINGLE experiment directory (recommended)
+#   bash res-opd/scripts/ckpt_upload_watcher.sh --watch-dir /path/to/checkpoints/Res-OPD-xxx
+#
+# When --watch-dir is specified, only that single experiment directory is
+# monitored. This avoids cross-machine conflicts on shared filesystems.
 # =============================================================================
 set -uo pipefail
 
@@ -14,10 +21,35 @@ RES_OPD_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
 cd "$VISION_OPD_ROOT"
 
-CKPT_BASE="${RES_OPD_ROOT}/checkpoints"
+# Parse arguments
+WATCH_DIR=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --watch-dir)
+            WATCH_DIR="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown argument: $1" >&2
+            exit 1
+            ;;
+    esac
+done
+
 OSS_BASE="oss://industry-algo/yanlin/ckpt/OPD/v4"
-LOG_FILE="${RES_OPD_ROOT}/logs/ckpt_upload_watcher.log"
 SCAN_INTERVAL=30  # seconds between scans
+
+if [[ -n "$WATCH_DIR" ]]; then
+    # Single-experiment mode: monitor only the specified directory
+    CKPT_BASE="$(dirname "$WATCH_DIR")"
+    EXPERIMENT_NAME="$(basename "$WATCH_DIR")"
+    LOG_FILE="${RES_OPD_ROOT}/logs/ckpt_watcher_${EXPERIMENT_NAME}.log"
+else
+    # Legacy mode: monitor all experiments
+    CKPT_BASE="${RES_OPD_ROOT}/checkpoints"
+    EXPERIMENT_NAME=""
+    LOG_FILE="${RES_OPD_ROOT}/logs/ckpt_upload_watcher.log"
+fi
 
 mkdir -p "$(dirname "$LOG_FILE")"
 
@@ -104,6 +136,7 @@ merge_and_upload() {
     # Clean up old FSDP shards: keep only the latest uploaded step per experiment
     local ckpt_parent=$(dirname "$step_dir")
     local current_step_num=$(basename "$step_dir" | sed 's/global_step_//')
+    local all_uploaded=true
     for old_step_dir in "${ckpt_parent}"/global_step_*; do
         [[ -d "$old_step_dir" ]] || continue
         [[ "$old_step_dir" == "$step_dir" ]] && continue
@@ -115,29 +148,39 @@ merge_and_upload() {
             # Keep data.pt and .oss_uploaded marker for reference
             log "  Freed space from $(basename "$old_step_dir")"
         fi
+        # Track whether any step is NOT yet uploaded
+        if [[ ! -f "${old_step_dir}/.oss_uploaded" ]]; then
+            all_uploaded=false
+        fi
     done
+
+    # If ALL steps in this experiment are uploaded, also clean current step's FSDP shards
+    if $all_uploaded; then
+        log "All steps uploaded for $(basename "$ckpt_parent"), cleaning current FSDP shards: $(basename "$step_dir")"
+        rm -rf "${step_dir}/actor" "${step_dir}/critic" "${step_dir}/ref"
+        log "  Freed space from $(basename "$step_dir")"
+    fi
 }
 
 # =============================================================================
 # Main loop
 # =============================================================================
-log "=========================================="
-log "Checkpoint Upload Watcher started"
-log "Monitoring: ${CKPT_BASE}"
-log "OSS target: ${OSS_BASE}"
-log "Scan interval: ${SCAN_INTERVAL}s"
-log "=========================================="
+if [[ -n "$WATCH_DIR" ]]; then
+    log "=========================================="
+    log "Checkpoint Upload Watcher started (single-experiment mode)"
+    log "Monitoring: ${WATCH_DIR}"
+    log "OSS target: ${OSS_BASE}"
+    log "Scan interval: ${SCAN_INTERVAL}s"
+    log "=========================================="
 
-while true; do
-    for ckpt_dir in "${CKPT_BASE}"/Res-OPD-*; do
-        [[ -d "$ckpt_dir" ]] || continue
+    oss_name=$(get_oss_name "$EXPERIMENT_NAME")
+    if [[ -z "$oss_name" ]]; then
+        log "ERROR: Cannot parse experiment name '${EXPERIMENT_NAME}'"
+        exit 1
+    fi
 
-        oss_name=$(get_oss_name "$(basename "$ckpt_dir")")
-        if [[ -z "$oss_name" ]]; then
-            continue
-        fi
-
-        for step_dir in "${ckpt_dir}"/global_step_*; do
+    while true; do
+        for step_dir in "${WATCH_DIR}"/global_step_*; do
             [[ -d "$step_dir" ]] || continue
 
             # Skip already uploaded
@@ -147,11 +190,46 @@ while true; do
 
             # Check if FSDP checkpoint is complete (actor dir + data.pt exist)
             if [[ -d "${step_dir}/actor" && -f "${step_dir}/data.pt" ]]; then
-                log "Found FSDP checkpoint: $(basename "$ckpt_dir")/$(basename "$step_dir")"
+                log "Found FSDP checkpoint: ${EXPERIMENT_NAME}/$(basename "$step_dir")"
                 merge_and_upload "$step_dir" "$oss_name"
             fi
         done
-    done
 
-    sleep "$SCAN_INTERVAL"
-done
+        sleep "$SCAN_INTERVAL"
+    done
+else
+    log "=========================================="
+    log "Checkpoint Upload Watcher started (all-experiments mode)"
+    log "Monitoring: ${CKPT_BASE}"
+    log "OSS target: ${OSS_BASE}"
+    log "Scan interval: ${SCAN_INTERVAL}s"
+    log "=========================================="
+
+    while true; do
+        for ckpt_dir in "${CKPT_BASE}"/Res-OPD-*; do
+            [[ -d "$ckpt_dir" ]] || continue
+
+            oss_name=$(get_oss_name "$(basename "$ckpt_dir")")
+            if [[ -z "$oss_name" ]]; then
+                continue
+            fi
+
+            for step_dir in "${ckpt_dir}"/global_step_*; do
+                [[ -d "$step_dir" ]] || continue
+
+                # Skip already uploaded
+                if [[ -f "${step_dir}/.oss_uploaded" ]]; then
+                    continue
+                fi
+
+                # Check if FSDP checkpoint is complete (actor dir + data.pt exist)
+                if [[ -d "${step_dir}/actor" && -f "${step_dir}/data.pt" ]]; then
+                    log "Found FSDP checkpoint: $(basename "$ckpt_dir")/$(basename "$step_dir")"
+                    merge_and_upload "$step_dir" "$oss_name"
+                fi
+            done
+        done
+
+        sleep "$SCAN_INTERVAL"
+    done
+fi

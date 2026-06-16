@@ -2,6 +2,17 @@
 
 set -eo pipefail
 
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# ⚠️  IMPORTANT RULES:
+#   1. 一次性/临时脚本必须放在 scripts/tmp/，禁止放在 scripts/ 根目录！
+#      scripts/ 只保留常规最小运行脚本。用完的临时脚本请删除或归档。
+#   2. Log 统一写入规则（禁止随意创建子目录）：
+#      - 训练日志:  logs/<experiment_name>.log  (由调用方 tee 写入)
+#      - Watcher:   logs/watcher_<experiment_name>.log  (watcher 自动写入)
+#      - Eval:      无单独 log，结果在 eval_results/<version>/<exp>/<dataset>/
+#      - 旧日志:    logs/archive/
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 # =============================================================================
 # Res-OPD Training Script
 # Resolution-Aware On-Policy Self-Distillation
@@ -43,7 +54,7 @@ MODEL_PATH="${MODEL_PATH:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Ins
 # --- Resolution params (online degradation) ---
 STUDENT_PX="${STUDENT_PX:-224}"       # 0 = no degradation
 TARGET_PX="${TARGET_PX:-448}"
-TEACHER_PX="${TEACHER_PX:-0}"         # 0 = use target_px as-is (no teacher degradation)
+TEACHER_PX="${TEACHER_PX:-448}"       # 0 = gray/blank image (no visual info), >=target_px = original image
 
 # --- Teacher mode ---
 # Options: ema (default), frozen, coevolving
@@ -111,14 +122,13 @@ TASK_TRAIN_FILE="${DATA_DIR}/train.parquet"
 CUSTOM_DATASET_PATH="${RES_OPD_ROOT}/res_opd_dataset.py"
 
 # --- Experiment naming ---
+# Always include teacher_px in the name to avoid ambiguity (e.g. t0 vs t448)
 MODEL_NAME=$(basename "$MODEL_PATH")
 EPOCH_TAG="e${TRAINER_TOTAL_EPOCHS}"
 if [[ -n "${EXPERIMENT_NAME:-}" ]]; then
     : # Use externally provided EXPERIMENT_NAME
-elif [[ "$TEACHER_PX" -gt 0 && "$TEACHER_PX" -lt "$TARGET_PX" ]]; then
-    EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-s${STUDENT_PX}-t${TEACHER_PX}-a${ALPHA}-${TEACHER_MODE}-${EPOCH_TAG}"
 else
-    EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-s${STUDENT_PX}-a${ALPHA}-${TEACHER_MODE}-${EPOCH_TAG}"
+    EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-s${STUDENT_PX}-t${TEACHER_PX}-a${ALPHA}-${TEACHER_MODE}-${EPOCH_TAG}"
 fi
 PROJECT_NAME="Res-OPD"
 TRAINER_DEFAULT_LOCAL_DIR="${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
@@ -142,16 +152,23 @@ export TORCH_ALLOW_TF32_CUBLAS_OVERRIDE=1
 ulimit -c 0
 
 # =============================================================================
-# AUTO-START CHECKPOINT UPLOAD WATCHER
+# AUTO-START PER-EXPERIMENT CHECKPOINT UPLOAD WATCHER
+# Each training run launches its own watcher that monitors ONLY this
+# experiment's checkpoint directory, avoiding cross-machine conflicts
+# on shared filesystems.
 # =============================================================================
 WATCHER_SCRIPT="${RES_OPD_ROOT}/scripts/ckpt_upload_watcher.sh"
+WATCHER_PID_FILE="${TRAINER_DEFAULT_LOCAL_DIR}/.watcher.pid"
 if [[ -f "$WATCHER_SCRIPT" ]]; then
-    if ! pgrep -f "ckpt_upload_watcher.sh" > /dev/null 2>&1; then
-        echo "Starting ckpt_upload_watcher in background ..."
-        nohup bash "$WATCHER_SCRIPT" > /dev/null 2>&1 &
-        echo "  Watcher PID: $!"
+    # Check if a watcher is already running for THIS experiment
+    if [[ -f "$WATCHER_PID_FILE" ]] && kill -0 "$(cat "$WATCHER_PID_FILE")" 2>/dev/null; then
+        echo "Per-experiment ckpt_watcher already running (PID: $(cat "$WATCHER_PID_FILE"))"
     else
-        echo "ckpt_upload_watcher already running (PID: $(pgrep -f 'ckpt_upload_watcher.sh' | head -1))"
+        echo "Starting per-experiment ckpt_watcher for ${EXPERIMENT_NAME} ..."
+        mkdir -p "$TRAINER_DEFAULT_LOCAL_DIR"
+        nohup bash "$WATCHER_SCRIPT" --watch-dir "$TRAINER_DEFAULT_LOCAL_DIR" > /dev/null 2>&1 &
+        echo $! > "$WATCHER_PID_FILE"
+        echo "  Watcher PID: $! (monitoring: $TRAINER_DEFAULT_LOCAL_DIR)"
     fi
 else
     echo "WARNING: ckpt_upload_watcher.sh not found at $WATCHER_SCRIPT"

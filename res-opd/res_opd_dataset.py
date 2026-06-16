@@ -60,9 +60,17 @@ class ResOPDDataset(RLHFDataset):
             print(
                 f"  Student degradation: {self.student_px} → {self.target_px}"
             )
-        if self.teacher_px > 0 and self.teacher_px < self.target_px:
+        if self.teacher_px == 0:
+            print(
+                f"  Teacher: gray/blank image (no visual information)"
+            )
+        elif self.teacher_px < self.target_px:
             print(
                 f"  Teacher degradation: {self.teacher_px} → {self.target_px}"
+            )
+        else:
+            print(
+                f"  Teacher: original image at {self.target_px}px (no degradation)"
             )
 
     @staticmethod
@@ -118,15 +126,26 @@ class ResOPDDataset(RLHFDataset):
 
         # Degrade teacher images in-place (they stay in the row_dict and flow
         # into non_tensor_batch → teacher reprompt in ray_trainer)
+        # When teacher_px == 0: replace with gray image (no visual information)
+        # When 0 < teacher_px < target_px: degrade to teacher_px then upscale
+        # When teacher_px >= target_px: use original image at target_px
         teacher_key = "hires_images"
         teacher_images = example.get(teacher_key) or []
-        if teacher_images and (self.teacher_px > 0 and self.teacher_px < self.target_px):
-            degraded_teachers = []
+        if teacher_images:
+            processed_teachers = []
             for entry in teacher_images:
                 pil = self._load_image(entry)
-                degraded = self._degrade(pil, self.teacher_px, self.target_px)
-                degraded_teachers.append(degraded)
-            example[teacher_key] = degraded_teachers
+                if self.teacher_px == 0:
+                    # Blank/gray image: no visual information for teacher
+                    gray = Image.new("RGB", (self.target_px, self.target_px), color=(128, 128, 128))
+                    processed_teachers.append(gray)
+                elif self.teacher_px < self.target_px:
+                    degraded = self._degrade(pil, self.teacher_px, self.target_px)
+                    processed_teachers.append(degraded)
+                else:
+                    # teacher_px >= target_px: use original at target resolution
+                    processed_teachers.append(pil.resize((self.target_px, self.target_px), Image.LANCZOS))
+            example[teacher_key] = processed_teachers
 
         image_offset, video_offset = 0, 0
         for message in messages:
