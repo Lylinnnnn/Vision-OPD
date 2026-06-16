@@ -29,7 +29,7 @@ Vision-OPD is a regional-to-global on-policy self-distillation framework that tr
 ### 1. Environment Setup
 
 ```bash
-conda create -n vision-opd python=3.12
+conda create -n vision-opd python=3.12 -y
 conda activate vision-opd
 pip install --upgrade pip
 pip install --no-deps -r requirements.txt
@@ -101,7 +101,7 @@ BENCHMARK="vstar,zoombench,hrbench-4k,hrbench-8k,mme-realworld,mme-realworld-cn"
 bash eval/run_eval.sh
 ```
 
-Supported benchmarks: `vstar`, `zoombench`, `hrbench-4k`, `hrbench-8k`, `mme-realworld`, `mme-realworld-cn`, `mmvp`, `cv-bench`, `mmstar`, `pope`.
+Supported benchmarks: `vstar`, `zoombench`, `hrbench-4k`, `hrbench-8k`, `mme-realworld`, `mme-realworld-cn`, `mme-realworld-lite`, `visualprobe`, `mmvp`, `cv-bench`, `mmstar`, `pope`.
 
 The evaluation script runs inference via the OpenAI-compatible API. Judge configuration can be set via `JUDGE_API_BASE` / `JUDGE_MODEL_PATH` environment variables. We use `openai/gpt-oss-120b` as the judge model. Other powerful models like Qwen3.5 or closed-source models are also recommended.
 

@@ -15,6 +15,7 @@ BENCHMARK_JSON_MAP = {
     "hrbench-8k": "hr_bench_8k.json",
     "mme-realworld": "MME_RealWorld.json",
     "mme-realworld-cn": "MME_RealWorld_CN.json",
+    "mme-realworld-lite": "MME_RealWorld_Lite.json",
     "mmstar": "mmstar.json",
     "pope": "POPE.json",
     "pope_adv": "POPE_adv.json",
@@ -22,6 +23,7 @@ BENCHMARK_JSON_MAP = {
     "pope_random": "POPE_random.json",
     "cv-bench": "cv_bench.json",
     "mmvp": "mmvp.json",
+    "visualprobe": "visualprobe.json",
 }
 
 
@@ -385,6 +387,45 @@ def prepare_mmvp(out_dir):
     return data
 
 
+def prepare_visualprobe(out_dir):
+    repos = [
+        ("Easy", "Mini-o3/VisualProbe_Easy"),
+        ("Medium", "Mini-o3/VisualProbe_Medium"),
+        ("Hard", "Mini-o3/VisualProbe_Hard"),
+    ]
+
+    data = []
+    for category, repo_id in repos:
+        local_dir = out_dir / f"VisualProbe_{category}_data"
+        snapshot_download(repo_id, repo_type="dataset", local_dir=str(local_dir))
+
+        val_path = local_dir / "val.json"
+        with open(val_path, "r", encoding="utf-8") as f:
+            records = json.load(f)
+
+        for record in tqdm(records, desc=f"Processing VisualProbe {category}", unit="img"):
+            images = record.get("images") or []
+            if not images:
+                continue
+            rel_path = images[0]
+            prefix = f"VisualProbe_{category}/"
+            if rel_path.startswith(prefix):
+                img_path = local_dir / rel_path[len(prefix):]
+            else:
+                img_path = local_dir / rel_path
+
+            problem = (record.get("problem") or "").strip()
+            query = problem.replace("<image>\n", "").replace("<image>", "").strip()
+
+            data.append({
+                "images": [str(img_path)],
+                "query": query,
+                "response": (record.get("solution") or "").strip(),
+                "category": category,
+            })
+    return data
+
+
 def prepare_mme_realworld(out_dir):
     rows, img_dir = _load_mme_realworld_parquet(
         "yifanzhang114/MME-RealWorld-Lmms-eval", out_dir, "MME_RealWorld_Full_images",
@@ -397,6 +438,13 @@ def prepare_mme_realworld_cn(out_dir):
         "yifanzhang114/MME-RealWorld-CN-Lmms-eval", out_dir, "MME_RealWorld_CN_images",
     )
     return _process_mme_realworld_rows(rows, img_dir, lang="cn")
+
+
+def prepare_mme_realworld_lite(out_dir):
+    rows, img_dir = _load_mme_realworld_parquet(
+        "yifanzhang114/MME-RealWorld-lite-lmms-eval", out_dir, "MME_RealWorld_Lite_images",
+    )
+    return _process_mme_realworld_rows(rows, img_dir, lang="en")
 
 
 def main():
@@ -460,6 +508,12 @@ def main():
             json.dump(data, f, ensure_ascii=False, indent=2)
         print(f"Generated: {out_json} (records={len(data)})")
 
+    elif benchmark == "visualprobe":
+        data = prepare_visualprobe(out_dir)
+        with open(out_json, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"Generated: {out_json} (records={len(data)})")
+
     elif benchmark == "mme-realworld":
         data = prepare_mme_realworld(out_dir)
         with open(out_json, "w", encoding="utf-8") as f:
@@ -468,6 +522,12 @@ def main():
 
     elif benchmark == "mme-realworld-cn":
         data = prepare_mme_realworld_cn(out_dir)
+        with open(out_json, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print(f"Generated: {out_json} (records={len(data)})")
+
+    elif benchmark == "mme-realworld-lite":
+        data = prepare_mme_realworld_lite(out_dir)
         with open(out_json, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         print(f"Generated: {out_json} (records={len(data)})")
