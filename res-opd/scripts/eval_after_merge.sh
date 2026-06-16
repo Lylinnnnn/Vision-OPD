@@ -61,6 +61,9 @@ MODEL_NAME="Res-OPD"
 TEST_JSON="${RES_OPD_ROOT}/data/test.json"
 PYTHON_BIN="/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3"
 POPE_BENCHMARK="${POPE_BENCHMARK:-pope_adv,pope_pop,pope_random}"
+POPE_SOURCE="${POPE_SOURCE:-res-opd-test}"
+POPE_QUESTIONS_PER_LABEL="${POPE_QUESTIONS_PER_LABEL:-3}"
+POPE_SEED="${POPE_SEED:-42}"
 POPE_PARALLEL_WORKERS="${POPE_PARALLEL_WORKERS:-64}"
 POPE_MAX_NEW_TOKENS="${POPE_MAX_NEW_TOKENS:-16}"
 POPE_MAX_SAMPLES="${POPE_MAX_SAMPLES:-0}"
@@ -131,6 +134,7 @@ if has_eval_task "$EVAL_MODE" "chair"; then
 fi
 if has_eval_task "$EVAL_MODE" "pope"; then
     echo "POPE:        $POPE_BENCHMARK"
+    echo "POPE source: $POPE_SOURCE"
 fi
 echo "Output:      $OUTPUT_DIR"
 echo "============================================================"
@@ -206,6 +210,10 @@ if has_eval_task "$EVAL_MODE" "pope"; then
         --api-key "${OPENAI_API_KEY:-EMPTY}" \
         --model-name "$MODEL_NAME" \
         --benchmark "$POPE_BENCHMARK" \
+        --pope-source "$POPE_SOURCE" \
+        --test-json "$TEST_JSON" \
+        --questions-per-label "$POPE_QUESTIONS_PER_LABEL" \
+        --seed "$POPE_SEED" \
         --vision-opd-root "$VISION_OPD_ROOT" \
         --output-dir "$OUTPUT_DIR" \
         --student-px "$STUDENT_PX" \

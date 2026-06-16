@@ -2,18 +2,20 @@
 """
 POPE evaluation for Res-OPD checkpoints.
 
-This script keeps the Res-OPD evaluation flow self-contained while reusing
-Vision-OPD benchmark data preparation. It follows the common POPE evaluation
-protocol: ask object-existence yes/no questions, extract a binary answer with
-the official-style rule, and report accuracy, precision, recall, F1, and the
-predicted yes ratio.
+By default this script builds POPE-style yes/no object-existence probes from
+the same Res-OPD COCO test JSON used by CHAIR. This keeps POPE and CHAIR on the
+same image split. An opt-in Vision-OPD/HF POPE source is also available for
+benchmark compatibility.
 """
 
 import argparse
 import base64
+from collections import Counter, defaultdict
+import hashlib
 import io
 import json
 import os
+import random
 import subprocess
 import sys
 import threading
@@ -33,6 +35,22 @@ BENCHMARK_JSON_MAP = {
 
 VISION_PREPARE_SUFFIX = "\nAnswer the question using a single word or phrase."
 DEFAULT_PROMPT_SUFFIX = "Please answer yes or no."
+
+COCO_CATEGORIES = [
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
+    "truck", "boat", "traffic light", "fire hydrant", "stop sign",
+    "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
+    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella",
+    "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard",
+    "sports ball", "kite", "baseball bat", "baseball glove", "skateboard",
+    "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork",
+    "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
+    "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair",
+    "couch", "potted plant", "bed", "dining table", "toilet", "tv",
+    "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave",
+    "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase",
+    "scissors", "teddy bear", "hair drier", "toothbrush",
+]
 
 
 def parse_benchmarks(value: str) -> list[str]:
@@ -82,6 +100,165 @@ def prepare_benchmark_if_needed(vision_opd_root: Path, benchmark: str) -> Path:
     if not benchmark_json.exists():
         raise FileNotFoundError(f"Expected benchmark json was not generated: {benchmark_json}")
     return benchmark_json
+
+
+def normalize_object_name(name: str) -> str:
+    return str(name).strip().lower().replace("_", " ")
+
+
+def stable_seed(*parts: object) -> int:
+    text = "|".join(str(part) for part in parts)
+    return int(hashlib.sha1(text.encode("utf-8")).hexdigest()[:8], 16)
+
+
+def pope_split_type(benchmark: str) -> str:
+    if benchmark in {"pope", "pope_random"}:
+        return "random"
+    if benchmark == "pope_pop":
+        return "popular"
+    if benchmark == "pope_adv":
+        return "adversarial"
+    raise ValueError(f"Unsupported POPE benchmark: {benchmark}")
+
+
+def object_question(obj: str) -> str:
+    return f"Is there a {obj} in the image?"
+
+
+def load_res_opd_test_samples(test_json: Path) -> list[dict]:
+    with open(test_json, "r", encoding="utf-8") as f:
+        samples = json.load(f)
+    if not isinstance(samples, list):
+        raise ValueError(f"Expected a list in {test_json}")
+    return samples
+
+
+def build_object_statistics(samples: list[dict]) -> tuple[Counter, dict[str, Counter]]:
+    freq = Counter()
+    cooc = defaultdict(Counter)
+    vocab = set(COCO_CATEGORIES)
+
+    for sample in samples:
+        objects = {
+            normalize_object_name(obj)
+            for obj in sample.get("objects", [])
+            if normalize_object_name(obj) in vocab
+        }
+        freq.update(objects)
+        for obj in objects:
+            for other in objects:
+                if other != obj:
+                    cooc[obj][other] += 1
+    return freq, cooc
+
+
+def choose_positive_objects(objects: set[str], count: int, seed: int) -> list[str]:
+    candidates = sorted(objects)
+    rnd = random.Random(seed)
+    rnd.shuffle(candidates)
+    return candidates[:count]
+
+
+def choose_negative_objects(
+    present_objects: set[str],
+    count: int,
+    split_type: str,
+    freq: Counter,
+    cooc: dict[str, Counter],
+    seed: int,
+) -> list[str]:
+    absent = [obj for obj in COCO_CATEGORIES if obj not in present_objects]
+    if split_type == "random":
+        rnd = random.Random(seed)
+        rnd.shuffle(absent)
+        return absent[:count]
+
+    if split_type == "popular":
+        return sorted(absent, key=lambda obj: (-freq[obj], obj))[:count]
+
+    if split_type == "adversarial":
+        def score(obj: str) -> tuple[int, int, str]:
+            cooc_score = sum(cooc[present][obj] for present in present_objects)
+            return (-cooc_score, -freq[obj], obj)
+
+        return sorted(absent, key=score)[:count]
+
+    raise ValueError(f"Unsupported POPE split type: {split_type}")
+
+
+def build_res_opd_pope_samples(args, benchmark: str) -> tuple[list[dict], str]:
+    """Build POPE-style probes from res-opd/data/test.json.
+
+    This mirrors the common POPE setup: balanced positive/negative object
+    existence questions over COCO categories, with random/popular/adversarial
+    negative sampling. Positive and negative counts are controlled by
+    --questions-per-label.
+    """
+    source_samples = load_res_opd_test_samples(args.test_json)
+    freq, cooc = build_object_statistics(source_samples)
+    split_type = pope_split_type(benchmark)
+    vocab = set(COCO_CATEGORIES)
+    samples = []
+
+    for idx, sample in enumerate(source_samples):
+        image_path = sample.get("image_path")
+        if not image_path:
+            continue
+        image_id = sample.get("image_id", idx)
+        present = {
+            normalize_object_name(obj)
+            for obj in sample.get("objects", [])
+            if normalize_object_name(obj) in vocab
+        }
+        if not present:
+            continue
+
+        seed_base = stable_seed(args.seed, benchmark, image_id, idx)
+        positives = choose_positive_objects(present, args.questions_per_label, seed_base)
+        negatives = choose_negative_objects(
+            present,
+            args.questions_per_label,
+            split_type,
+            freq,
+            cooc,
+            seed_base + 17,
+        )
+
+        for label, objects in (("yes", positives), ("no", negatives)):
+            for obj_idx, obj in enumerate(objects):
+                qid = f"{benchmark}:{image_id}:{label}:{obj_idx}:{obj}"
+                samples.append(
+                    {
+                        "index": len(samples),
+                        "id": qid,
+                        "question_id": qid,
+                        "image_id": image_id,
+                        "file_name": sample.get("file_name", os.path.basename(image_path)),
+                        "images": [image_path],
+                        "query": object_question(obj),
+                        "response": label,
+                        "category": split_type,
+                        "object": obj,
+                        "present_objects": sorted(present),
+                        "image_source": "res_opd_test_json",
+                    }
+                )
+
+    return samples, str(args.test_json)
+
+
+def load_vision_opd_pope_samples(args, benchmark: str) -> tuple[list[dict], str]:
+    benchmark_json = prepare_benchmark_if_needed(args.vision_opd_root, benchmark)
+    with open(benchmark_json, "r", encoding="utf-8") as f:
+        return json.load(f), str(benchmark_json)
+
+
+def load_pope_samples(args, benchmark: str) -> tuple[list[dict], str]:
+    if args.pope_source == "res-opd-test":
+        return build_res_opd_pope_samples(args, benchmark)
+    if args.pope_source == "vision-opd":
+        return load_vision_opd_pope_samples(args, benchmark)
+    raise ValueError(f"Unsupported --pope-source: {args.pope_source}")
 
 
 def load_jsonl(path: Path) -> dict[str, dict]:
@@ -184,9 +361,7 @@ def compute_metrics(records: list[dict]) -> dict:
 
 
 def run_single_benchmark(args, benchmark: str) -> dict:
-    benchmark_json = prepare_benchmark_if_needed(args.vision_opd_root, benchmark)
-    with open(benchmark_json, "r", encoding="utf-8") as f:
-        samples = json.load(f)
+    samples, source_path = load_pope_samples(args, benchmark)
     if args.max_samples > 0:
         samples = samples[: args.max_samples]
 
@@ -293,10 +468,12 @@ def run_single_benchmark(args, benchmark: str) -> dict:
     metrics.update(
         {
             "benchmark": benchmark,
+            "pope_source": args.pope_source,
             "student_px": args.student_px,
             "target_px": args.target_px,
+            "questions_per_label": args.questions_per_label,
             "extractor": "official_pope_first_sentence_no_not_rule",
-            "benchmark_json": str(benchmark_json),
+            "source_path": source_path,
         }
     )
     with open(metrics_path, "w", encoding="utf-8") as f:
@@ -319,6 +496,20 @@ def main():
     parser.add_argument("--api-key", default="EMPTY")
     parser.add_argument("--model-name", default="Res-OPD")
     parser.add_argument("--benchmark", default="pope_adv,pope_pop,pope_random")
+    parser.add_argument(
+        "--pope-source",
+        choices=["res-opd-test", "vision-opd"],
+        default="res-opd-test",
+        help="Use Res-OPD COCO test.json by default; vision-opd uses the HF/Vision-OPD POPE data.",
+    )
+    parser.add_argument(
+        "--test-json",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "data" / "test.json",
+        help="Res-OPD COCO test JSON used when --pope-source=res-opd-test.",
+    )
+    parser.add_argument("--questions-per-label", type=int, default=3)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--vision-opd-root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--output-dir", type=Path, default=Path("./eval_results"))
     parser.add_argument("--student-px", type=int, default=0)
@@ -336,8 +527,13 @@ def main():
     args = parser.parse_args()
 
     args.vision_opd_root = args.vision_opd_root.resolve()
+    args.test_json = args.test_json.resolve()
     args.output_dir = args.output_dir.resolve()
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    if args.questions_per_label <= 0:
+        raise ValueError("--questions-per-label must be positive")
+    if args.pope_source == "res-opd-test" and not args.test_json.exists():
+        raise FileNotFoundError(f"Res-OPD test JSON not found: {args.test_json}")
 
     benchmarks = parse_benchmarks(args.benchmark)
     all_metrics = {}
