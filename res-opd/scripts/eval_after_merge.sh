@@ -9,15 +9,21 @@ set -euo pipefail
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 # =============================================================================
-# Evaluate a merged Res-OPD checkpoint using CHAIR metrics
+# Evaluate a merged Res-OPD checkpoint using CHAIR and/or POPE metrics
 #
 # Steps:
 #   1. Start vLLM server with the merged checkpoint
-#   2. Run CHAIR evaluation via API
+#   2. Run selected evaluation(s) via API
 #   3. Shut down vLLM server
 #
 # Usage:
-#   bash scripts/eval_after_merge.sh <merged_checkpoint_path> [student_px] [version_tag]
+#   bash scripts/eval_after_merge.sh <merged_checkpoint_path> [student_px] [version_tag] [eval_mode]
+#
+# eval_mode:
+#   chair       Run CHAIR only (default; preserves the original behavior)
+#   pope        Run POPE only
+#   chair,pope  Run both
+#   all         Run both
 #
 # Output directory structure (unified naming):
 #   res-opd/eval_results/<version_tag>/<experiment_name>_<step_tag>/<dataset_tag>/
@@ -49,10 +55,37 @@ export PYTHONPATH="$VISION_OPD_ROOT:${PYTHONPATH:-}"
 MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [student_px] [version_tag]}"
 STUDENT_PX="${2:-0}"
 VERSION_TAG="${3:-latest}"
+EVAL_MODE="${4:-${EVAL_MODE:-chair}}"
 PORT="${VLLM_PORT:-8000}"
 MODEL_NAME="Res-OPD"
 TEST_JSON="${RES_OPD_ROOT}/data/test.json"
 PYTHON_BIN="/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3"
+POPE_BENCHMARK="${POPE_BENCHMARK:-pope_adv,pope_pop,pope_random}"
+POPE_PARALLEL_WORKERS="${POPE_PARALLEL_WORKERS:-64}"
+POPE_MAX_NEW_TOKENS="${POPE_MAX_NEW_TOKENS:-16}"
+POPE_MAX_SAMPLES="${POPE_MAX_SAMPLES:-0}"
+POPE_USE_PREPARED_QUERY="${POPE_USE_PREPARED_QUERY:-False}"
+
+normalize_eval_mode() {
+    local mode
+    mode="$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
+    if [[ "$mode" == "all" ]]; then
+        mode="chair,pope"
+    fi
+    echo "$mode"
+}
+
+has_eval_task() {
+    local mode="$1"
+    local task="$2"
+    [[ ",${mode}," == *",${task},"* ]]
+}
+
+EVAL_MODE="$(normalize_eval_mode "$EVAL_MODE")"
+if ! has_eval_task "$EVAL_MODE" "chair" && ! has_eval_task "$EVAL_MODE" "pope"; then
+    echo "Error: eval_mode must be one of chair, pope, chair,pope, all. Got: $EVAL_MODE" >&2
+    exit 1
+fi
 
 # Determine eval output directory:
 #   res-opd/eval_results/<version_tag>/<experiment_name>_<step_tag>/<dataset_tag>/
@@ -81,18 +114,24 @@ else
 fi
 OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${EXPERIMENT_NAME}/${DATASET_TAG}"
 
-if [ ! -f "$TEST_JSON" ]; then
+if has_eval_task "$EVAL_MODE" "chair" && [ ! -f "$TEST_JSON" ]; then
     echo "Error: test.json not found at $TEST_JSON" >&2
     echo "Run prepare_data.py first." >&2
     exit 1
 fi
 
 echo "============================================================"
-echo " Res-OPD CHAIR Evaluation"
+echo " Res-OPD Evaluation"
 echo "============================================================"
 echo "Model:       $MODEL_PATH"
 echo "Student px:  $STUDENT_PX (0 = original image)"
-echo "Test data:   $TEST_JSON"
+echo "Eval mode:   $EVAL_MODE"
+if has_eval_task "$EVAL_MODE" "chair"; then
+    echo "CHAIR data:  $TEST_JSON"
+fi
+if has_eval_task "$EVAL_MODE" "pope"; then
+    echo "POPE:        $POPE_BENCHMARK"
+fi
 echo "Output:      $OUTPUT_DIR"
 echo "============================================================"
 
@@ -112,6 +151,16 @@ export VLLM_DISABLE_PROMETHEUS=1
     --max-model-len 9728 \
     --disable-frontend-multiprocessing &
 VLLM_PID=$!
+
+cleanup() {
+    if [[ -n "${VLLM_PID:-}" ]] && kill -0 "$VLLM_PID" 2>/dev/null; then
+        echo ""
+        echo "[cleanup] Shutting down vLLM server ..."
+        kill "$VLLM_PID" 2>/dev/null || true
+        wait "$VLLM_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
 
 # Wait for server to be ready
 echo "  Waiting for vLLM server (pid=$VLLM_PID) ..."
@@ -135,19 +184,42 @@ fi
 
 # --- Step 2: Run evaluation ---
 echo ""
-echo "[2/3] Running CHAIR evaluation ..."
-"$PYTHON_BIN" "${RES_OPD_ROOT}/eval/eval_chair.py" \
-    --api-base "http://localhost:$PORT/v1/" \
-    --model-name "$MODEL_NAME" \
-    --test-json "$TEST_JSON" \
-    --output-dir "$OUTPUT_DIR" \
-    --student-px "$STUDENT_PX"
+echo "[2/3] Running selected evaluation(s) ..."
+if has_eval_task "$EVAL_MODE" "chair"; then
+    echo "  Running CHAIR ..."
+    "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/eval_chair.py" \
+        --api-base "http://localhost:$PORT/v1/" \
+        --model-name "$MODEL_NAME" \
+        --test-json "$TEST_JSON" \
+        --output-dir "$OUTPUT_DIR" \
+        --student-px "$STUDENT_PX"
+fi
+
+if has_eval_task "$EVAL_MODE" "pope"; then
+    echo "  Running POPE ..."
+    pope_extra_args=()
+    if [[ "$POPE_USE_PREPARED_QUERY" == "True" || "$POPE_USE_PREPARED_QUERY" == "true" ]]; then
+        pope_extra_args+=(--use-prepared-query)
+    fi
+    "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/eval_pope.py" \
+        --api-base "http://localhost:$PORT/v1/" \
+        --api-key "${OPENAI_API_KEY:-EMPTY}" \
+        --model-name "$MODEL_NAME" \
+        --benchmark "$POPE_BENCHMARK" \
+        --vision-opd-root "$VISION_OPD_ROOT" \
+        --output-dir "$OUTPUT_DIR" \
+        --student-px "$STUDENT_PX" \
+        --max-new-tokens "$POPE_MAX_NEW_TOKENS" \
+        --max-samples "$POPE_MAX_SAMPLES" \
+        --parallel-workers "$POPE_PARALLEL_WORKERS" \
+        "${pope_extra_args[@]}"
+fi
 
 # --- Step 3: Cleanup ---
 echo ""
 echo "[3/3] Shutting down vLLM server ..."
-kill $VLLM_PID 2>/dev/null || true
-wait $VLLM_PID 2>/dev/null || true
+cleanup
+trap - EXIT
 
 echo ""
 echo "Evaluation complete. Results saved to: $OUTPUT_DIR"

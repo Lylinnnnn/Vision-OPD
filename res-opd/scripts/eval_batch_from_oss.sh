@@ -12,7 +12,7 @@
 #
 # Usage:
 #   bash scripts/eval_batch_from_oss.sh --oss-names <name1> [name2] ... \
-#       [--step global_step_92] [--student-px 448] [--version-tag v5]
+#       [--step global_step_92] [--student-px 448] [--version-tag v5] [--eval-mode chair]
 #
 # Examples:
 #   # Evaluate specific experiments at step 92
@@ -40,6 +40,7 @@ EVAL_SCRIPT="${RES_OPD_ROOT}/scripts/eval_after_merge.sh"
 STEP="global_step_92"
 STUDENT_PX=448
 VERSION_TAG="latest"
+EVAL_MODE="chair"
 OSS_NAMES=()
 LOCAL_NAMES=()
 
@@ -63,6 +64,7 @@ while [[ $# -gt 0 ]]; do
         --step)       STEP="$2"; shift 2 ;;
         --student-px) STUDENT_PX="$2"; shift 2 ;;
         --version-tag) VERSION_TAG="$2"; shift 2 ;;
+        --eval-mode)  EVAL_MODE="$2"; shift 2 ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
@@ -73,11 +75,49 @@ if [[ ${#OSS_NAMES[@]} -eq 0 ]]; then
     exit 1
 fi
 
+normalize_eval_mode() {
+    local mode
+    mode="$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
+    if [[ "$mode" == "all" ]]; then
+        mode="chair,pope"
+    fi
+    echo "$mode"
+}
+
+has_eval_task() {
+    local mode="$1"
+    local task="$2"
+    [[ ",${mode}," == *",${task},"* ]]
+}
+
+eval_results_exist() {
+    local result_dir="$1"
+    local ok=0
+    if has_eval_task "$EVAL_MODE" "chair"; then
+        if ! ls "${result_dir}/"*/chair_metrics.json 2>/dev/null | grep -q .; then
+            ok=1
+        fi
+    fi
+    if has_eval_task "$EVAL_MODE" "pope"; then
+        if ! ls "${result_dir}/"*/pope/pope_summary.json 2>/dev/null | grep -q .; then
+            ok=1
+        fi
+    fi
+    return $ok
+}
+
+EVAL_MODE="$(normalize_eval_mode "$EVAL_MODE")"
+if ! has_eval_task "$EVAL_MODE" "chair" && ! has_eval_task "$EVAL_MODE" "pope"; then
+    echo "Error: --eval-mode must be one of chair, pope, chair,pope, all. Got: $EVAL_MODE" >&2
+    exit 1
+fi
+
 echo "=========================================="
 echo " Batch Eval from OSS"
 echo " Step: ${STEP}"
 echo " Student PX: ${STUDENT_PX}"
 echo " Version tag: ${VERSION_TAG}"
+echo " Eval mode: ${EVAL_MODE}"
 echo " Experiments: ${#OSS_NAMES[@]}"
 echo " Started at: $(date)"
 echo "=========================================="
@@ -117,7 +157,8 @@ for idx in "${!OSS_NAMES[@]}"; do
     echo "=========================================="
 
     # Check if eval results already exist
-    if ls "${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${local_exp_name}_${STEP}/"*/chair_metrics.json 2>/dev/null | grep -q .; then
+    existing_result_root="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${local_exp_name}_${STEP}"
+    if eval_results_exist "$existing_result_root"; then
         echo "⚠️  Eval results already exist, skipping."
         continue
     fi
@@ -133,7 +174,7 @@ for idx in "${!OSS_NAMES[@]}"; do
 
     # Step 2: Run evaluation
     echo "[2/4] Running evaluation ..."
-    bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$STUDENT_PX" "$VERSION_TAG"
+    bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$STUDENT_PX" "$VERSION_TAG" "$EVAL_MODE"
     echo "  ✅ Evaluation complete"
 
     # Step 3: Delete model files (keep eval results)
@@ -145,9 +186,9 @@ for idx in "${!OSS_NAMES[@]}"; do
     # Step 4: Verify eval results
     echo "[4/4] Verifying eval results ..."
     result_dir="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${local_exp_name}_${STEP}"
-    if ls "${result_dir}/"*/chair_metrics.json 2>/dev/null | grep -q .; then
+    if eval_results_exist "$result_dir"; then
         echo "  ✅ Eval results saved:"
-        find "${result_dir}" -name "chair_metrics.json" -exec echo "    {}" \;
+        find "${result_dir}" \( -name "chair_metrics.json" -o -name "pope_summary.json" \) -exec echo "    {}" \;
     else
         echo "  ⚠️  No eval results found!"
     fi
