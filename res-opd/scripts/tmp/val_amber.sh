@@ -5,8 +5,15 @@ set -euo pipefail
 # Final-only AMBER hallucination evaluation.
 #
 # Usage:
-#   AMBER_ROOT=/path/to/AMBER \
-#   AMBER_IMAGE_ROOT=/path/to/AMBER/images \
+#   AMBER_ROOT=/path/to/AMBER AMBER_IMAGE_ROOT=/path/to/AMBER/images \
+#   bash res-opd/scripts/tmp/val_amber.sh <merged_checkpoint_path> [version_tag]
+#
+# Low-disk staging:
+#   AMBER_OSS_URI=oss://bucket/path/AMBER \
+#   bash res-opd/scripts/tmp/val_amber.sh <merged_checkpoint_path> [version_tag]
+#
+# Optional ModelScope fallback:
+#   AMBER_MODELSCOPE_ID=<owner/dataset> \
 #   bash res-opd/scripts/tmp/val_amber.sh <merged_checkpoint_path> [version_tag]
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -17,10 +24,16 @@ VERSION_TAG="${2:-${VERSION_TAG:-latest}}"
 PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
 PORT="${VLLM_PORT:-8000}"
 MODEL_NAME="${MODEL_NAME:-Res-OPD}"
-AMBER_ROOT="${AMBER_ROOT:?Set AMBER_ROOT to the official AMBER repository/data root.}"
+BENCHMARK_DATA_ROOT="${BENCHMARK_DATA_ROOT:-/home/liuyanlin.lyl/notebook/data}"
+BENCHMARK_OSS_BASE="${BENCHMARK_OSS_BASE:-}"
+AMBER_ROOT="${AMBER_ROOT:-${BENCHMARK_DATA_ROOT}/AMBER}"
+AMBER_OSS_URI="${AMBER_OSS_URI:-${BENCHMARK_OSS_BASE:+${BENCHMARK_OSS_BASE%/}/AMBER}}"
+AMBER_MODELSCOPE_ID="${AMBER_MODELSCOPE_ID:-}"
+KEEP_BENCHMARK_DATA="${KEEP_BENCHMARK_DATA:-False}"
 AMBER_EVAL_TYPE="${AMBER_EVAL_TYPE:-a}"
 AMBER_MAX_SAMPLES="${AMBER_MAX_SAMPLES:-0}"
 AMBER_PARALLEL_WORKERS="${AMBER_PARALLEL_WORKERS:-64}"
+STAGED_DATASET=0
 
 CKPT_ROOT="$MODEL_PATH"
 STEP_TAG=""
@@ -32,6 +45,60 @@ EXPERIMENT_NAME="$(basename "$CKPT_ROOT")"
 [[ -n "$STEP_TAG" ]] && EXPERIMENT_NAME="${EXPERIMENT_NAME}_${STEP_TAG}"
 OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${EXPERIMENT_NAME}/final_hallucination"
 
+stage_from_oss() {
+    local oss_uri="$1"
+    local local_dir="$2"
+    if [[ -z "$oss_uri" ]]; then
+        return 1
+    fi
+    echo "Staging AMBER from OSS: ${oss_uri} -> ${local_dir}"
+    mkdir -p "$local_dir"
+    ossutil cp -r "${oss_uri%/}/" "$local_dir/" -f
+}
+
+stage_from_modelscope() {
+    local dataset_id="$1"
+    local local_dir="$2"
+    if [[ -z "$dataset_id" ]]; then
+        return 1
+    fi
+    if ! command -v modelscope >/dev/null 2>&1; then
+        echo "ModelScope CLI not found; skipping ModelScope download." >&2
+        return 1
+    fi
+    echo "Staging AMBER from ModelScope dataset: ${dataset_id} -> ${local_dir}"
+    mkdir -p "$local_dir"
+    modelscope download --dataset "$dataset_id" --local_dir "$local_dir"
+}
+
+ensure_amber_data() {
+    local query_file="${AMBER_ROOT}/data/query/query_all.json"
+    if [[ -f "$query_file" ]]; then
+        return
+    fi
+    if stage_from_oss "$AMBER_OSS_URI" "$AMBER_ROOT"; then
+        STAGED_DATASET=1
+    elif stage_from_modelscope "$AMBER_MODELSCOPE_ID" "$AMBER_ROOT"; then
+        STAGED_DATASET=1
+    fi
+    if [[ ! -f "$query_file" ]]; then
+        echo "Error: AMBER data not found at ${AMBER_ROOT}." >&2
+        echo "Set AMBER_ROOT, or set AMBER_OSS_URI, or set AMBER_MODELSCOPE_ID." >&2
+        echo "After manual download, you can upload with:" >&2
+        echo "  ossutil cp -r ${AMBER_ROOT}/ oss://<bucket>/<path>/AMBER/ -f" >&2
+        cleanup_dataset
+        exit 1
+    fi
+}
+
+cleanup_dataset() {
+    if [[ "$STAGED_DATASET" -eq 1 && "$KEEP_BENCHMARK_DATA" != "True" && "$KEEP_BENCHMARK_DATA" != "true" ]]; then
+        echo "[cleanup] Removing staged AMBER data: $AMBER_ROOT"
+        rm -rf "$AMBER_ROOT"
+    fi
+}
+
+ensure_amber_data
 mkdir -p "$OUTPUT_DIR"
 export PYTHONPATH="$(cd "$RES_OPD_ROOT/.." && pwd):${PYTHONPATH:-}"
 export VLLM_DISABLE_PROMETHEUS=1
@@ -41,6 +108,7 @@ echo " AMBER Eval"
 echo "============================================================"
 echo "Model:     $MODEL_PATH"
 echo "AMBER:     $AMBER_ROOT"
+echo "AMBER OSS: ${AMBER_OSS_URI:-<none>}"
 echo "Eval type: $AMBER_EVAL_TYPE"
 echo "Output:    $OUTPUT_DIR"
 echo "============================================================"
@@ -60,6 +128,7 @@ cleanup() {
         kill "$VLLM_PID" 2>/dev/null || true
         wait "$VLLM_PID" 2>/dev/null || true
     fi
+    cleanup_dataset
 }
 trap cleanup EXIT
 

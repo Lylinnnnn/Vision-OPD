@@ -73,11 +73,20 @@ AMBER_IMAGE_ROOT=/path/to/AMBER/images \
 bash res-opd/scripts/tmp/val_amber.sh <merged_checkpoint_path> latest
 ```
 
+For low-disk machines, stage AMBER from OSS into
+`/home/liuyanlin.lyl/notebook/data/AMBER` only for the current run:
+
+```bash
+AMBER_OSS_URI=oss://<bucket>/<path>/AMBER \
+bash res-opd/scripts/tmp/val_amber.sh <merged_checkpoint_path> latest
+```
+
 Useful knobs:
 
 - `AMBER_EVAL_TYPE=a`: all AMBER tasks; use `g`, `d`, `de`, `da`, or `dr` for subsets.
 - `AMBER_SKIP_OFFICIAL_EVAL=True`: only generate the official response JSON.
 - `AMBER_MAX_SAMPLES=100`: quick smoke test.
+- `KEEP_BENCHMARK_DATA=True`: keep staged data after eval; default removes data staged by the script.
 
 ### Classic MME Perception
 
@@ -96,6 +105,15 @@ MME_ROOT=/path/to/MME_Benchmark_release_version \
 bash res-opd/scripts/tmp/val_mme_perception.sh <merged_checkpoint_path> latest
 ```
 
+For low-disk machines, stage classic MME from OSS into
+`/home/liuyanlin.lyl/notebook/data/MME_Benchmark_release_version` only for
+the current run:
+
+```bash
+MME_OSS_URI=oss://<bucket>/<path>/MME_Benchmark_release_version \
+bash res-opd/scripts/tmp/val_mme_perception.sh <merged_checkpoint_path> latest
+```
+
 If you already have converted JSON/JSONL with `image`, `question`, `answer`,
 and `category` fields:
 
@@ -108,4 +126,37 @@ Outputs for both AMBER and MME are placed under:
 
 ```text
 res-opd/eval_results/<version>/<experiment>_<step>/final_hallucination/
+```
+
+### OSS Dataset Cache
+
+The temporary scripts can use one shared OSS base:
+
+```bash
+BENCHMARK_OSS_BASE=oss://<bucket>/<path>/benchmarks \
+bash res-opd/scripts/tmp/eval_hallucination_batch_from_oss.sh \
+  --oss-names <exp> --step global_step_40 --benchmarks amber,mme
+```
+
+Expected OSS layout:
+
+```text
+oss://<bucket>/<path>/benchmarks/AMBER/
+oss://<bucket>/<path>/benchmarks/MME_Benchmark_release_version/
+```
+
+After a manual first download, upload with:
+
+```bash
+ossutil cp -r /home/liuyanlin.lyl/notebook/data/AMBER/ \
+  oss://<bucket>/<path>/benchmarks/AMBER/ -f
+ossutil cp -r /home/liuyanlin.lyl/notebook/data/MME_Benchmark_release_version/ \
+  oss://<bucket>/<path>/benchmarks/MME_Benchmark_release_version/ -f
+```
+
+ModelScope fallback is configurable but intentionally not hard-coded:
+
+```bash
+AMBER_MODELSCOPE_ID=<owner/dataset>
+MME_MODELSCOPE_ID=<owner/dataset>
 ```
