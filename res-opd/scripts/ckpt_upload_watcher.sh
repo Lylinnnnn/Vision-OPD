@@ -60,24 +60,32 @@ log() {
 # Map checkpoint dir name pattern to OSS name
 get_oss_name() {
     local ckpt_dir_name="$1"
-    # Extract experiment config from dir name
-    # Pattern: Res-OPD-Qwen3VL-2B-Instruct-s{STUDENT}-t{TEACHER}-a{ALPHA}-{MODE}
-    # or:      Res-OPD-Qwen3VL-2B-Instruct-s{STUDENT}-a{ALPHA}-{MODE}
-    local student_px teacher_px alpha mode
-    if [[ "$ckpt_dir_name" =~ s([0-9]+)-t([0-9]+)-a([0-9.]+)-(.+) ]]; then
-        student_px="${BASH_REMATCH[1]}"
-        teacher_px="${BASH_REMATCH[2]}"
-        alpha="${BASH_REMATCH[3]}"
-        mode="${BASH_REMATCH[4]}"
-        echo "ResOPD_s${student_px}_t${teacher_px}_a${alpha}_${mode}"
-    elif [[ "$ckpt_dir_name" =~ s([0-9]+)-a([0-9.]+)-(.+) ]]; then
-        student_px="${BASH_REMATCH[1]}"
-        alpha="${BASH_REMATCH[2]}"
-        mode="${BASH_REMATCH[3]}"
-        echo "ResOPD_s${student_px}_a${alpha}_${mode}"
-    else
-        echo ""
+    # Generic mapping: strip the model-name prefix (Res-OPD-Qwen3VL-2B-Instruct-)
+    # then replace all remaining '-' with '_' and prepend 'ResOPD_'.
+    # This works for any naming convention (square, original, future modes)
+    # without hard-coded regex patterns.
+    #
+    # Backward-compatible mappings preserve existing OSS paths:
+    #   s448-t224-a0.5-ema-e2  → ResOPD_s448_t224_a0.5_ema-e2  (keep last '-')
+    #   orig-sr0.75-tr1.0-a0.5-ema-e1 → ResOPD_orig_sr0.75_tr1.0_a0.5_ema-e1
+    #
+    # Rule: the last '-e{N}' epoch tag keeps its dash for backward compat.
+    local suffix
+    suffix="${ckpt_dir_name#Res-OPD-Qwen3VL-2B-Instruct-}"
+    if [[ "$suffix" == "$ckpt_dir_name" ]]; then
+        # Prefix not found; fall back to full replacement
+        suffix="$ckpt_dir_name"
     fi
+
+    # Split off the trailing epoch tag (e.g. "-e2", "-e1") to preserve it
+    local epoch_tag=""
+    if [[ "$suffix" =~ ^(.+)-(e[0-9]+)$ ]]; then
+        suffix="${BASH_REMATCH[1]}"
+        epoch_tag="-${BASH_REMATCH[2]}"
+    fi
+
+    local oss_name="ResOPD_${suffix//-/_}${epoch_tag}"
+    echo "$oss_name"
 }
 
 merge_and_upload() {

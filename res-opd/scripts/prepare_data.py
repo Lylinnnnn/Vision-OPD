@@ -48,12 +48,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def make_hires_image(src_path: str, target_px: int, output_path: str) -> str:
-    """Resize original image to target_px for teacher input (sharp, consistent size)."""
-    img = Image.open(src_path).convert("RGB")
-    hires = img.resize((target_px, target_px), Image.LANCZOS)
-    hires.save(output_path, "JPEG", quality=95)
-    return output_path
 
 
 def load_coco_metadata():
@@ -84,9 +78,7 @@ def load_coco_metadata():
 def main():
     args = parse_args()
     data_dir = os.path.abspath(args.data_dir)
-    teacher_dir = os.path.join(data_dir, "teacher_images")
     os.makedirs(data_dir, exist_ok=True)
-    os.makedirs(teacher_dir, exist_ok=True)
 
     print("Loading COCO metadata ...")
     image_files, image_objects, image_captions = load_coco_metadata()
@@ -105,7 +97,7 @@ def main():
     test_ids = all_image_ids[args.train_count + args.eval_count:total_needed]
 
     print(f"Split: train={len(train_ids)}, eval={len(eval_ids)}, test={len(test_ids)}")
-    print(f"Teacher resolution: {args.target_px}px (pre-resized for consistent size)")
+    print(f"Teacher: uses original COCO images (online degradation by ResOPDDataset)")
 
     # Save split info
     split_info = {
@@ -119,7 +111,7 @@ def main():
 
     # Build training records
     # - images: original COCO image path (student degradation done online)
-    # - hires_images: pre-resized to target_px (consistent teacher size, prevents OOM)
+    # - hires_images: same original path (teacher degradation done online)
     records = []
     for idx, image_id in enumerate(train_ids):
         file_name = image_files[image_id]
@@ -127,12 +119,6 @@ def main():
         if not os.path.exists(src_path):
             print(f"  Warning: {src_path} not found, skipping.")
             continue
-
-        # Pre-resize teacher image to target_px for consistent memory usage
-        stem = Path(file_name).stem
-        teacher_path = os.path.join(teacher_dir, f"{stem}_t{args.target_px}.jpg")
-        if not os.path.exists(teacher_path):
-            make_hires_image(src_path, args.target_px, teacher_path)
 
         captions = image_captions.get(image_id, [])
         objects = sorted(image_objects.get(image_id, set()))
@@ -142,7 +128,7 @@ def main():
             "data_source": "coco_res_opd",
             "prompt": [{"role": "user", "content": f"<image>{PROMPT_TEXT}"}],
             "images": [{"path": src_path}],
-            "hires_images": [{"path": teacher_path}],
+            "hires_images": [{"path": src_path}],
             "ability": "image_captioning",
             "reward_model": {
                 "style": "none",
@@ -177,11 +163,6 @@ def main():
         if not os.path.exists(src_path):
             continue
 
-        stem = Path(file_name).stem
-        teacher_path = os.path.join(teacher_dir, f"{stem}_t{args.target_px}.jpg")
-        if not os.path.exists(teacher_path):
-            make_hires_image(src_path, args.target_px, teacher_path)
-
         captions = image_captions.get(image_id, [])
         objects = sorted(image_objects.get(image_id, set()))
         ground_truth = captions[0] if captions else ""
@@ -190,7 +171,7 @@ def main():
             "data_source": "coco_res_opd",
             "prompt": [{"role": "user", "content": f"<image>{PROMPT_TEXT}"}],
             "images": [{"path": src_path}],
-            "hires_images": [{"path": teacher_path}],
+            "hires_images": [{"path": src_path}],
             "ability": "image_captioning",
             "reward_model": {
                 "style": "none",

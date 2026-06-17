@@ -200,14 +200,17 @@ class ResOPDDataset(RLHFDataset):
         images = example.pop(self.image_key, None) or []
         videos = example.pop(self.video_key, None) or []
 
-        # Degrade teacher images in-place (they stay in the row_dict and flow
-        # into non_tensor_batch → teacher reprompt in ray_trainer)
+        # Load teacher images from hires_images (now points to original
+        # COCO paths in parquet) and apply online degradation via
+        # _degrade_teacher().  This avoids pre-storing degraded teacher
+        # images on disk while still supporting both square and original
+        # degradation modes.
         teacher_key = "hires_images"
-        teacher_images = example.get(teacher_key) or []
-        if teacher_images:
+        hires_images = example.pop(teacher_key, None) or []
+        if hires_images:
             processed_teachers = []
-            for entry in teacher_images:
-                pil = self._load_image(entry)
+            for img_entry in hires_images:
+                pil = self._load_image(img_entry)
                 processed_teachers.append(self._degrade_teacher(pil))
             example[teacher_key] = processed_teachers
 
