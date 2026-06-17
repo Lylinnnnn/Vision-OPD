@@ -1,14 +1,22 @@
 """
 Prepare COCO val2017 data for Resolution-Aware Self-Distillation training.
 
-Creates a parquet file compatible with verl's RLHFDataset, containing:
-  - images:        original images (student degradation is done ONLINE by
-                   ResOPDDataset, so student_px can be changed freely)
-  - hires_images:  teacher images resized to target_px (sharp, consistent size
-                   to prevent OOM from variable original resolutions)
+Creates parquet files compatible with verl's RLHFDataset, containing:
+  - images:        original COCO image paths (student degradation is done
+                   ONLINE by ResOPDDataset, so student_px can be changed freely)
+  - hires_images:  same original COCO image paths as ``images``; teacher
+                   degradation is also applied ONLINE by ResOPDDataset via
+                   _degrade_teacher(), supporting both square and original
+                   degradation modes without pre-storing teacher images on disk
   - prompt:        caption generation prompt in chat format
   - reward_model:  ground truth captions for CHAIR evaluation
   - extra_info:    metadata (image_id, original captions, object categories)
+
+Outputs:
+  - train.parquet:  training split
+  - eval.parquet:   eval split (for standalone CHAIR/POPE evaluation)
+  - val.parquet:    copy of eval.parquet (for verl's native validation via val_files)
+  - eval.json / test.json: metadata for standalone evaluation scripts
 
 Usage:
     python scripts/prepare_data.py --data-dir ./data
@@ -41,7 +49,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare COCO data for Res-OPD training.")
     parser.add_argument("--data-dir", default="./data", help="Output directory for processed data")
     parser.add_argument("--target-px", type=int, default=448,
-                        help="Teacher image resolution (images are resized to this for consistent size)")
+                        help="Target spatial dimension after up-scaling in square degradation mode "
+                             "(used by ResOPDDataset at runtime, not for pre-resizing teacher images)")
     parser.add_argument("--train-count", type=int, default=1500, help="Number of training samples")
     parser.add_argument("--eval-count", type=int, default=30, help="Number of eval samples (reserved)")
     parser.add_argument("--test-count", type=int, default=300, help="Number of test samples (reserved)")
@@ -191,6 +200,12 @@ def main():
     eval_dataset.to_parquet(eval_parquet_path)
     print(f"Saved eval parquet ({len(eval_records)} samples) to {eval_parquet_path}")
 
+    # Also save as val.parquet for verl's native validation (val_files config)
+    import shutil
+    val_parquet_path = os.path.join(data_dir, "val.parquet")
+    shutil.copy2(eval_parquet_path, val_parquet_path)
+    print(f"Copied eval.parquet → {val_parquet_path} (for verl val_files)")
+
     # Save eval/test metadata as JSON for standalone CHAIR evaluation
     for split_name, split_ids in [("eval", eval_ids), ("test", test_ids)]:
         split_records = []
@@ -213,7 +228,8 @@ def main():
 
     print(f"\nData preparation complete.")
     print(f"  Training data:  {output_path}")
-    print(f"  Eval parquet:   {eval_parquet_path} (for verl val_files)")
+    print(f"  Eval parquet:   {eval_parquet_path} (for standalone CHAIR/POPE eval)")
+    print(f"  Val parquet:    {val_parquet_path} (for verl native validation)")
     print(f"  Eval metadata:  {os.path.join(data_dir, 'eval.json')}")
     print(f"  Test metadata:  {os.path.join(data_dir, 'test.json')}")
 

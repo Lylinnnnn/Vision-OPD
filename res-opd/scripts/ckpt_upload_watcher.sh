@@ -213,6 +213,8 @@ else
     log "Scan interval: ${SCAN_INTERVAL}s"
     log "=========================================="
 
+    # NOTE: all-experiments mode only scans directories matching Res-OPD-*.
+    # If future experiments use a different prefix, use --watch-dir instead.
     while true; do
         for ckpt_dir in "${CKPT_BASE}"/Res-OPD-*; do
             [[ -d "$ckpt_dir" ]] || continue

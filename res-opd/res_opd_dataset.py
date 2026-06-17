@@ -17,7 +17,7 @@ Configuration (passed via data config in yaml or CLI):
     data.custom_cls.path:  res-opd/res_opd_dataset.py
     data.custom_cls.name:  ResOPDDataset
     data.student_px:       224    (student resolution, 0 = no degradation)
-    data.teacher_px:       0      (teacher resolution, 0 = use target_px as-is)
+    data.teacher_px:       0      (teacher resolution, 0 = gray/blank image with no visual info)
     data.target_px:        448    (target spatial dimension after up-scaling)
     data.degradation_mode: square / original
     data.student_ratio:    1.0    (only used when degradation_mode=original)
