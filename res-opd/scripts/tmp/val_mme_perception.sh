@@ -12,8 +12,12 @@ set -euo pipefail
 #   MME_JSON=/path/to/mme_perception.json \
 #   bash res-opd/scripts/tmp/val_mme_perception.sh <merged_checkpoint_path> [version_tag]
 #
+# Usage with HuggingFace lmms-lab/MME parquet:
+#   MME_HF_ROOT=/home/liuyanlin.lyl/notebook/data/MME_hf \
+#   bash res-opd/scripts/tmp/val_mme_perception.sh <merged_checkpoint_path> [version_tag]
+#
 # Low-disk staging:
-#   MME_OSS_URI=oss://bucket/path/MME_Benchmark_release_version \
+#   MME_HF_OSS_URI=oss://bucket/path/MME_hf \
 #   bash res-opd/scripts/tmp/val_mme_perception.sh <merged_checkpoint_path> [version_tag]
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -28,12 +32,19 @@ BENCHMARK_DATA_ROOT="${BENCHMARK_DATA_ROOT:-/home/liuyanlin.lyl/notebook/data}"
 BENCHMARK_OSS_BASE="${BENCHMARK_OSS_BASE:-}"
 MME_ROOT="${MME_ROOT:-${BENCHMARK_DATA_ROOT}/MME_Benchmark_release_version}"
 MME_OSS_URI="${MME_OSS_URI:-${BENCHMARK_OSS_BASE:+${BENCHMARK_OSS_BASE%/}/MME_Benchmark_release_version}}"
+MME_HF_ROOT="${MME_HF_ROOT:-${BENCHMARK_DATA_ROOT}/MME_hf}"
+MME_HF_OSS_URI="${MME_HF_OSS_URI:-${BENCHMARK_OSS_BASE:+${BENCHMARK_OSS_BASE%/}/MME_hf}}"
+MME_HF_DATASET="${MME_HF_DATASET:-lmms-lab/MME}"
+MME_HF_SPLIT="${MME_HF_SPLIT:-test}"
 MME_MODELSCOPE_ID="${MME_MODELSCOPE_ID:-}"
 KEEP_BENCHMARK_DATA="${KEEP_BENCHMARK_DATA:-False}"
 MME_CATEGORIES="${MME_CATEGORIES:-existence,count,position,color}"
 MME_MAX_SAMPLES="${MME_MAX_SAMPLES:-0}"
 MME_PARALLEL_WORKERS="${MME_PARALLEL_WORKERS:-64}"
 STAGED_DATASET=0
+STAGED_DATASET_ROOT=""
+MME_SOURCE_KIND=""
+CONVERTED_MME_JSON=""
 
 CKPT_ROOT="$MODEL_PATH"
 STEP_TAG=""
@@ -71,29 +82,81 @@ stage_from_modelscope() {
     modelscope download --dataset "$dataset_id" --local_dir "$local_dir"
 }
 
+stage_from_huggingface() {
+    local dataset_id="$1"
+    local local_dir="$2"
+    if [[ -z "$dataset_id" ]]; then
+        return 1
+    fi
+    if ! command -v huggingface-cli >/dev/null 2>&1; then
+        echo "huggingface-cli not found; skipping HF download." >&2
+        return 1
+    fi
+    echo "Staging classic MME from HuggingFace dataset: ${dataset_id} -> ${local_dir}"
+    mkdir -p "$local_dir"
+    huggingface-cli download "$dataset_id" --repo-type dataset --local-dir "$local_dir"
+}
+
+has_parquet_data() {
+    local local_dir="$1"
+    find "$local_dir" -type f -name '*.parquet' 2>/dev/null | grep -q .
+}
+
 ensure_mme_data() {
     if [[ -n "${MME_JSON:-}" ]]; then
         if [[ -f "$MME_JSON" ]]; then
+            MME_SOURCE_KIND="json"
             return
         fi
         echo "Error: MME_JSON does not exist: $MME_JSON" >&2
         exit 1
     fi
 
-    local first_category="${MME_CATEGORIES%%,*}"
-    if [[ -d "${MME_ROOT}/${first_category}" ]]; then
+    if has_parquet_data "$MME_HF_ROOT"; then
+        MME_SOURCE_KIND="hf_root"
         return
     fi
-    if stage_from_oss "$MME_OSS_URI" "$MME_ROOT"; then
+
+    local first_category="${MME_CATEGORIES%%,*}"
+    if [[ -d "${MME_ROOT}/${first_category}" ]]; then
+        MME_SOURCE_KIND="official_root"
+        return
+    fi
+    if stage_from_oss "$MME_HF_OSS_URI" "$MME_HF_ROOT"; then
         STAGED_DATASET=1
+        STAGED_DATASET_ROOT="$MME_HF_ROOT"
+        MME_SOURCE_KIND="hf_root"
+    elif stage_from_huggingface "$MME_HF_DATASET" "$MME_HF_ROOT"; then
+        STAGED_DATASET=1
+        STAGED_DATASET_ROOT="$MME_HF_ROOT"
+        MME_SOURCE_KIND="hf_root"
+    elif stage_from_oss "$MME_OSS_URI" "$MME_ROOT"; then
+        STAGED_DATASET=1
+        STAGED_DATASET_ROOT="$MME_ROOT"
+        MME_SOURCE_KIND="official_root"
     elif stage_from_modelscope "$MME_MODELSCOPE_ID" "$MME_ROOT"; then
         STAGED_DATASET=1
+        STAGED_DATASET_ROOT="$MME_ROOT"
+        MME_SOURCE_KIND="official_root"
     fi
-    if [[ ! -d "${MME_ROOT}/${first_category}" ]]; then
-        echo "Error: classic MME data not found at ${MME_ROOT}." >&2
-        echo "Set MME_ROOT, or set MME_OSS_URI, or set MME_MODELSCOPE_ID." >&2
+
+    if [[ "$MME_SOURCE_KIND" == "hf_root" ]]; then
+        if ! has_parquet_data "$MME_HF_ROOT"; then
+            echo "Error: HF MME parquet data not found at ${MME_HF_ROOT}." >&2
+            MME_SOURCE_KIND=""
+        fi
+    fi
+    if [[ "$MME_SOURCE_KIND" == "official_root" ]]; then
+        if [[ ! -d "${MME_ROOT}/${first_category}" ]]; then
+            echo "Error: classic MME official-root data not found at ${MME_ROOT}." >&2
+            MME_SOURCE_KIND=""
+        fi
+    fi
+    if [[ -z "$MME_SOURCE_KIND" ]]; then
+        echo "Error: classic MME data not found." >&2
+        echo "Set MME_JSON, MME_HF_ROOT, MME_HF_OSS_URI, MME_ROOT, MME_OSS_URI, or MME_MODELSCOPE_ID." >&2
         echo "After manual download, you can upload with:" >&2
-        echo "  ossutil cp -r ${MME_ROOT}/ oss://<bucket>/<path>/MME_Benchmark_release_version/ -f" >&2
+        echo "  ossutil cp -r ${MME_HF_ROOT}/ oss://<bucket>/<path>/MME_hf/ -f" >&2
         cleanup_dataset
         exit 1
     fi
@@ -101,8 +164,8 @@ ensure_mme_data() {
 
 cleanup_dataset() {
     if [[ "$STAGED_DATASET" -eq 1 && "$KEEP_BENCHMARK_DATA" != "True" && "$KEEP_BENCHMARK_DATA" != "true" ]]; then
-        echo "[cleanup] Removing staged MME data: $MME_ROOT"
-        rm -rf "$MME_ROOT"
+        echo "[cleanup] Removing staged MME data: $STAGED_DATASET_ROOT"
+        rm -rf "$STAGED_DATASET_ROOT"
     fi
 }
 
@@ -118,6 +181,9 @@ echo "Model:      $MODEL_PATH"
 echo "Categories: $MME_CATEGORIES"
 if [[ -n "${MME_JSON:-}" ]]; then
     echo "MME JSON:   $MME_JSON"
+elif [[ "$MME_SOURCE_KIND" == "hf_root" ]]; then
+    echo "MME HF:     $MME_HF_ROOT"
+    echo "MME HF OSS: ${MME_HF_OSS_URI:-<none>}"
 else
     echo "MME root:   $MME_ROOT"
     echo "MME OSS:    ${MME_OSS_URI:-<none>}"
@@ -156,12 +222,22 @@ for i in $(seq 1 300); do
 done
 
 source_args=()
-if [[ -n "${MME_JSON:-}" ]]; then
+if [[ "$MME_SOURCE_KIND" == "json" ]]; then
     source_args+=(--mme-json "$MME_JSON")
-elif [[ -n "${MME_ROOT:-}" ]]; then
+elif [[ "$MME_SOURCE_KIND" == "hf_root" ]]; then
+    CONVERT_DIR="${OUTPUT_DIR}/mme_hf_converted"
+    CONVERTED_MME_JSON="${CONVERT_DIR}/mme_perception.json"
+    "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/convert_mme_hf_to_json.py" \
+        --source "$MME_HF_ROOT" \
+        --split "$MME_HF_SPLIT" \
+        --categories "$MME_CATEGORIES" \
+        --output-json "$CONVERTED_MME_JSON" \
+        --image-dir "${CONVERT_DIR}/images"
+    source_args+=(--mme-json "$CONVERTED_MME_JSON")
+elif [[ "$MME_SOURCE_KIND" == "official_root" ]]; then
     source_args+=(--mme-root "$MME_ROOT" --categories "$MME_CATEGORIES")
 else
-    echo "Error: set MME_ROOT for official MME data or MME_JSON for converted data." >&2
+    echo "Error: unsupported MME source kind: $MME_SOURCE_KIND" >&2
     exit 1
 fi
 

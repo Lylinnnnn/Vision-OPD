@@ -105,17 +105,38 @@ MME_ROOT=/path/to/MME_Benchmark_release_version \
 bash res-opd/scripts/tmp/val_mme_perception.sh <merged_checkpoint_path> latest
 ```
 
-For low-disk machines, stage classic MME from OSS into
-`/home/liuyanlin.lyl/notebook/data/MME_Benchmark_release_version` only for
-the current run:
+The recommended source is the HuggingFace parquet dataset
+`lmms-lab/MME`. The script can read that layout directly:
 
 ```bash
-MME_OSS_URI=oss://<bucket>/<path>/MME_Benchmark_release_version \
+MME_HF_ROOT=/home/liuyanlin.lyl/notebook/data/MME_hf \
 bash res-opd/scripts/tmp/val_mme_perception.sh <merged_checkpoint_path> latest
 ```
 
-If you already have converted JSON/JSONL with `image`, `question`, `answer`,
-and `category` fields:
+For low-disk machines, stage the HF parquet dataset from OSS into
+`/home/liuyanlin.lyl/notebook/data/MME_hf` only for the current run:
+
+```bash
+MME_HF_OSS_URI=oss://<bucket>/<path>/MME_hf \
+bash res-opd/scripts/tmp/val_mme_perception.sh <merged_checkpoint_path> latest
+```
+
+If no local/OSS data is present, the script attempts:
+
+```bash
+huggingface-cli download lmms-lab/MME --repo-type dataset \
+  --local-dir /home/liuyanlin.lyl/notebook/data/MME_hf
+```
+
+The older official-release layout is still supported:
+
+```bash
+MME_ROOT=/path/to/MME_Benchmark_release_version \
+bash res-opd/scripts/tmp/val_mme_perception.sh <merged_checkpoint_path> latest
+```
+
+Converted JSON/JSONL with `image`, `question`, `answer`, and `category`
+fields is also supported:
 
 ```bash
 MME_JSON=/path/to/mme_perception.json \
@@ -142,7 +163,7 @@ Expected OSS layout:
 
 ```text
 oss://<bucket>/<path>/benchmarks/AMBER/
-oss://<bucket>/<path>/benchmarks/MME_Benchmark_release_version/
+oss://<bucket>/<path>/benchmarks/MME_hf/
 ```
 
 After a manual first download, upload with:
@@ -150,8 +171,8 @@ After a manual first download, upload with:
 ```bash
 ossutil cp -r /home/liuyanlin.lyl/notebook/data/AMBER/ \
   oss://<bucket>/<path>/benchmarks/AMBER/ -f
-ossutil cp -r /home/liuyanlin.lyl/notebook/data/MME_Benchmark_release_version/ \
-  oss://<bucket>/<path>/benchmarks/MME_Benchmark_release_version/ -f
+ossutil cp -r /home/liuyanlin.lyl/notebook/data/MME_hf/ \
+  oss://<bucket>/<path>/benchmarks/MME_hf/ -f
 ```
 
 ModelScope fallback is configurable but intentionally not hard-coded:

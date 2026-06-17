@@ -5,15 +5,12 @@ import argparse
 import base64
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import io
 import json
 import mimetypes
 import os
 from pathlib import Path
 import threading
 import time
-
-from PIL import Image
 
 
 PERCEPTION_TASKS = {
@@ -248,7 +245,7 @@ def main():
     parser.add_argument(
         "--categories",
         default="existence,count,position,color",
-        help="Comma-separated MME categories when --mme-root is used.",
+        help="Comma-separated MME categories.",
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--max-new-tokens", type=int, default=16)
@@ -256,6 +253,9 @@ def main():
     parser.add_argument("--parallel-workers", type=int, default=64)
     parser.add_argument("--max-retries", type=int, default=3)
     args = parser.parse_args()
+
+    out_dir = args.output_dir / "mme"
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     if args.mme_json:
         rows = load_json_or_jsonl(args.mme_json)
@@ -268,8 +268,6 @@ def main():
     if args.max_samples > 0:
         samples = samples[: args.max_samples]
 
-    out_dir = args.output_dir / "mme"
-    out_dir.mkdir(parents=True, exist_ok=True)
     results_path = out_dir / "eval_results.jsonl"
     metrics_path = out_dir / "mme_metrics.json"
 
