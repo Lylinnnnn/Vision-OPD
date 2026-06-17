@@ -19,6 +19,9 @@ set -eo pipefail
 #
 # All Vision-OPD features preserved. Additional knobs for resolution distillation:
 #   - STUDENT_PX:          student resolution (0 = no degradation)
+#   - DEGRADATION_MODE:    square / original
+#   - STUDENT_RATIO:       original-mode student degradation ratio
+#   - TEACHER_RATIO:       original-mode teacher degradation ratio
 #   - TARGET_PX:           target resolution for upsampling
 #   - TEACHER_MODE:        ema / frozen / coevolving
 #   - ALPHA:               loss interpolation (0.5=JSD, 1.0=RKL, 0.0=FKL)
@@ -39,6 +42,9 @@ set -eo pipefail
 #
 #   # No degradation (student sees original images, only teacher signal)
 #   STUDENT_PX=0 bash res-opd/scripts/run_res_opd.sh
+#
+#   # Original-size degradation: teacher sees 50% down/up sampled original image
+#   DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.5 bash res-opd/scripts/run_res_opd.sh
 # =============================================================================
 
 # =============================================================================
@@ -55,6 +61,18 @@ MODEL_PATH="${MODEL_PATH:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Ins
 STUDENT_PX="${STUDENT_PX:-224}"       # 0 = no degradation
 TARGET_PX="${TARGET_PX:-448}"
 TEACHER_PX="${TEACHER_PX:-448}"       # 0 = gray/blank image (no visual info), >=target_px = original image
+DEGRADATION_MODE="${DEGRADATION_MODE:-square}"  # square / original
+STUDENT_RATIO="${STUDENT_RATIO:-1.0}"           # original mode: 1.0 = original, 0.75/0.5/0.25 = down/up sample
+TEACHER_RATIO="${TEACHER_RATIO:-1.0}"           # original mode: 0 = gray/blank, 1.0 = original
+
+case "$DEGRADATION_MODE" in
+    square|original)
+        ;;
+    *)
+        echo "Error: Unknown DEGRADATION_MODE=$DEGRADATION_MODE (expected: square or original)" >&2
+        exit 1
+        ;;
+esac
 
 # --- Teacher mode ---
 # Options: ema (default), frozen, coevolving
@@ -128,7 +146,11 @@ EPOCH_TAG="e${TRAINER_TOTAL_EPOCHS}"
 if [[ -n "${EXPERIMENT_NAME:-}" ]]; then
     : # Use externally provided EXPERIMENT_NAME
 else
-    EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-s${STUDENT_PX}-t${TEACHER_PX}-a${ALPHA}-${TEACHER_MODE}-${EPOCH_TAG}"
+    if [[ "$DEGRADATION_MODE" == "original" ]]; then
+        EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-orig-sr${STUDENT_RATIO}-tr${TEACHER_RATIO}-a${ALPHA}-${TEACHER_MODE}-${EPOCH_TAG}"
+    else
+        EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-s${STUDENT_PX}-t${TEACHER_PX}-a${ALPHA}-${TEACHER_MODE}-${EPOCH_TAG}"
+    fi
 fi
 PROJECT_NAME="Res-OPD"
 TRAINER_DEFAULT_LOCAL_DIR="${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
@@ -191,9 +213,12 @@ echo "============================================================"
 echo " Res-OPD Training"
 echo "============================================================"
 echo "Model:            $MODEL_PATH"
+echo "Degradation mode: $DEGRADATION_MODE"
 echo "Student px:       $STUDENT_PX (0=no degradation)"
-echo "Teacher px:       $TEACHER_PX (0=use target_px as-is)"
+echo "Teacher px:       $TEACHER_PX (0=gray/blank visual input)"
 echo "Target px:        $TARGET_PX"
+echo "Student ratio:    $STUDENT_RATIO (original mode)"
+echo "Teacher ratio:    $TEACHER_RATIO (original mode)"
 echo "Teacher mode:     $TEACHER_MODE (src=$TEACHER_MODEL_SOURCE, reg=$TEACHER_REGULARIZATION, rate=$TEACHER_UPDATE_RATE)"
 echo "Alpha (loss):     $ALPHA (0.5=JSD, 1.0=RKL, 0.0=FKL)"
 echo "Rollout N:        $ROLLOUT_N (1=pure KD, >1=GRPO+KD)"
@@ -228,6 +253,9 @@ PYTHON_BIN="/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3"
     data.student_px=$STUDENT_PX \
     data.teacher_px=$TEACHER_PX \
     data.target_px=$TARGET_PX \
+    data.degradation_mode="$DEGRADATION_MODE" \
+    data.student_ratio=$STUDENT_RATIO \
+    data.teacher_ratio=$TEACHER_RATIO \
     actor_rollout_ref.model.path=$MODEL_PATH \
     actor_rollout_ref.model.trust_remote_code=True \
     actor_rollout_ref.model.use_remove_padding=True \

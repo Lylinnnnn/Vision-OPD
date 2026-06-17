@@ -3,11 +3,15 @@ ResOPDDataset: Custom RLHFDataset with online resolution degradation.
 
 Inherits from verl's RLHFDataset and overrides _build_messages to apply
 online image degradation for the student model. Teacher images from the
-``hires_images`` field are also optionally degraded when teacher_px is set
-below target_px, enabling full decoupling of student and teacher resolutions.
+``hires_images`` field are also optionally degraded when teacher_px or
+teacher_ratio is set, enabling full decoupling of student and teacher
+resolutions.
 
-Degradation pipeline: original → resize to {student,teacher}_px → resize
-back to target_px (Lanczos interpolation, matching pilot1).
+Default square degradation pipeline: original → resize to
+{student,teacher}_px → resize back to target_px.
+
+Original-ratio degradation pipeline: original → resize by
+{student,teacher}_ratio → resize back to the original width/height.
 
 Configuration (passed via data config in yaml or CLI):
     data.custom_cls.path:  res-opd/res_opd_dataset.py
@@ -15,6 +19,9 @@ Configuration (passed via data config in yaml or CLI):
     data.student_px:       224    (student resolution, 0 = no degradation)
     data.teacher_px:       0      (teacher resolution, 0 = use target_px as-is)
     data.target_px:        448    (target spatial dimension after up-scaling)
+    data.degradation_mode: square / original
+    data.student_ratio:    1.0    (only used when degradation_mode=original)
+    data.teacher_ratio:    1.0    (only used when degradation_mode=original)
 """
 
 import re
@@ -32,10 +39,10 @@ class ResOPDDataset(RLHFDataset):
     """RLHFDataset with online resolution degradation.
 
     Both student images (``image_key``) and teacher images
-    (``hires_images``) are degraded independently according to
-    ``student_px`` and ``teacher_px``.  When a *_px value is 0 or
-    >= target_px the corresponding image is simply resized to target_px
-    without quality loss.
+    (``hires_images``) are degraded independently. The legacy ``square``
+    mode uses ``student_px``/``teacher_px`` and returns target_px square
+    images. The ``original`` mode uses ``student_ratio``/``teacher_ratio``
+    and returns images at their original width/height.
     """
 
     def __init__(
@@ -51,27 +58,57 @@ class ResOPDDataset(RLHFDataset):
         self.student_px = config.get("student_px", 0)
         self.teacher_px = config.get("teacher_px", 0)
         self.target_px = config.get("target_px", 448)
+        self.degradation_mode = config.get("degradation_mode", "square")
+        self.student_ratio = float(config.get("student_ratio", 1.0))
+        self.teacher_ratio = float(config.get("teacher_ratio", 1.0))
+        if self.degradation_mode not in ("square", "original"):
+            raise ValueError(
+                "data.degradation_mode must be 'square' or 'original', "
+                f"got {self.degradation_mode!r}"
+            )
 
         print(
             f"[ResOPDDataset] student_px={self.student_px}, "
-            f"teacher_px={self.teacher_px}, target_px={self.target_px}"
+            f"teacher_px={self.teacher_px}, target_px={self.target_px}, "
+            f"degradation_mode={self.degradation_mode}, "
+            f"student_ratio={self.student_ratio}, "
+            f"teacher_ratio={self.teacher_ratio}"
         )
-        if self.student_px > 0:
+        if self.degradation_mode == "original":
             print(
-                f"  Student degradation: {self.student_px} → {self.target_px}"
+                "  Student degradation: original-size ratio "
+                f"{self.student_ratio}"
             )
-        if self.teacher_px == 0:
-            print(
-                f"  Teacher: gray/blank image (no visual information)"
-            )
-        elif self.teacher_px < self.target_px:
-            print(
-                f"  Teacher degradation: {self.teacher_px} → {self.target_px}"
-            )
+            if self.teacher_ratio <= 0:
+                print("  Teacher: gray/blank image (no visual information)")
+            else:
+                print(
+                    "  Teacher degradation: original-size ratio "
+                    f"{self.teacher_ratio}"
+                )
         else:
-            print(
-                f"  Teacher: original image at {self.target_px}px (no degradation)"
-            )
+            if self.student_px > 0:
+                print(
+                    f"  Student degradation: {self.student_px} → "
+                    f"{self.target_px}"
+                )
+            else:
+                print(
+                    f"  Student: original image at {self.target_px}px "
+                    "(square resize, no downsample)"
+                )
+            if self.teacher_px == 0:
+                print("  Teacher: gray/blank image (no visual information)")
+            elif self.teacher_px < self.target_px:
+                print(
+                    f"  Teacher degradation: {self.teacher_px} → "
+                    f"{self.target_px}"
+                )
+            else:
+                print(
+                    f"  Teacher: original image at {self.target_px}px "
+                    "(no degradation)"
+                )
 
     @staticmethod
     def _degrade(
@@ -84,6 +121,45 @@ class ResOPDDataset(RLHFDataset):
             return pil_image.resize((target_px, target_px), Image.LANCZOS)
         small = pil_image.resize((degrade_px, degrade_px), Image.LANCZOS)
         return small.resize((target_px, target_px), Image.LANCZOS)
+
+    @staticmethod
+    def _degrade_by_ratio(
+        pil_image: Image.Image,
+        ratio: float,
+    ) -> Image.Image:
+        """Resize by ``ratio`` then back to original width/height."""
+        width, height = pil_image.size
+        if ratio <= 0:
+            return Image.new("RGB", (width, height), color=(128, 128, 128))
+        if ratio >= 1.0:
+            return pil_image.copy()
+        small_size = (
+            max(1, int(round(width * ratio))),
+            max(1, int(round(height * ratio))),
+        )
+        small = pil_image.resize(small_size, Image.LANCZOS)
+        return small.resize((width, height), Image.LANCZOS)
+
+    def _degrade_student(self, pil_image: Image.Image) -> Image.Image:
+        if self.degradation_mode == "original":
+            return self._degrade_by_ratio(pil_image, self.student_ratio)
+        return self._degrade(pil_image, self.student_px, self.target_px)
+
+    def _degrade_teacher(self, pil_image: Image.Image) -> Image.Image:
+        if self.degradation_mode == "original":
+            return self._degrade_by_ratio(pil_image, self.teacher_ratio)
+        if self.teacher_px == 0:
+            return Image.new(
+                "RGB",
+                (self.target_px, self.target_px),
+                color=(128, 128, 128),
+            )
+        if self.teacher_px < self.target_px:
+            return self._degrade(pil_image, self.teacher_px, self.target_px)
+        return pil_image.resize(
+            (self.target_px, self.target_px),
+            Image.LANCZOS,
+        )
 
     def _load_image(self, image_entry) -> Image.Image:
         """Load a PIL image from various storage formats."""
@@ -126,25 +202,13 @@ class ResOPDDataset(RLHFDataset):
 
         # Degrade teacher images in-place (they stay in the row_dict and flow
         # into non_tensor_batch → teacher reprompt in ray_trainer)
-        # When teacher_px == 0: replace with gray image (no visual information)
-        # When 0 < teacher_px < target_px: degrade to teacher_px then upscale
-        # When teacher_px >= target_px: use original image at target_px
         teacher_key = "hires_images"
         teacher_images = example.get(teacher_key) or []
         if teacher_images:
             processed_teachers = []
             for entry in teacher_images:
                 pil = self._load_image(entry)
-                if self.teacher_px == 0:
-                    # Blank/gray image: no visual information for teacher
-                    gray = Image.new("RGB", (self.target_px, self.target_px), color=(128, 128, 128))
-                    processed_teachers.append(gray)
-                elif self.teacher_px < self.target_px:
-                    degraded = self._degrade(pil, self.teacher_px, self.target_px)
-                    processed_teachers.append(degraded)
-                else:
-                    # teacher_px >= target_px: use original at target resolution
-                    processed_teachers.append(pil.resize((self.target_px, self.target_px), Image.LANCZOS))
+                processed_teachers.append(self._degrade_teacher(pil))
             example[teacher_key] = processed_teachers
 
         image_offset, video_offset = 0, 0
@@ -169,9 +233,7 @@ class ResOPDDataset(RLHFDataset):
                         f"{len(images)}"
                     )
                     pil = self._load_image(images[image_offset])
-                    degraded = self._degrade(
-                        pil, self.student_px, self.target_px
-                    )
+                    degraded = self._degrade_student(pil)
                     content_list.append(
                         {"type": "image", "image": degraded}
                     )

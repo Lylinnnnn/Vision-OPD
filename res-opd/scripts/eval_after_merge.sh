@@ -56,6 +56,8 @@ MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [student_px] [version_tag]}"
 STUDENT_PX="${2:-0}"
 VERSION_TAG="${3:-latest}"
 EVAL_MODE="${4:-${EVAL_MODE:-chair}}"
+DEGRADATION_MODE="${DEGRADATION_MODE:-square}"
+STUDENT_RATIO="${STUDENT_RATIO:-1.0}"
 PORT="${VLLM_PORT:-8000}"
 MODEL_NAME="Res-OPD"
 TEST_JSON="${RES_OPD_ROOT}/data/test.json"
@@ -115,6 +117,10 @@ if [[ -f "$TRAIN_FILE" && -f "$TEST_FILE" ]]; then
 else
     DATASET_TAG="unknown_dataset"
 fi
+if [[ "$DEGRADATION_MODE" == "original" ]]; then
+    RATIO_TAG="${STUDENT_RATIO//./p}"
+    DATASET_TAG="${DATASET_TAG}_original_sr${RATIO_TAG}"
+fi
 OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${EXPERIMENT_NAME}/${DATASET_TAG}"
 
 if has_eval_task "$EVAL_MODE" "chair" && [ ! -f "$TEST_JSON" ]; then
@@ -127,7 +133,9 @@ echo "============================================================"
 echo " Res-OPD Evaluation"
 echo "============================================================"
 echo "Model:       $MODEL_PATH"
+echo "Deg mode:    $DEGRADATION_MODE"
 echo "Student px:  $STUDENT_PX (0 = original image)"
+echo "Student ratio: $STUDENT_RATIO (original mode)"
 echo "Eval mode:   $EVAL_MODE"
 if has_eval_task "$EVAL_MODE" "chair"; then
     echo "CHAIR data:  $TEST_JSON"
@@ -196,7 +204,9 @@ if has_eval_task "$EVAL_MODE" "chair"; then
         --model-name "$MODEL_NAME" \
         --test-json "$TEST_JSON" \
         --output-dir "$OUTPUT_DIR" \
-        --student-px "$STUDENT_PX"
+        --student-px "$STUDENT_PX" \
+        --degradation-mode "$DEGRADATION_MODE" \
+        --student-ratio "$STUDENT_RATIO"
 fi
 
 if has_eval_task "$EVAL_MODE" "pope"; then
@@ -217,6 +227,8 @@ if has_eval_task "$EVAL_MODE" "pope"; then
         --vision-opd-root "$VISION_OPD_ROOT" \
         --output-dir "$OUTPUT_DIR" \
         --student-px "$STUDENT_PX" \
+        --degradation-mode "$DEGRADATION_MODE" \
+        --student-ratio "$STUDENT_RATIO" \
         --max-new-tokens "$POPE_MAX_NEW_TOKENS" \
         --max-samples "$POPE_MAX_SAMPLES" \
         --parallel-workers "$POPE_PARALLEL_WORKERS" \

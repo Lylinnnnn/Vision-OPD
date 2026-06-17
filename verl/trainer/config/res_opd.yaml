@@ -62,8 +62,13 @@ data:
     name: ResOPDDataset
   # Resolution params consumed by ResOPDDataset
   student_px: 224         # 0 = no degradation (student sees original)
-  teacher_px: 0           # 0 = use target_px as-is (no teacher degradation)
+  teacher_px: 0           # 0 = gray/blank teacher image
   target_px: 448
+  # square: resize to *_px then back to target_px x target_px
+  # original: resize by *_ratio then back to original width/height
+  degradation_mode: square
+  student_ratio: 1.0
+  teacher_ratio: 1.0
 
 reward_model:
   enable: False

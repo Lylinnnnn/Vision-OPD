@@ -85,6 +85,10 @@ def parse_args():
                         help="Student resolution for eval (-1 = auto-detect from ckpt name, 0 = original image)")
     parser.add_argument("--target-px", type=int, default=448,
                         help="Target resolution for resizing (only used with --student-px > 0)")
+    parser.add_argument("--degradation-mode", choices=["square", "original"], default="square",
+                        help="square: student_px -> target_px square; original: ratio down/up at original size")
+    parser.add_argument("--student-ratio", type=float, default=1.0,
+                        help="Original-mode degradation ratio (1.0 = original, 0.75/0.5/0.25 = down/up sample)")
     parser.add_argument("--max-new-tokens", type=int, default=384)
     parser.add_argument("--max-samples", type=int, default=0, help="Max test samples (0 = all)")
     parser.add_argument("--parallel-workers", type=int, default=8,
@@ -100,6 +104,30 @@ def make_degraded_image(image_path, student_px, target_px):
     small = img.resize((student_px, student_px), Image.LANCZOS)
     degraded = small.resize((target_px, target_px), Image.LANCZOS)
     return degraded
+
+
+def make_ratio_degraded_image(image_path, ratio):
+    """Degrade original image by ratio, then restore original width/height."""
+    img = Image.open(image_path).convert("RGB")
+    width, height = img.size
+    if ratio <= 0:
+        return Image.new("RGB", (width, height), color=(128, 128, 128))
+    if ratio >= 1.0:
+        return img
+    small_size = (
+        max(1, int(round(width * ratio))),
+        max(1, int(round(height * ratio))),
+    )
+    small = img.resize(small_size, Image.LANCZOS)
+    return small.resize((width, height), Image.LANCZOS)
+
+
+def load_eval_image(image_path, degradation_mode, student_px, target_px, student_ratio):
+    if degradation_mode == "original":
+        return make_ratio_degraded_image(image_path, student_ratio)
+    if student_px > 0:
+        return make_degraded_image(image_path, student_px, target_px)
+    return Image.open(image_path).convert("RGB")
 
 
 def load_existing_results(eval_results_path):
@@ -125,7 +153,8 @@ def load_existing_results(eval_results_path):
 
 
 def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
-                     max_new_tokens, student_px, target_px, max_retries):
+                     max_new_tokens, student_px, target_px, max_retries,
+                     degradation_mode="square", student_ratio=1.0):
     """Generate a single caption via API with retry logic. Thread-safe."""
     import base64
 
@@ -136,10 +165,16 @@ def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
         thread_local.client = client
 
     # Prepare image data
-    if student_px > 0:
-        degraded = make_degraded_image(image_path, student_px, target_px)
+    if degradation_mode == "original" or student_px > 0:
+        image = load_eval_image(
+            image_path,
+            degradation_mode,
+            student_px,
+            target_px,
+            student_ratio,
+        )
         buf = io.BytesIO()
-        degraded.save(buf, format="JPEG")
+        image.save(buf, format="JPEG")
         image_data = base64.b64encode(buf.getvalue()).decode("utf-8")
     else:
         with open(image_path, "rb") as f:
@@ -169,15 +204,19 @@ def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
 
 
 def generate_via_model(model, processor, image_path, prompt, max_new_tokens,
-                       device, student_px=0, target_px=448):
+                       device, student_px=0, target_px=448,
+                       degradation_mode="square", student_ratio=1.0):
     """Generate caption via direct model inference (sequential only)."""
     import torch
     from qwen_vl_utils import process_vision_info
 
-    if student_px > 0:
-        img = make_degraded_image(image_path, student_px, target_px)
-    else:
-        img = Image.open(image_path).convert("RGB")
+    img = load_eval_image(
+        image_path,
+        degradation_mode,
+        student_px,
+        target_px,
+        student_ratio,
+    )
 
     messages = [{"role": "user", "content": [
         {"type": "image", "image": img},
@@ -203,8 +242,13 @@ def main():
     args = parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # --- Resolve student_px ---
-    if args.student_px < 0:
+    # --- Resolve student degradation ---
+    if args.degradation_mode == "original":
+        print(
+            f"degradation_mode=original: student_ratio={args.student_ratio} "
+            "(down/up sample at original width/height)"
+        )
+    elif args.student_px < 0:
         # Auto-detect from model path or output dir
         detected = None
         if args.model_path:
@@ -271,6 +315,7 @@ def main():
                     thread_local, args.api_base, args.model_name,
                     image_path, PROMPT_TEXT, args.max_new_tokens,
                     args.student_px, args.target_px, args.max_retries,
+                    args.degradation_mode, args.student_ratio,
                 )
                 return {
                     "image_id": sample["image_id"],
@@ -309,6 +354,7 @@ def main():
                         model, processor, image_path, PROMPT_TEXT,
                         args.max_new_tokens, device,
                         args.student_px, args.target_px,
+                        args.degradation_mode, args.student_ratio,
                     )
                     result = {
                         "image_id": sample["image_id"],
@@ -365,6 +411,8 @@ def main():
     metrics["num_samples"] = len(results_list)
     metrics["student_px"] = args.student_px
     metrics["target_px"] = args.target_px
+    metrics["degradation_mode"] = args.degradation_mode
+    metrics["student_ratio"] = args.student_ratio
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
     print(f"Saved metrics to {metrics_path}")

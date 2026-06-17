@@ -288,8 +288,32 @@ def degrade_image(image_path: str, student_px: int, target_px: int) -> Image.Ima
     return small.resize((target_px, target_px), Image.LANCZOS)
 
 
-def image_to_data_uri(image_path: str, student_px: int, target_px: int) -> str:
-    image = degrade_image(image_path, student_px, target_px)
+def degrade_image_by_ratio(image_path: str, ratio: float) -> Image.Image:
+    image = Image.open(image_path).convert("RGB")
+    width, height = image.size
+    if ratio <= 0:
+        return Image.new("RGB", (width, height), color=(128, 128, 128))
+    if ratio >= 1.0:
+        return image
+    small_size = (
+        max(1, int(round(width * ratio))),
+        max(1, int(round(height * ratio))),
+    )
+    small = image.resize(small_size, Image.LANCZOS)
+    return small.resize((width, height), Image.LANCZOS)
+
+
+def image_to_data_uri(
+    image_path: str,
+    student_px: int,
+    target_px: int,
+    degradation_mode: str,
+    student_ratio: float,
+) -> str:
+    if degradation_mode == "original":
+        image = degrade_image_by_ratio(image_path, student_ratio)
+    else:
+        image = degrade_image(image_path, student_px, target_px)
     buf = io.BytesIO()
     image.save(buf, format="JPEG")
     b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -401,7 +425,13 @@ def run_single_benchmark(args, benchmark: str) -> dict:
         if not image_path or not os.path.exists(image_path):
             raise FileNotFoundError(f"Image not found: {image_path}")
         query = build_query(item, args.prompt_suffix, args.use_prepared_query)
-        image_uri = image_to_data_uri(image_path, args.student_px, args.target_px)
+        image_uri = image_to_data_uri(
+            image_path,
+            args.student_px,
+            args.target_px,
+            args.degradation_mode,
+            args.student_ratio,
+        )
         messages = [
             {
                 "role": "user",
@@ -436,6 +466,8 @@ def run_single_benchmark(args, benchmark: str) -> dict:
         record["correct"] = record["pred_answer"] == str(record.get("response", "")).strip().lower()
         record["student_px"] = args.student_px
         record["target_px"] = args.target_px
+        record["degradation_mode"] = args.degradation_mode
+        record["student_ratio"] = args.student_ratio
         return record
 
     if todo:
@@ -471,6 +503,8 @@ def run_single_benchmark(args, benchmark: str) -> dict:
             "pope_source": args.pope_source,
             "student_px": args.student_px,
             "target_px": args.target_px,
+            "degradation_mode": args.degradation_mode,
+            "student_ratio": args.student_ratio,
             "questions_per_label": args.questions_per_label,
             "extractor": "official_pope_first_sentence_no_not_rule",
             "source_path": source_path,
@@ -514,6 +548,8 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=Path("./eval_results"))
     parser.add_argument("--student-px", type=int, default=0)
     parser.add_argument("--target-px", type=int, default=448)
+    parser.add_argument("--degradation-mode", choices=["square", "original"], default="square")
+    parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--max-new-tokens", type=int, default=16)
     parser.add_argument("--max-samples", type=int, default=0)
     parser.add_argument("--parallel-workers", type=int, default=64)
