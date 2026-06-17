@@ -71,21 +71,52 @@ stage_from_modelscope() {
     modelscope download --dataset "$dataset_id" --local_dir "$local_dir"
 }
 
+amber_image_present() {
+    if [[ -n "${AMBER_IMAGE_ROOT:-}" && -f "${AMBER_IMAGE_ROOT}/AMBER_1.jpg" ]]; then
+        return 0
+    fi
+    local candidates=(
+        "${AMBER_ROOT}/AMBER_1.jpg"
+        "${AMBER_ROOT}/images/AMBER_1.jpg"
+        "${AMBER_ROOT}/image/AMBER_1.jpg"
+        "${AMBER_ROOT}/data/images/AMBER_1.jpg"
+    )
+    for candidate in "${candidates[@]}"; do
+        if [[ -f "$candidate" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 ensure_amber_data() {
     local query_file="${AMBER_ROOT}/data/query/query_all.json"
-    if [[ -f "$query_file" ]]; then
+    if [[ -f "$query_file" ]] && amber_image_present; then
         return
     fi
-    if stage_from_oss "$AMBER_OSS_URI" "$AMBER_ROOT"; then
-        STAGED_DATASET=1
-    elif stage_from_modelscope "$AMBER_MODELSCOPE_ID" "$AMBER_ROOT"; then
-        STAGED_DATASET=1
+    if [[ ! -f "$query_file" || ! amber_image_present ]]; then
+        if stage_from_oss "$AMBER_OSS_URI" "$AMBER_ROOT"; then
+            STAGED_DATASET=1
+        elif stage_from_modelscope "$AMBER_MODELSCOPE_ID" "$AMBER_ROOT"; then
+            STAGED_DATASET=1
+        fi
     fi
     if [[ ! -f "$query_file" ]]; then
-        echo "Error: AMBER data not found at ${AMBER_ROOT}." >&2
+        echo "Error: AMBER metadata not found at ${AMBER_ROOT}/data." >&2
         echo "Set AMBER_ROOT, or set AMBER_OSS_URI, or set AMBER_MODELSCOPE_ID." >&2
         echo "After manual download, you can upload with:" >&2
         echo "  ossutil cp -r ${AMBER_ROOT}/ oss://<bucket>/<path>/AMBER/ -f" >&2
+        cleanup_dataset
+        exit 1
+    fi
+    if ! amber_image_present; then
+        echo "Error: AMBER image AMBER_1.jpg not found." >&2
+        echo "Expected one of:" >&2
+        echo "  ${AMBER_ROOT}/AMBER_1.jpg" >&2
+        echo "  ${AMBER_ROOT}/images/AMBER_1.jpg" >&2
+        echo "  ${AMBER_ROOT}/image/AMBER_1.jpg" >&2
+        echo "  ${AMBER_ROOT}/data/images/AMBER_1.jpg" >&2
+        echo "Or set AMBER_IMAGE_ROOT to a directory containing AMBER_1.jpg." >&2
         cleanup_dataset
         exit 1
     fi

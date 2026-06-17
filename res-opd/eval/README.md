@@ -88,6 +88,13 @@ Useful knobs:
 - `AMBER_MAX_SAMPLES=100`: quick smoke test.
 - `KEEP_BENCHMARK_DATA=True`: keep staged data after eval; default removes data staged by the script.
 
+The AMBER image layout downloaded from the official link is supported directly:
+
+```text
+/home/liuyanlin.lyl/notebook/data/AMBER/AMBER_1.jpg
+/home/liuyanlin.lyl/notebook/data/AMBER/data/query/query_all.json
+```
+
 ### Classic MME Perception
 
 This is classic MME, not MME-RealWorld. The default categories are:
@@ -148,6 +155,12 @@ Outputs for both AMBER and MME are placed under:
 ```text
 res-opd/eval_results/<version>/<experiment>_<step>/final_hallucination/
 ```
+
+When `MME_HF_ROOT` or `MME_HF_OSS_URI` is used, the script first converts the
+HF parquet dataset to the existing `MME_JSON` format, then runs the normal MME
+evaluator. The converted images/JSON are written under
+`/home/liuyanlin.lyl/notebook/data/MME_hf_converted/` and removed after eval
+unless `KEEP_BENCHMARK_DATA=True`.
 
 ### OSS Dataset Cache
 

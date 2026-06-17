@@ -43,6 +43,7 @@ MME_MAX_SAMPLES="${MME_MAX_SAMPLES:-0}"
 MME_PARALLEL_WORKERS="${MME_PARALLEL_WORKERS:-64}"
 STAGED_DATASET=0
 STAGED_DATASET_ROOT=""
+STAGED_CONVERT_DIR=""
 MME_SOURCE_KIND=""
 CONVERTED_MME_JSON=""
 
@@ -163,6 +164,10 @@ ensure_mme_data() {
 }
 
 cleanup_dataset() {
+    if [[ -n "$STAGED_CONVERT_DIR" && "$KEEP_BENCHMARK_DATA" != "True" && "$KEEP_BENCHMARK_DATA" != "true" ]]; then
+        echo "[cleanup] Removing converted MME data: $STAGED_CONVERT_DIR"
+        rm -rf "$STAGED_CONVERT_DIR"
+    fi
     if [[ "$STAGED_DATASET" -eq 1 && "$KEEP_BENCHMARK_DATA" != "True" && "$KEEP_BENCHMARK_DATA" != "true" ]]; then
         echo "[cleanup] Removing staged MME data: $STAGED_DATASET_ROOT"
         rm -rf "$STAGED_DATASET_ROOT"
@@ -225,7 +230,9 @@ source_args=()
 if [[ "$MME_SOURCE_KIND" == "json" ]]; then
     source_args+=(--mme-json "$MME_JSON")
 elif [[ "$MME_SOURCE_KIND" == "hf_root" ]]; then
-    CONVERT_DIR="${OUTPUT_DIR}/mme_hf_converted"
+    SAFE_EXP_NAME="$(echo "${EXPERIMENT_NAME}_${VERSION_TAG}" | tr -c 'A-Za-z0-9_.-' '_')"
+    CONVERT_DIR="${BENCHMARK_DATA_ROOT}/MME_hf_converted/${SAFE_EXP_NAME}"
+    STAGED_CONVERT_DIR="$CONVERT_DIR"
     CONVERTED_MME_JSON="${CONVERT_DIR}/mme_perception.json"
     "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/convert_mme_hf_to_json.py" \
         --source "$MME_HF_ROOT" \
