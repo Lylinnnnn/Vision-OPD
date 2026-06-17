@@ -9,7 +9,7 @@ set -euo pipefail
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 # =============================================================================
-# Evaluate a merged Res-OPD checkpoint using CHAIR and/or POPE metrics
+# Evaluate a merged Res-OPD checkpoint using CHAIR, POPE, and optional Vision-OPD benchmarks
 #
 # Steps:
 #   1. Start vLLM server with the merged checkpoint
@@ -20,10 +20,12 @@ set -euo pipefail
 #   bash scripts/eval_after_merge.sh <merged_checkpoint_path> [student_px] [version_tag] [eval_mode]
 #
 # eval_mode:
-#   chair       Run CHAIR only (default; preserves the original behavior)
-#   pope        Run POPE only
-#   chair,pope  Run both
-#   all         Run both
+#   chair              Run CHAIR only (default; preserves the original behavior)
+#   pope               Run POPE only
+#   frequent           Run CHAIR + POPE
+#   vision             Run Vision-OPD eval/run_eval.sh benchmarks
+#   chair,pope,vision  Run selected tasks
+#   all                Run CHAIR + POPE + Vision-OPD benchmarks
 #
 # Output directory structure (unified naming):
 #   res-opd/eval_results/<version_tag>/<experiment_name>_<step_tag>/<dataset_tag>/
@@ -70,12 +72,21 @@ POPE_PARALLEL_WORKERS="${POPE_PARALLEL_WORKERS:-64}"
 POPE_MAX_NEW_TOKENS="${POPE_MAX_NEW_TOKENS:-16}"
 POPE_MAX_SAMPLES="${POPE_MAX_SAMPLES:-0}"
 POPE_USE_PREPARED_QUERY="${POPE_USE_PREPARED_QUERY:-False}"
+VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar}"
+VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
+VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
+VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
+VISION_ENABLE_THINKING="${VISION_ENABLE_THINKING:-}"
+RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-False}"
 
 normalize_eval_mode() {
     local mode
     mode="$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
-    if [[ "$mode" == "all" ]]; then
+    if [[ "$mode" == "frequent" ]]; then
         mode="chair,pope"
+    fi
+    if [[ "$mode" == "all" ]]; then
+        mode="chair,pope,vision"
     fi
     echo "$mode"
 }
@@ -87,8 +98,8 @@ has_eval_task() {
 }
 
 EVAL_MODE="$(normalize_eval_mode "$EVAL_MODE")"
-if ! has_eval_task "$EVAL_MODE" "chair" && ! has_eval_task "$EVAL_MODE" "pope"; then
-    echo "Error: eval_mode must be one of chair, pope, chair,pope, all. Got: $EVAL_MODE" >&2
+if ! has_eval_task "$EVAL_MODE" "chair" && ! has_eval_task "$EVAL_MODE" "pope" && ! has_eval_task "$EVAL_MODE" "vision"; then
+    echo "Error: eval_mode must include chair, pope, vision, frequent, or all. Got: $EVAL_MODE" >&2
     exit 1
 fi
 
@@ -144,6 +155,9 @@ if has_eval_task "$EVAL_MODE" "pope"; then
     echo "POPE:        $POPE_BENCHMARK"
     echo "POPE source: $POPE_SOURCE"
 fi
+if has_eval_task "$EVAL_MODE" "vision"; then
+    echo "Vision-OPD:  $VISION_BENCHMARK"
+fi
 echo "Output:      $OUTPUT_DIR"
 echo "============================================================"
 
@@ -197,16 +211,20 @@ fi
 # --- Step 2: Run evaluation ---
 echo ""
 echo "[2/3] Running selected evaluation(s) ..."
+EVAL_FAILURES=0
 if has_eval_task "$EVAL_MODE" "chair"; then
     echo "  Running CHAIR ..."
-    "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/eval_chair.py" \
+    if ! "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/eval_chair.py" \
         --api-base "http://localhost:$PORT/v1/" \
         --model-name "$MODEL_NAME" \
         --test-json "$TEST_JSON" \
         --output-dir "$OUTPUT_DIR" \
         --student-px "$STUDENT_PX" \
         --degradation-mode "$DEGRADATION_MODE" \
-        --student-ratio "$STUDENT_RATIO"
+        --student-ratio "$STUDENT_RATIO"; then
+        echo "  WARNING: CHAIR failed; keeping any completed outputs." >&2
+        EVAL_FAILURES=$((EVAL_FAILURES + 1))
+    fi
 fi
 
 if has_eval_task "$EVAL_MODE" "pope"; then
@@ -215,7 +233,7 @@ if has_eval_task "$EVAL_MODE" "pope"; then
     if [[ "$POPE_USE_PREPARED_QUERY" == "True" || "$POPE_USE_PREPARED_QUERY" == "true" ]]; then
         pope_extra_args+=(--use-prepared-query)
     fi
-    "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/eval_pope.py" \
+    if ! "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/eval_pope.py" \
         --api-base "http://localhost:$PORT/v1/" \
         --api-key "${OPENAI_API_KEY:-EMPTY}" \
         --model-name "$MODEL_NAME" \
@@ -232,8 +250,49 @@ if has_eval_task "$EVAL_MODE" "pope"; then
         --max-new-tokens "$POPE_MAX_NEW_TOKENS" \
         --max-samples "$POPE_MAX_SAMPLES" \
         --parallel-workers "$POPE_PARALLEL_WORKERS" \
-        "${pope_extra_args[@]}"
+        "${pope_extra_args[@]}"; then
+        echo "  WARNING: POPE failed; keeping any completed outputs." >&2
+        EVAL_FAILURES=$((EVAL_FAILURES + 1))
+    fi
 fi
+
+if has_eval_task "$EVAL_MODE" "vision"; then
+    echo "  Running Vision-OPD benchmark(s) ..."
+    if [[ "${RULE_ONLY_JUDGE}" != "True" && "${RULE_ONLY_JUDGE}" != "true" && -z "${JUDGE_API_BASE:-}" && -z "${JUDGE_MODEL_PATH:-}" ]]; then
+        echo "  WARNING: Vision-OPD benchmarks require JUDGE_API_BASE/JUDGE_MODEL or JUDGE_MODEL_PATH. Skipping." >&2
+        EVAL_FAILURES=$((EVAL_FAILURES + 1))
+    else
+        vision_out_dir="${OUTPUT_DIR}/vision_opd/model_answer"
+        vision_judge_dir="${OUTPUT_DIR}/vision_opd/judge"
+        mkdir -p "$vision_out_dir" "$vision_judge_dir"
+        vision_args=(
+            API_BASE="http://localhost:$PORT/v1/"
+            OPENAI_MODEL_ID="$MODEL_NAME"
+            MODEL_NAME="${EXPERIMENT_NAME}"
+            BENCHMARK="$VISION_BENCHMARK"
+            OUT_DIR="$vision_out_dir"
+            JUDGE_DIR="$vision_judge_dir"
+            MAX_TOKENS="$VISION_MAX_TOKENS"
+            MAX_RETRIES="$VISION_MAX_RETRIES"
+            PARALLEL_WORKERS="$VISION_PARALLEL_WORKERS"
+            RULE_ONLY_JUDGE="$RULE_ONLY_JUDGE"
+        )
+        [[ -n "${OPENAI_API_KEY:-}" ]] && vision_args+=(OPENAI_API_KEY="$OPENAI_API_KEY")
+        [[ -n "${JUDGE_API_BASE:-}" ]] && vision_args+=(JUDGE_API_BASE="$JUDGE_API_BASE")
+        [[ -n "${JUDGE_API_KEY:-}" ]] && vision_args+=(JUDGE_API_KEY="$JUDGE_API_KEY")
+        [[ -n "${JUDGE_MODEL:-}" ]] && vision_args+=(JUDGE_MODEL="$JUDGE_MODEL")
+        [[ -n "${JUDGE_MODEL_PATH:-}" ]] && vision_args+=(JUDGE_MODEL_PATH="$JUDGE_MODEL_PATH")
+        [[ -n "${JUDGE_MAX_TOKENS:-}" ]] && vision_args+=(JUDGE_MAX_TOKENS="$JUDGE_MAX_TOKENS")
+        [[ -n "$VISION_ENABLE_THINKING" ]] && vision_args+=(ENABLE_THINKING="$VISION_ENABLE_THINKING")
+        if ! env "${vision_args[@]}" bash "${VISION_OPD_ROOT}/eval/run_eval.sh"; then
+            echo "  WARNING: Vision-OPD benchmark(s) failed; keeping any completed outputs." >&2
+            EVAL_FAILURES=$((EVAL_FAILURES + 1))
+        fi
+    fi
+fi
+
+"$PYTHON_BIN" "${RES_OPD_ROOT}/eval/collect_benchmark_summary.py" \
+    --output-dir "$OUTPUT_DIR" || true
 
 # --- Step 3: Cleanup ---
 echo ""
@@ -243,3 +302,7 @@ trap - EXIT
 
 echo ""
 echo "Evaluation complete. Results saved to: $OUTPUT_DIR"
+if [[ "$EVAL_FAILURES" -gt 0 ]]; then
+    echo "Completed with ${EVAL_FAILURES} evaluation failure(s). See warnings above." >&2
+    exit 1
+fi

@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+"""Generate AMBER responses and optionally run the official AMBER evaluator."""
+
+import argparse
+import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
+import mimetypes
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import threading
+import time
+from typing import Optional
+
+
+QUERY_MAP = {
+    "a": "query_all.json",
+    "g": "query_generative.json",
+    "d": "query_discriminative.json",
+    "de": "query_discriminative-existence.json",
+    "da": "query_discriminative-attribute.json",
+    "dr": "query_discriminative-relation.json",
+}
+
+
+def load_json(path: Path):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def image_to_data_uri(path: Path) -> str:
+    with open(path, "rb") as f:
+        payload = f.read()
+    mime = mimetypes.guess_type(str(path))[0] or "image/jpeg"
+    return f"data:{mime};base64,{base64.b64encode(payload).decode('utf-8')}"
+
+
+def resolve_image_path(amber_root: Path, image_root: Optional[Path], image_name: str) -> Path:
+    candidates = []
+    if image_root:
+        candidates.append(image_root / image_name)
+    candidates.extend(
+        [
+            amber_root / "images" / image_name,
+            amber_root / "image" / image_name,
+            amber_root / "data" / "images" / image_name,
+            amber_root / image_name,
+        ]
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(f"AMBER image not found: {image_name}. Tried: {candidates}")
+
+
+def extract_yes_no(text: str) -> str:
+    if not isinstance(text, str) or not text.strip():
+        return "No"
+    t = text.strip()
+    if "</think>" in t:
+        t = t.rsplit("</think>", 1)[1].strip()
+    match = re.search(r"<answer>(.*?)</answer>", t, flags=re.IGNORECASE | re.DOTALL)
+    if match:
+        t = match.group(1).strip()
+    lowered = t.lower()
+    if lowered.startswith("yes") or re.search(r"\byes\b", lowered.split(".", 1)[0]):
+        return "Yes"
+    if lowered.startswith("no") or " not " in f" {lowered.split('.', 1)[0]} " or re.search(r"\bno\b", lowered.split(".", 1)[0]):
+        return "No"
+    return "No"
+
+
+def build_prompt(query: str, is_discriminative: bool) -> str:
+    query = query.replace("<image>", "").strip()
+    if is_discriminative and "yes or no" not in query.lower():
+        return f"{query}\nPlease answer Yes or No."
+    return query
+
+
+def load_existing(path: Path) -> dict[int, dict]:
+    records = {}
+    if not path.exists():
+        return records
+    with open(path, "r", encoding="utf-8") as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            return records
+    for record in data:
+        if isinstance(record, dict) and "id" in record and record.get("response"):
+            records[int(record["id"])] = record
+    return records
+
+
+def save_official_responses(path: Path, records_by_id: dict[int, dict]) -> None:
+    records = [records_by_id[key] for key in sorted(records_by_id)]
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(records, f, ensure_ascii=False, indent=2)
+
+
+def parse_official_stdout(text: str) -> dict:
+    metrics = {}
+    section = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.endswith("Task:") or line.endswith(":"):
+            section = line.rstrip(":").strip().replace(" ", "_").lower()
+            continue
+        if ":" in line:
+            key, value = line.split(":", 1)
+            key = key.strip().replace(" ", "_").lower()
+            value = value.strip()
+            try:
+                value_obj = float(value)
+            except ValueError:
+                continue
+            full_key = f"{section}_{key}" if section else key
+            metrics[full_key] = value_obj
+    return metrics
+
+
+def run_official_eval(args, response_path: Path, out_dir: Path) -> None:
+    evaluator = args.amber_root / "inference.py"
+    if not evaluator.exists():
+        raise FileNotFoundError(f"AMBER official inference.py not found: {evaluator}")
+    cmd = [
+        sys.executable,
+        str(evaluator),
+        "--inference_data",
+        str(response_path),
+        "--evaluation_type",
+        args.evaluation_type,
+    ]
+    for opt, rel_default, value in [
+        ("--word_association", "data/relation.json", args.word_association),
+        ("--safe_words", "data/safe_words.txt", args.safe_words),
+        ("--annotation", "data/annotations.json", args.annotation),
+        ("--metrics", "data/metrics.txt", args.metrics),
+    ]:
+        cmd.extend([opt, str(value or (args.amber_root / rel_default))])
+    proc = subprocess.run(
+        cmd,
+        cwd=str(args.amber_root),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    official_log = out_dir / "official_eval.log"
+    official_log.write_text(proc.stdout, encoding="utf-8")
+    summary = {
+        "benchmark": "amber",
+        "evaluation_type": args.evaluation_type,
+        "official_returncode": proc.returncode,
+        "official_log": str(official_log),
+        "response_path": str(response_path),
+        "metrics": parse_official_stdout(proc.stdout),
+    }
+    with open(out_dir / "amber_metrics.json", "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2)
+    if proc.returncode != 0:
+        raise RuntimeError(f"Official AMBER evaluator failed. See {official_log}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="AMBER OpenAI-compatible inference wrapper")
+    parser.add_argument("--api-base", required=True)
+    parser.add_argument("--api-key", default="EMPTY")
+    parser.add_argument("--model-name", default="Res-OPD")
+    parser.add_argument("--amber-root", type=Path, required=True)
+    parser.add_argument("--image-root", type=Path, default=None)
+    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--evaluation-type", choices=sorted(QUERY_MAP), default="a")
+    parser.add_argument("--max-new-tokens-generative", type=int, default=384)
+    parser.add_argument("--max-new-tokens-discriminative", type=int, default=16)
+    parser.add_argument("--max-samples", type=int, default=0)
+    parser.add_argument("--parallel-workers", type=int, default=64)
+    parser.add_argument("--max-retries", type=int, default=3)
+    parser.add_argument("--skip-official-eval", action="store_true")
+    parser.add_argument("--word-association", type=Path, default=None)
+    parser.add_argument("--safe-words", type=Path, default=None)
+    parser.add_argument("--annotation", type=Path, default=None)
+    parser.add_argument("--metrics", type=Path, default=None)
+    args = parser.parse_args()
+
+    query_path = args.amber_root / "data" / "query" / QUERY_MAP[args.evaluation_type]
+    queries = load_json(query_path)
+    if args.max_samples > 0:
+        queries = queries[: args.max_samples]
+
+    out_dir = args.output_dir / "amber"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    response_path = out_dir / f"amber_{args.evaluation_type}_responses.json"
+    raw_path = out_dir / "raw_results.jsonl"
+
+    completed = load_existing(response_path)
+    todo = [item for item in queries if int(item["id"]) not in completed]
+    print(f"AMBER samples={len(queries)} completed={len(completed)} remaining={len(todo)}")
+
+    thread_local = threading.local()
+    write_lock = threading.Lock()
+
+    def get_client():
+        client = getattr(thread_local, "client", None)
+        if client is None:
+            from openai import OpenAI
+
+            client = OpenAI(base_url=args.api_base, api_key=args.api_key, timeout=300)
+            thread_local.client = client
+        return client
+
+    def run_one(item: dict) -> tuple[dict, dict]:
+        item_id = int(item["id"])
+        is_discriminative = item_id >= 1005
+        image_path = resolve_image_path(args.amber_root, args.image_root, item["image"])
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": image_to_data_uri(image_path)}},
+                    {"type": "text", "text": build_prompt(item["query"], is_discriminative)},
+                ],
+            }
+        ]
+        max_tokens = args.max_new_tokens_discriminative if is_discriminative else args.max_new_tokens_generative
+        answer = ""
+        for attempt in range(1, args.max_retries + 1):
+            try:
+                response = get_client().chat.completions.create(
+                    model=args.model_name,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=0.0,
+                )
+                answer = (response.choices[0].message.content or "").strip()
+                break
+            except Exception as exc:
+                if attempt == args.max_retries:
+                    answer = f"[ERROR] {exc}"
+                else:
+                    time.sleep(float(attempt))
+        official_answer = extract_yes_no(answer) if is_discriminative else answer
+        official_record = {"id": item_id, "response": official_answer}
+        raw_record = dict(item)
+        raw_record.update(
+            {
+                "image_path": str(image_path),
+                "model_answer": answer,
+                "official_response": official_answer,
+                "is_discriminative": is_discriminative,
+            }
+        )
+        return official_record, raw_record
+
+    records_by_id = dict(completed)
+    if todo:
+        with ThreadPoolExecutor(max_workers=args.parallel_workers) as executor, open(
+            raw_path, "a", encoding="utf-8"
+        ) as f_raw:
+            futures = {executor.submit(run_one, item): item for item in todo}
+            done = len(completed)
+            for future in as_completed(futures):
+                try:
+                    official_record, raw_record = future.result()
+                except Exception as exc:
+                    item = futures[future]
+                    item_id = int(item["id"])
+                    official_record = {"id": item_id, "response": "No" if item_id >= 1005 else f"[ERROR] {exc}"}
+                    raw_record = dict(item)
+                    raw_record["model_answer"] = f"[ERROR] {exc}"
+                with write_lock:
+                    records_by_id[int(official_record["id"])] = official_record
+                    f_raw.write(json.dumps(raw_record, ensure_ascii=False) + "\n")
+                    f_raw.flush()
+                    done += 1
+                if done % 100 == 0:
+                    print(f"AMBER generated {done}/{len(queries)}")
+
+    save_official_responses(response_path, records_by_id)
+    if args.skip_official_eval:
+        print(f"Saved AMBER official-format responses to: {response_path}")
+        return
+    run_official_eval(args, response_path, out_dir)
+    print(f"Saved AMBER metrics to: {out_dir / 'amber_metrics.json'}")
+
+
+if __name__ == "__main__":
+    main()

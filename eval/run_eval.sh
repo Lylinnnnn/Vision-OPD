@@ -28,6 +28,7 @@ MODEL_NAME="${MODEL_NAME:-${OPENAI_MODEL_ID//\//_}}"
 SEED="${SEED:-42}"
 MAX_TOKENS="${MAX_TOKENS:-32768}"
 OUT_DIR="${OUT_DIR:-model_answer}"
+JUDGE_DIR="${JUDGE_DIR:-judge}"
 MAX_RETRIES="${MAX_RETRIES:-3}"
 PARALLEL_WORKERS="${PARALLEL_WORKERS:-256}"
 ENABLE_THINKING="${ENABLE_THINKING:-}"
@@ -37,6 +38,7 @@ JUDGE_API_KEY="${JUDGE_API_KEY:-}"
 JUDGE_MODEL="${JUDGE_MODEL:-}"
 JUDGE_MODEL_PATH="${JUDGE_MODEL_PATH:-}"
 JUDGE_MAX_TOKENS="${JUDGE_MAX_TOKENS:-2048}"
+RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-False}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
@@ -110,6 +112,7 @@ run_single_benchmark() {
   [[ -n "${JUDGE_MODEL}" ]] && JUDGE_ARGS+=(--judge_model "${JUDGE_MODEL}")
   [[ -n "${JUDGE_MODEL_PATH}" ]] && JUDGE_ARGS+=(--judge_model_path "${JUDGE_MODEL_PATH}")
   [[ -n "${JUDGE_MAX_TOKENS}" ]] && JUDGE_ARGS+=(--judge_max_tokens "${JUDGE_MAX_TOKENS}")
+  [[ "${RULE_ONLY_JUDGE}" == "True" || "${RULE_ONLY_JUDGE}" == "true" ]] && JUDGE_ARGS+=(--rule_only)
 
   local judge_benchmark="${bench}"
   local judge_model_tag="${model_tag}"
@@ -118,10 +121,13 @@ run_single_benchmark() {
   python3 judge_qwenlm.py \
     --benchmark "${judge_benchmark}" \
     --model "${judge_model_tag}" \
+    --answer_dir "${OUT_DIR}" \
+    --judge_dir "${JUDGE_DIR}" \
     "${JUDGE_ARGS[@]}"
 
   # [4/4] Accuracy
   echo "[4/4] Calculating accuracy..."
+  judge_json="${JUDGE_DIR}/${bench}/${model_tag}_answer.jsonl"
   python3 cal_acc.py \
     --benchmark "${bench}" \
     --judge_json "${judge_json}" \

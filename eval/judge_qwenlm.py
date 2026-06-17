@@ -188,9 +188,16 @@ def main():
     parser.add_argument("--api_key", default="EMPTY", type=str)
     parser.add_argument("--judge_model", default=None, type=str, help="Model name for API-based judging")
     parser.add_argument("--judge_max_tokens", default=2048, type=int)
+    parser.add_argument("--answer_dir", default="model_answer", type=str)
+    parser.add_argument("--judge_dir", default="judge", type=str)
+    parser.add_argument(
+        "--rule_only",
+        action="store_true",
+        help="Use deterministic answer extraction only; mark unresolved cases as No instead of calling an LLM judge.",
+    )
     args = parser.parse_args()
 
-    if not args.api_base and not args.judge_model_path:
+    if not args.rule_only and not args.api_base and not args.judge_model_path:
         print(
             "ERROR: Either --api_base (for API-based judging) or --judge_model_path "
             "(for local vLLM judging) must be provided.",
@@ -198,9 +205,9 @@ def main():
         )
         sys.exit(1)
 
-    answer_path = f"model_answer/{args.benchmark}/{args.model}_answer.jsonl"
-    save_path = f"judge/{args.benchmark}/{args.model}_answer.jsonl"
-    os.makedirs(f"judge/{args.benchmark}", exist_ok=True)
+    answer_path = os.path.join(args.answer_dir, args.benchmark, f"{args.model}_answer.jsonl")
+    save_path = os.path.join(args.judge_dir, args.benchmark, f"{args.model}_answer.jsonl")
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
     is_mcq = args.benchmark in MCQ_BENCHMARKS
     is_pope = args.benchmark in POPE_BENCHMARKS
     is_mmvp = args.benchmark in MMVP_BENCHMARKS
@@ -268,7 +275,12 @@ def main():
             to_llm_indices.append(i)
             prompt_lists.append(prompt)
 
-    if prompt_lists:
+    if prompt_lists and args.rule_only:
+        print(f"Rule-only judge: marking {len(prompt_lists)} unresolved cases as No.")
+        for original_idx in to_llm_indices:
+            data_list[original_idx]["judge"] = "No"
+            data_list[original_idx]["judge_source"] = "rule_only_unresolved"
+    elif prompt_lists:
         print(f"Calling LLM judge for {len(prompt_lists)} remaining cases...")
         if args.api_base:
             judge_model_name = args.judge_model or "default"
