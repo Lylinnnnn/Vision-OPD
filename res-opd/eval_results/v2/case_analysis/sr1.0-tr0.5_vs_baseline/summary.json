@@ -1,0 +1,13 @@
+{
+  "num_common_samples": 300,
+  "top_n": 20,
+  "model_results": "res-opd/eval_results/latest/Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.5-a0.5-ema-e1_global_step_46/train1500_test300_original_sr1p0/eval_results.jsonl",
+  "baseline_results": "res-opd/eval_results/v2/Qwen3VL-2B-Instruct/train1500_test300_original_sr1p0/eval_results.jsonl",
+  "f1_delta_mean": -0.01880848345554228,
+  "f1_delta_median": 0.0,
+  "f1_delta_min": -1.0,
+  "f1_delta_max": 1.0,
+  "num_worse": 87,
+  "num_better": 60,
+  "num_equal": 153
+}

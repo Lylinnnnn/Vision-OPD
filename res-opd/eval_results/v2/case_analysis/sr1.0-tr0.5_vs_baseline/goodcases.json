@@ -1,0 +1,779 @@
+[
+  {
+    "image_id": 91619,
+    "file_name": "000000091619.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000091619.jpg",
+    "gt_objects": [
+      "stop sign"
+    ],
+    "gt_captions": [
+      "A red stop sign sitting next to a light pole.",
+      "an aerial view of a stop sign and light pole ",
+      "An aerial view of a stop sign that is attached to a pole and is on the sidewalk.",
+      "A stop sign on a sidewalk next to a street.",
+      "an over head view of a stop sign"
+    ],
+    "model_caption": "This is a high-angle, close-up photograph of a street corner, focusing on a traffic sign and its pole. The image is taken from a perspective looking down at the corner, with the sidewalk in the foreground and the road in the background.\n\n- **Primary Object**: A red, octagonal stop sign is the central focus. It is mounted on a grey metal pole. The sign has the word \"STOP\" in large, white, uppercase letters. Below the main sign, a smaller, rectangular red sign with white text reads \"ALL WAY\". The sign is attached to the pole with a metal bracket.\n\n- **Pole and Mounting**: The pole is a grey, cylindrical metal pole, likely made of steel or aluminum. It is anchored into the sidewalk with a circular, grey metal base that is embedded in the concrete. The pole is positioned at a slight angle, with its top extending above the sign.\n\n- **Surrounding Environment**: The pole and sign are situated on a light-colored concrete sidewalk. The sidewalk has a smooth, slightly textured surface. The edge of the sidewalk is defined by a concrete curb that separates it from the dark asphalt of the road. The road surface is dark grey and appears to be wet or damp, with a visible white painted line running along the edge of the road.\n\n- **Text and Details**: The word \"STOP\" is clearly visible in the center of the red sign. The smaller sign below it reads \"ALL WAY\" in white capital letters. The pole is secured to the sidewalk with a metal bracket that is visible at the base of the pole.\n\n- **Lighting and Color**: The lighting appears to be natural daylight, casting soft shadows. The colors are natural and realistic, with the red of the stop sign standing out against the grey and dark tones of the surrounding pavement and road. The overall image has a slightly grainy texture, suggesting it may be",
+    "baseline_caption": "This is a high-angle, close-up photograph of a street corner, focusing on a traffic sign and its pole. The image is taken from a perspective looking down at the corner, with the sidewalk in the foreground and the road in the background.\n\nThe central object is a red, octagonal stop sign, which is mounted on a grey metal pole. The sign has the word \"STOP\" in large, white, uppercase letters. Below the main sign, a smaller, rectangular red sign with white text reads \"ALL WAY\". This smaller sign is attached to the same pole, but it is positioned lower and slightly to the right of the main stop sign. The pole is anchored into the sidewalk with a square, grey metal base that is embedded in the concrete.\n\nThe sidewalk is made of light-colored, rectangular concrete slabs. The pole is positioned at a slight angle, and the base of the pole is set into the sidewalk, with a circular cutout in the concrete where the pole is inserted. The sidewalk is bordered by a concrete curb that separates it from the dark asphalt of the road. The road surface is dark and appears to be wet or damp, with a white painted line running along the edge of the road.\n\nThe overall composition is a tight, angled shot that emphasizes the sign and its immediate surroundings. The lighting is bright and even, suggesting it is daytime. The image is clear and detailed, with no visible shadows or reflections.",
+    "model_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "mentioned": 0,
+      "correct": 0,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "f1_delta": 1.0,
+    "precision_delta": 1.0,
+    "recall_delta": 1.0
+  },
+  {
+    "image_id": 153568,
+    "file_name": "000000153568.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000153568.jpg",
+    "gt_objects": [
+      "stop sign"
+    ],
+    "gt_captions": [
+      "A close up of a stop sign with two hand written notes taped to it.",
+      "A stop sign that has some papers on it.",
+      "A red stop sign with paper with writing on top of it.",
+      "A stop sign with additional warnings taped to it.",
+      "a stop sign with alot of  writing on it"
+    ],
+    "model_caption": "This is a close-up photograph of a standard, octagonal, red stop sign, which is mounted on a metal pole. The sign is positioned at an angle, with the top of the sign pointing towards the upper right of the frame. The sign is set against a background of a brick wall on the left and a paved surface on the right.\n\nThe sign has two pieces of handwritten paper attached to it. The top piece is a rectangular, light-colored paper, possibly white or off-white, with black handwriting. It reads: \"All Vehicles Do Not Proceed Further Thank You\". The text is written in a casual, cursive-style font, and the words are arranged in three lines. The bottom piece is a smaller, rectangular piece of paper, also with black handwriting, which reads: \"Authorized Vehicles Only Stop\". This text is also in a cursive font, but the words are more tightly packed.\n\nThe stop sign itself is a standard red octagon with a white border and a large, white, capitalized \"STOP\" in the center. The sign is slightly tilted, and the metal pole holding it is visible at the bottom center of the image. The background consists of a red brick wall on the left and a paved surface on the right, which appears to be made of concrete or stone. The lighting in the image is natural, and the overall scene is a clear, detailed view of the sign and its modifications.",
+    "baseline_caption": "This is a close-up, slightly angled photograph of a standard, brown, octagonal stop sign, which appears to be mounted on a metal post. The sign is set against a background of a brick wall on the left and a paved, light-colored ground surface on the right. The image is taken from a low angle, looking up at the sign.\n\nThe sign has two handwritten notes attached to it, both in black marker.\n\n- The top note is a rectangular piece of white paper, slightly larger than the sign's top edge. It is written in a casual, handwritten script. The text reads: \"All Vehicle's Do Not Proceed Further thank You!\" The word \"Vehicle's\" is written in a larger, more prominent font than the rest of the text. The note is slightly tilted, and the handwriting is somewhat uneven.\n\n- The bottom note is a smaller, rectangular piece of white paper, positioned below the main \"STOP\" text. It is written in a similar style but is more compact. The text reads: \"AUTHORIZED Vehicles Only Stop\". The word \"AUTHORIZED\" is written in a larger, bold font, and the word \"Vehicles\" is written in a smaller, more standard font. The word \"Only\" is written in a smaller, italicized font, and \"Stop\" is in a larger, bold font.\n\nThe main \"STOP\" text is in large, bold, white capital letters, which are the most prominent feature on the sign. The sign itself is a standard red octagon with white lettering. The background of the sign is a dark brown color, and the metal post holding it is visible at the bottom center of the image. The lighting is natural, and the image has a slightly grainy quality, suggesting it was taken with a digital camera.",
+    "model_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "mentioned": 0,
+      "correct": 0,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "f1_delta": 1.0,
+    "precision_delta": 1.0,
+    "recall_delta": 1.0
+  },
+  {
+    "image_id": 193884,
+    "file_name": "000000193884.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000193884.jpg",
+    "gt_objects": [
+      "stop sign"
+    ],
+    "gt_captions": [
+      "A red stop sign sitting on the side of a road.",
+      "stop sign on a street of a cemetary",
+      "a road that has a small red stop sign by it",
+      "Lone stop sign at small intersection in a cemetery of castes.",
+      "A lone stop sign in a row of crypts"
+    ],
+    "model_caption": "This is a photograph of a cemetery on a bright, sunny day. The scene is dominated by a long, straight paved road that recedes into the distance, flanked by rows of white, ornate mausoleums and tombstones. The sky is a clear, vibrant blue with no clouds.\n\nThe road is paved with dark asphalt and is bordered by a concrete curb on the right. A prominent red octagonal stop sign with the word \"STOP\" in white capital letters is mounted on a metal pole on the right side of the road. The sign is positioned at a slight angle, and its red color contrasts sharply with the surrounding white and gray tones.\n\nOn the right side of the image, a row of white, classical-style mausoleums lines the road. These structures are tall and have a decorative, possibly Corinthian, style with columns and a pediment. The tops of the mausoleums are adorned with small, white crosses. The mausoleums are arranged in a neat, orderly fashion, creating a sense of symmetry and solemnity.\n\nOn the left side of the road, a large, white, rectangular building is visible. It has a simple, modern design with a flat roof and a large, open entrance. The building is situated behind a low, white wall that runs along the edge of the road.\n\nIn the background, a dense line of green trees and foliage forms a natural backdrop. The trees are lush and full, with their leaves creating a canopy that partially obscures the sky. The overall lighting is bright and even, suggesting it is midday. The image has a slightly grainy quality, which may be due to the camera's resolution or the lighting conditions.",
+    "baseline_caption": "This is a detailed description of the image provided.\n\nThe image captures a quiet, sunlit scene at a cemetery on a clear, sunny day. The perspective is from the middle of a paved road that runs parallel to a long row of white mausoleums and tombs, leading the eye into the distance.\n\n**Foreground and Road:**\n- The foreground is dominated by a dark asphalt road that curves gently to the left. The road surface is smooth and appears to be in good condition.\n- On the right side of the road, a red, octagonal \"STOP\" sign is mounted on a metal pole. The sign is clearly visible and is the most prominent object in the foreground.\n- A large, cylindrical, grey concrete bollard stands on the sidewalk, positioned near the stop sign.\n- The sidewalk is made of concrete and runs alongside the road, with a curb separating it from the grassy area at the bottom right.\n\n**Cemetery Structures:**\n- A long, straight row of white mausoleums lines the right side of the road. These structures are uniform in design, featuring a classical, ornate style with decorative columns and a pointed roof. Each tomb has a small cross on top.\n- The mausoleums are arranged in a neat, orderly fashion, creating a sense of symmetry and tranquility.\n- On the left side of the road, a large, white, rectangular building is visible. It has a simple, modern design with a large, open doorway. This building appears to be a chapel or a service area.\n- In the background, beyond the mausoleums, a line of lush green trees and bushes forms a natural backdrop.\n\n**Text and Details:**\n- The red \"STOP\" sign has the word \"STOP\" written in white, uppercase letters.\n- The sky is a clear, bright blue with no clouds, indicating a sunny day.\n",
+    "model_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "mentioned": 0,
+      "correct": 0,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "f1_delta": 1.0,
+    "precision_delta": 1.0,
+    "recall_delta": 1.0
+  },
+  {
+    "image_id": 231169,
+    "file_name": "000000231169.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000231169.jpg",
+    "gt_objects": [
+      "train"
+    ],
+    "gt_captions": [
+      "The black and white locomotive is on the train tracks.",
+      "Small train coming down the rail road tracks.",
+      "A train with empty rail cars moving down a train track.",
+      "Locomotive engine and cargo cars traveling on train tracks.",
+      "A train traveling down train tracks in the countryside."
+    ],
+    "model_caption": "This is a black and white photograph capturing a freight train on a railway line, viewed from a slightly elevated perspective. The image is dominated by the train and the surrounding natural landscape.\n\nThe central subject is a long, articulated freight train. The locomotive at the front is a diesel engine, likely a British Rail Class 312, identifiable by its distinctive rounded front, a large, curved windshield, and the number \"312\" clearly visible on the front. The locomotive is painted in a light color, possibly white or off-white, which contrasts with the darker tones of the surrounding environment. It is pulling a long line of dark-colored freight wagons, which appear to be empty or carrying a load of materials. The train is on a set of tracks that curve gently to the right, following the contour of the landscape.\n\nThe train is situated in a rural or semi-rural setting. The surrounding area is densely vegetated with trees and bushes, which are rendered in various shades of gray, from light to dark. The foliage appears to be in full season, possibly late summer or early autumn, as the leaves are not overly dense or bright. The trees are scattered along the tracks and on the sides of the railway line, creating a natural frame for the scene.\n\nTo the right of the train, a large, industrial-looking structure is visible. This structure appears to be a railway signal box or a control station, with a metal framework and a large, rectangular, box-like structure. It is positioned on a raised platform, and its design suggests it is used for monitoring and controlling train movements. The structure is partially obscured by the trees and the train.\n\nIn the foreground, on the right side of the image, there is a small, rectangular concrete box, possibly a utility or signal box, which is also in shadow. The ground is covered with gravel and dirt, and the tracks are laid",
+    "baseline_caption": "This is a detailed, black and white photograph of a freight train on a railway track, captured from a low angle that emphasizes its length and the surrounding landscape. The image is composed of several key elements, each with distinct spatial relationships and details.\n\n---\n\n### **Primary Subject: The Train**\n\n- **Train Composition:** The central focus is a long freight train, composed of a lead locomotive followed by a series of open-top, boxcar-style freight cars. The train is moving along a curved track.\n- **Locomotive:** The locomotive is a classic British diesel engine, likely a Class 312, as indicated by the number \"312\" clearly visible on the front. It has a rounded, rounded front with two large, rectangular windshields. The front features a prominent, rounded nose, and the headlights are visible. The engine is painted in a light color, possibly off-white or light grey, with a darker lower section.\n- **Freight Cars:** The train consists of a long line of dark-colored, open-top freight cars. They are arranged in a single file, and their dark color contrasts with the lighter locomotive. The cars appear to be empty or carrying a load of materials, possibly coal or other bulk goods.\n- **Track and Environment:** The train is on a set of tracks that curve gently to the left. The tracks are laid on a bed of gravel and are surrounded by dense vegetation. The track is bordered by a grassy embankment and a line of trees and bushes.\n\n---\n\n### **Surrounding Environment and Objects**\n\n- **Railway Infrastructure:**\n    - **Railway Bridge:** To the right of the train, a large, industrial-looking railway bridge or gantry structure is visible. It has a metal framework with a platform and railings. A person can be seen standing on the platform, possibly operating or inspecting the",
+    "model_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 0.4,
+      "precision": 0.25,
+      "recall": 1.0,
+      "mentioned": 4,
+      "correct": 1,
+      "hallucinated": 3,
+      "gt_count": 1
+    },
+    "f1_delta": 0.6,
+    "precision_delta": 0.75,
+    "recall_delta": 0.0
+  },
+  {
+    "image_id": 236914,
+    "file_name": "000000236914.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000236914.jpg",
+    "gt_objects": [
+      "bottle",
+      "chair",
+      "dining table",
+      "teddy bear"
+    ],
+    "gt_captions": [
+      "Two stuffed animals sit at a table with honey.",
+      "Two stuffed bears are positioned at a table with a jar of honey",
+      "two teddy bears at a table with honey\n",
+      "two teddy bears sitting at a table looking at a jar of honey",
+      "Two teddy bears sitting at a table with honey"
+    ],
+    "model_caption": "This is a close-up, indoor photograph of two teddy bears sitting at a table, seemingly in a cozy, domestic setting. The image is taken from a slightly elevated angle, focusing on the bears and the items on the table in front of them.\n\nThe primary subject is a large, brown teddy bear on the left, which is the main focus of the image. It is wearing a white, knitted sweater with a high, ribbed collar and a dark brown, possibly chocolate-colored, patch on the chest. The bear has a soft, plush appearance with a slightly rounded head and a gentle, friendly expression. Its eyes are dark and round, and its nose is a small, dark brown patch. The bear is positioned in the foreground, with its body angled slightly towards the right.\n\nTo the right of the first bear, a second, smaller teddy bear is visible. This bear is also brown but has a more textured, shaggy fur. It is wearing a bright pink, ruffled, or frilly garment around its neck, which appears to be a scarf or a small bow. The second bear is looking towards the first bear, and its head is slightly tilted. It is positioned in the mid-ground, to the right of the first bear.\n\nOn the table, in front of the bears, are several items. In the foreground, there is a long, golden-brown, rectangular object that looks like a piece of bread or a pastry. To the right of the bread, there is a small, white, round container, possibly a small jar or a small bowl. The most prominent object on the right side of the image is a large, clear glass bottle filled with a dark amber liquid, likely honey. The bottle has a bright yellow cap and a white label with some text and a barcode on the side. The bottle is positioned so that the liquid is visible, and the",
+    "baseline_caption": "This is a detailed, indoor photograph of two teddy bears sitting at a table, seemingly in a cozy, domestic setting. The image is taken from a slightly low angle, looking at the bears from the front and slightly to the side.\n\nThe primary subjects are two plush teddy bears, both appearing to be made of a brown, slightly worn fabric, possibly a vintage or antique style. The bear on the left is larger and more prominent, while the one on the right is smaller and positioned slightly behind it.\n\n- **Bear on the Left:**\n  - **Appearance:** This bear is larger and has a more defined, slightly worn appearance. It has a light brown, soft-looking fur, with a darker brown patch on its chest and a lighter brown on its face and ears. Its eyes are dark and round, and it has a small, dark brown nose.\n  - **Clothing:** It is wearing a white, knitted sweater with a high, thick collar. The sweater has a dark brown, possibly a small, embroidered or stitched design on the chest. The bear is also wearing blue jeans, which are visible at the bottom of the image.\n  - **Pose:** The bear is sitting upright, facing forward, with its head slightly turned to the right, as if looking at something off-camera.\n\n- **Bear on the Right:**\n  - **Appearance:** This bear is smaller and has a more fluffy, shaggy appearance. It has a lighter brown fur, with a darker brown patch on its chest and a lighter brown on its face and ears. Its eyes are dark and round, and it has a small, dark brown nose.\n  - **Clothing:** It is wearing a pink, fluffy, ruffled garment that appears to be a scarf or a small dress. The garment has a red ribbon tied around its neck. The bear is also wearing a small, dark brown",
+    "model_metrics": {
+      "f1": 0.75,
+      "precision": 0.75,
+      "recall": 0.75,
+      "mentioned": 4,
+      "correct": 3,
+      "hallucinated": 1,
+      "gt_count": 4
+    },
+    "baseline_metrics": {
+      "f1": 0.3333333333333333,
+      "precision": 0.5,
+      "recall": 0.25,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 4
+    },
+    "f1_delta": 0.4166666666666667,
+    "precision_delta": 0.25,
+    "recall_delta": 0.5
+  },
+  {
+    "image_id": 283318,
+    "file_name": "000000283318.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000283318.jpg",
+    "gt_objects": [
+      "car",
+      "fire hydrant",
+      "person"
+    ],
+    "gt_captions": [
+      "A fire hydrant and some cars on the side of the street.",
+      "An open book store on a street corner.",
+      "There is a sign showing a street running one direction",
+      "There is a street sign on the corner by a building. ",
+      "A store on the corner with an American flag flying from it's side."
+    ],
+    "model_caption": "This is a daytime, eye-level photograph of a street scene in a city, likely in the United States, featuring a bookstore and a street corner. The image is taken from a slightly low angle, looking down a sidewalk.\n\nThe central focus is a brick building on the left, which is an \"An Open Book\" bookstore. The building has a red brick facade and a prominent, wide, maroon awning that extends over the storefront. The name \"AN OPEN BOOK\" is written in large, white, capital letters on a black background, positioned above the awning. The awning is supported by two black metal brackets. A small, red neon sign is visible on the left side of the storefront, but the text is not legible. The entrance to the bookstore is a large glass door, and a small, red neon sign is visible on the left side of the door. The building has a small, red brick chimney on the right side of the entrance.\n\nTo the right of the bookstore, a street sign is mounted on a pole. The sign is a white rectangle with a green border and reads \"WEST LINCOLN\" in green capital letters at the top. Below this, a white square sign with a black arrow pointing to the left reads \"ONE WAY\" in black capital letters.\n\nThe sidewalk is paved with light-colored concrete and is lined with several trees that are bare of leaves, suggesting it is either late fall or early spring. A bright red fire hydrant is visible on the sidewalk near the bottom right corner. A red car is parked on the street to the right of the bookstore, and a black car is parked further down the street. A tall, thin metal pole stands in the foreground, partially obscuring the view of the bookstore. The sky is a pale blue, and the overall lighting is bright and even, suggesting a sunny day.",
+    "baseline_caption": "This is a detailed, eye-level photograph of a city street corner on a bright, sunny day. The scene is dominated by a brick building on the left, which appears to be a bookstore or a small shop, and a sidewalk that runs along the front of the building.\n\n**The Building and Shopfront:**\n- The building is constructed from red brick and has a classic, somewhat aged appearance.\n- A large, orange sign with white lettering is mounted above the shop's entrance. The text reads \"AN OPEN BOOK\".\n- The shop has a prominent, deep magenta awning that extends over the entrance. The awning is supported by two black metal brackets.\n- The entrance is a large glass door, with a \"OPEN\" sign in red neon on the left side of the door. Below the door, a \"ATM\" sign is visible.\n- The building's facade is detailed with brickwork, and the entrance is framed by a brick border.\n- Two black, wall-mounted lamps are positioned on the brick wall above the awning.\n- A tall, grey metal pole stands in the foreground, partially obscuring the view of the shop's entrance.\n\n**Flags and Decor:**\n- An American flag is hanging from the building's brick wall, attached to a metal pole.\n- A rainbow-colored flag, representing the LGBTQ+ community, is also hanging from the same pole, positioned to the right of the American flag.\n- The flag is slightly fluttering in the wind.\n\n**Street and Sidewalk:**\n- The sidewalk is paved with light-colored bricks and runs parallel to the building.\n- A bright yellow fire hydrant is located on the sidewalk, near the bottom right of the image.\n- A green street sign with white text reads \"WEST LINDON\".\n- A white rectangular sign with black text and a black arrow pointing to the left reads \"ONE WAY\".\n\n**Street",
+    "model_metrics": {
+      "f1": 0.8,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "mentioned": 2,
+      "correct": 2,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "baseline_metrics": {
+      "f1": 0.4,
+      "precision": 0.5,
+      "recall": 0.3333333333333333,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 3
+    },
+    "f1_delta": 0.4,
+    "precision_delta": 0.5,
+    "recall_delta": 0.3333333333333333
+  },
+  {
+    "image_id": 343076,
+    "file_name": "000000343076.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000343076.jpg",
+    "gt_objects": [
+      "cat",
+      "laptop"
+    ],
+    "gt_captions": [
+      "A fluffy cat laying on an electronic device",
+      "A cat sitting on top of a D.V.D player. ",
+      "a cat lays down on a dvd player ",
+      "Cat hangs it's paw over the edge of the laptop ",
+      "Cat lying on top of a shelf with its front leg hanging down."
+    ],
+    "model_caption": "This is a close-up, slightly low-angle photograph of a domestic cat resting on a wooden surface. The image is taken from a perspective that looks up at the cat, making it appear large and prominent.\n\nThe central subject is a tabby cat with a classic striped pattern of brown, black, and grey on its fur. Its fur is thick and appears soft. The cat has large, round, green eyes that are wide open and looking directly at the camera, giving it an alert and curious expression. Its nose is pink, and its whiskers are long and white. The cat is lying on its side, with its body stretched out and its front paws resting on a dark blue electronic device. The device, which appears to be a laptop or a similar portable computer, has a silver or light-colored edge and a black body. The cat's right paw is extended forward, with its paw resting on the device, and its tail is visible behind it.\n\nThe cat is positioned on a wooden table or shelf, which is made of light-colored wood with a visible grain. The table is supported by a wooden frame, and the cat is lying on a flat surface. The background is slightly out of focus, but a woven basket is visible on the floor beneath the table. The lighting in the room is bright, with a strong light source coming from the upper left, which illuminates the cat's face and the top of the table. The overall color palette is warm, with the brown and grey of the cat's fur, the dark blue of the device, and the light wood of the table.",
+    "baseline_caption": "This is a detailed, close-up photograph of a domestic cat resting on a wooden table. The image is taken from a low angle, looking up at the cat, which is the central focus.\n\nThe cat is a tabby with a classic pattern of brown, black, and grey stripes on its fur. Its fur is a mix of warm browns and greys, with a lighter, almost white, underbelly and chest. The cat has large, striking green eyes that are wide open and looking directly at the camera, giving it an alert and curious expression. Its ears are pointed and alert, and its whiskers are long and white, standing out against its fur. The cat's mouth is slightly open, and its nose is pink.\n\nThe cat is lying on a dark blue or black electronic device, which appears to be a DVD player or a similar media player. The device has a silver or white stripe running horizontally across its top. The cat's front paw is extended forward, resting on the device, and its paw is visible in the foreground. The device has a small, white, oval-shaped button on its side. A black cable is connected to the device and extends out of the frame.\n\nThe device is placed on a wooden table, which is made of dark wood with a visible grain. The table has a simple, sturdy design. Below the table, a woven, brown wicker basket is visible on the floor. The floor is covered with a light-colored carpet, possibly beige or light brown.\n\nThe background is mostly out of focus, but a bright, white area is visible behind the cat's head, suggesting a window or a light source. The overall lighting in the image is soft and natural, highlighting the cat's fur and the texture of the wooden table. The composition of the image is centered on the cat, with the device and basket providing context and depth.",
+    "model_metrics": {
+      "f1": 0.8,
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "mentioned": 3,
+      "correct": 2,
+      "hallucinated": 1,
+      "gt_count": 2
+    },
+    "baseline_metrics": {
+      "f1": 0.4,
+      "precision": 0.3333333333333333,
+      "recall": 0.5,
+      "mentioned": 3,
+      "correct": 1,
+      "hallucinated": 2,
+      "gt_count": 2
+    },
+    "f1_delta": 0.4,
+    "precision_delta": 0.3333333333333333,
+    "recall_delta": 0.5
+  },
+  {
+    "image_id": 802,
+    "file_name": "000000000802.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000000802.jpg",
+    "gt_objects": [
+      "oven",
+      "refrigerator"
+    ],
+    "gt_captions": [
+      "A kitchen with a refrigerator, stove and oven with cabinets.",
+      "A white oven and a white refrigerator are in the kitchen.",
+      "The refrigerator is brand new and was delivered today.",
+      "Stark white appliances stand out against brown wooden cabinets.",
+      "Kitchen appliances and cabinets as seen through opening."
+    ],
+    "model_caption": "This is a detailed description of the image provided.\n\nThe image captures a kitchen from a slightly low, angled perspective, looking into a room with a warm, somewhat dated aesthetic. The scene is dominated by a combination of light wood cabinetry, white appliances, and a tiled floor.\n\n**Cabinetry and Wall:**\n- The kitchen features a wall of light-colored wood cabinets, likely oak or a similar hardwood, with a medium-brown finish. The cabinets are arranged in a standard configuration, with upper cabinets above the stove and a lower cabinet below it.\n- The upper cabinets are a light, natural wood tone, while the lower cabinet is a slightly darker shade of the same wood.\n- The wall behind the cabinets is painted a warm, earthy tone, possibly a light terracotta or a pale orange, which contrasts with the white appliances.\n- The cabinets are set into the wall, and the top of the upper cabinets is slightly recessed, creating a subtle shadow.\n\n**Appliances:**\n- On the left side of the image, there is a white electric stove with a black cooktop. The stove has a control panel with several knobs and a digital display.\n- To the right of the stove, there is a white refrigerator with a side-by-side design. The refrigerator has a water and ice dispenser on the right side, and a small, rectangular window on the left side.\n- The refrigerator is positioned against the wall, and its door is slightly ajar, revealing a small amount of the interior.\n\n**Floor and Other Details:**\n- The floor is covered in square, light beige or off-white tiles, which are arranged in a grid pattern.\n- The tiles are of a uniform size and are laid in a standard, straight pattern.\n- The overall lighting in the room is soft and even, with no harsh shadows, suggesting a well-lit environment.\n\n**Other Details:**\n",
+    "baseline_caption": "This is a detailed description of the image provided.\n\nThe image captures a kitchen from a slightly low, wide-angle perspective, looking into a room with a view of the kitchen area. The scene is illuminated by what appears to be natural light, possibly from a window out of frame, and the overall lighting is somewhat dim, creating a slightly muted atmosphere.\n\n### Kitchen Layout and Objects\n\nThe kitchen is arranged with a central focus on a white electric stove and refrigerator, flanked by wooden cabinetry.\n\n- **Stove and Oven:**\n  - Positioned on the left side of the kitchen, the stove is a white, electric model with a black cooktop. It has four black circular burners and a control panel with several knobs and a digital display. The oven door is located directly below the cooktop, and it has a large, rectangular glass window.\n  - The stove is set against a wall with a light brown or tan color, and it is positioned above a wooden cabinet with three drawers.\n\n- **Refrigerator:**\n  - To the right of the stove, there is a large, white, side-by-side refrigerator. It has two doors, each with a vertical handle. The right door has a built-in water and ice dispenser, which is clearly visible. The dispenser has a small, blue and white logo on the top, and the handle is a long, vertical, silver-colored metal bar.\n\n- **Cabinetry:**\n  - The kitchen features wooden cabinets with a light brown finish. There are two upper cabinets, one above the other, and a lower cabinet with three drawers. The drawers have small, round, brass-colored knobs.\n  - The upper cabinets are mounted on the wall, and the lower cabinet is placed directly below the stove. The cabinets are set against a wall with a light brown or tan color.\n\n- **Countertop and Floor:**\n  -",
+    "model_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 2,
+      "hallucinated": 0,
+      "gt_count": 2
+    },
+    "baseline_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 1.0,
+      "recall": 0.5,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 2
+    },
+    "f1_delta": 0.33333333333333337,
+    "precision_delta": 0.0,
+    "recall_delta": 0.5
+  },
+  {
+    "image_id": 343315,
+    "file_name": "000000343315.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000343315.jpg",
+    "gt_objects": [
+      "fire hydrant"
+    ],
+    "gt_captions": [
+      "A red fire hydrant sitting on a patch of green grass.",
+      "A sidewalk grass median with a street sign and a fire hydrant.",
+      "Patchy lawn, a road sign and a fire hydrant",
+      "Red fire hydrant on a curb by a street.",
+      "A red fire hydrant on a street corner near a sign"
+    ],
+    "model_caption": "This is a detailed, eye-level photograph of a corner of a street and a small patch of grass. The scene is captured from a slightly elevated perspective, looking down at the intersection.\n\n- **The Road and Sidewalk**: The foreground is dominated by a paved asphalt road that curves to the left. A concrete curb separates the road from a grassy area. The curb is a light gray color and has a distinct, slightly raised edge. A small, rectangular, red and white painted section is visible on the curb, possibly a marking or a sign. The road surface appears smooth and is bordered by a white painted line, which is likely a stop line or a traffic marking.\n\n- **The Grass Area**: The grassy patch is located on the right side of the image, adjacent to the road. It is a mix of green and brown, indicating it is not fully lush or well-maintained. The grass is uneven, with some areas appearing dry and patchy. A small, circular, dark-colored manhole cover is embedded in the grass near the center of the patch.\n\n- **The Fire Hydrant**: On the right side of the image, a bright red fire hydrant stands on the grass. It is a standard, cylindrical design with a nozzle on top and a valve on the side. The hydrant is positioned at the edge of the grassy area, near the sidewalk.\n\n- **The Signpost**: In the upper left portion of the image, a tall, vertical signpost is visible. It has a black and yellow diagonal striped pattern, which is a common safety marking for caution or warning. The signpost is mounted on a short, dark-colored pole.\n\n- **The Pole and Light Post**: To the right of the signpost, a tall, black pole stands. It is likely a utility pole or a light post, and it is positioned near the edge of the",
+    "baseline_caption": "This is a detailed, eye-level photograph of a corner of a city street, focusing on a patch of grass and a few key objects. The scene is captured on a bright, possibly overcast day, with natural, even lighting.\n\nThe image is composed of several distinct elements:\n\n- **The Road and Sidewalk:** The foreground and left side of the image are dominated by a paved asphalt road. A concrete curb separates the road from a grassy area. The road curves gently to the left, and a white painted line, likely a stop line or a lane divider, is visible on the asphalt. The sidewalk is made of light gray concrete and runs along the edge of the grassy area.\n\n- **The Grassy Patch:** The central area of the image is a small, irregularly shaped patch of grass. The grass is a mix of green and brown, indicating it is either dry or has been recently mowed. There are several small, scattered patches of dead or yellowed grass. A small, circular metal drain cover is embedded in the grass, surrounded by a few small stones. A small, rectangular, yellow and black striped sign is mounted on a thin metal pole in the grass. The sign has a white square at the top, which is likely a manufacturer's logo or a warning symbol. The sign is positioned at the corner of the road, near the curb.\n\n- **The Fire Hydrant:** On the right side of the image, a bright red fire hydrant stands on the grass. It is a standard, cylindrical design with a domed top and a nozzle on the side. The hydrant is positioned on the grass, slightly to the right of the curb.\n\n- **The Pole and Lamp:** A tall, black metal pole stands in the grass, positioned behind the fire hydrant. It is likely a streetlight pole, and its base is set into the concrete sidewalk",
+    "model_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "f1_delta": 0.33333333333333337,
+    "precision_delta": 0.5,
+    "recall_delta": 0.0
+  },
+  {
+    "image_id": 328959,
+    "file_name": "000000328959.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000328959.jpg",
+    "gt_objects": [
+      "toilet"
+    ],
+    "gt_captions": [
+      "A bathroom with a toilet, shower and an hanging chain to flush the toilet. ",
+      "An oddly shaped black toilet lid in a bathroom.",
+      "A bathroom decorated in black and white. ",
+      "A toilet with a black seat next to a shower.",
+      "a vintage photo of a toilet sitting next to a shower "
+    ],
+    "model_caption": "This is a black and white photograph of a bathroom, captured from a slightly elevated angle. The image is dominated by a stark contrast between the dark, modern fixtures and the bright, clean white walls and floor.\n\nThe central focus is a toilet with a very dark, almost black, seat and lid. The toilet is positioned on the left side of the frame, and its seat is raised, revealing the white porcelain bowl. The toilet is mounted on a white wall, and a white pipe runs vertically from the wall to the top of the toilet tank. The tank itself is a standard rectangular shape, and a small, dark, cylindrical object, possibly a flush valve or a part of the plumbing, is visible on the right side of the tank.\n\nTo the right of the toilet, there is a glass shower enclosure. The shower door is made of clear glass, and the frame is white. The interior of the shower is tiled with white tiles, and a decorative, ornate white pattern is visible on the wall behind the shower. The shower has a chrome or stainless steel showerhead and a handheld shower attachment. The shower floor is also tiled, and a small, white, circular drain is visible at the bottom of the shower.\n\nThe floor of the bathroom is a light gray or white color, and the walls are also white. The overall lighting is bright, creating a clean and modern aesthetic. The image has a high contrast, with the dark toilet and shower fixtures standing out against the bright background. There is no text or fine details visible in the image.",
+    "baseline_caption": "This is a black and white photograph of a bathroom, captured from a slightly elevated angle. The image is dominated by stark contrasts and a monochromatic color scheme, which emphasizes the textures and forms of the objects.\n\nThe scene is composed of several key elements:\n\n- **Toilet**: On the left side of the image, there is a toilet with a very dark, almost black, seat and lid. The toilet bowl is white, and the tank is also white. A white pipe runs vertically from the tank down to the floor. The toilet is positioned against a white wall, and the lid is open. A small, white, cylindrical object, possibly a toilet paper holder or a small container, is mounted on the wall to the left of the toilet.\n\n- **Shower**: To the right, there is a walk-in shower enclosed by a glass door. The glass door has a decorative, white, ornate pattern etched into it. The shower has a white frame and a white showerhead. The shower floor is tiled with white tiles, and the tiles are arranged in a grid pattern. The shower is set into a white frame, and the floor is also white.\n\n- **Wall and Floor**: The walls are white, and the floor is also white. The floor has a slight texture, and the wall has a smooth surface. The lighting in the room is bright, creating a high-contrast image.\n\n- **Other Details**: A small, white, cylindrical object is mounted on the wall to the left of the toilet. The image is in black and white, so all colors are represented as shades of gray. The image is in a vertical orientation, and the focus is on the toilet and shower.\n\nThe overall impression is one of a clean, modern bathroom with a focus on functionality and design. The black and white color scheme adds a timeless quality to the image.",
+    "model_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "f1_delta": 0.33333333333333337,
+    "precision_delta": 0.5,
+    "recall_delta": 0.0
+  },
+  {
+    "image_id": 482477,
+    "file_name": "000000482477.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000482477.jpg",
+    "gt_objects": [
+      "bird"
+    ],
+    "gt_captions": [
+      "there is a bird that is sitting at the top of a branch",
+      "A small bird sitting on top of a branch.",
+      "A bird is perched on top of a large stick.",
+      "A bird perched on top of a tree branch with large wings.l",
+      "blue and white bird standing on a branch"
+    ],
+    "model_caption": "This is a detailed photograph of a large bird of prey perched on a weathered, dark tree branch against a plain, light gray background. The image is a close-up, focusing on the bird's upper body and head, capturing it in a moment of stillness.\n\nThe bird is positioned in a three-quarter view, facing towards the right side of the frame. Its body is angled slightly, allowing a clear view of its head, chest, and wings. The bird's head is a dark, almost black color, with a prominent, sharp, and slightly curved beak that is dark grey or black. Its eyes are a striking, bright yellow, and its beak is a dark, almost black color. The bird's head is crowned with a distinct, spiky crest of feathers, which is a mix of dark brown and black, giving it a formidable appearance.\n\nThe bird's body is a mix of dark and light colors. The upper parts of its body, including the back and wings, are a dark brown, almost black, with a noticeable pattern of lighter, almost white, spots. The wings are broad and appear to be in a state of rest. The chest and belly are a lighter, off-white color, with a pattern of small, dark spots. The bird's legs and feet are a pale, creamy white, and its claws are sharp and dark, gripping the branch firmly.\n\nThe tree branch it is perched on is dark and gnarled, with a rough, textured surface. It is positioned vertically, extending from the lower right of the frame upwards. The branch is the only object in the foreground that is not a part of the bird's body.\n\nThe background is a uniform, light gray, suggesting an overcast sky or a plain, neutral-colored environment. This simple backdrop makes the bird stand out as the central subject.\n\nIn the bottom left corner of the image",
+    "baseline_caption": "This is a detailed photograph of a large bird of prey perched on a weathered, dark, gnarled tree branch against a plain, overcast sky. The image is a close-up, focusing on the bird from a side profile, with the bird's head turned slightly to its right, giving a clear view of its features.\n\nThe bird is the central subject and is positioned on the right side of the frame. It is perched on a thick, dark, and textured branch that extends from the lower right corner of the image. The bird's body is angled, with its head turned to the right, and its legs are firmly planted on the branch, with its feet gripping it.\n\nThe bird's plumage is a mix of dark and light colors. The upper parts of its body, including its back, wings, and the top of its head, are a dark brown or black. The feathers on its wings are dense and appear to have a slightly mottled or barred pattern. The underside of its body, including its chest and belly, is a stark white, with numerous small, dark spots scattered across it. The bird's legs and feet are a pale, off-white color, and its claws are sharp and dark.\n\nThe bird's head is a prominent feature. It has a large, dark, hooked beak that is a dark grey or black. Its eyes are a striking, bright orange or yellow, and its head is crowned with a tuft of feathers that are a mix of brown and white, giving it a somewhat \"crowned\" appearance. The feathers on its head are slightly ruffled, adding to its alert and powerful look.\n\nThe background is a uniform, light grey or off-white, suggesting an overcast day with no direct sunlight. This neutral backdrop makes the bird stand out sharply. The lighting on the bird is soft and even, highlighting the texture of its feathers",
+    "model_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "f1_delta": 0.33333333333333337,
+    "precision_delta": 0.5,
+    "recall_delta": 0.0
+  },
+  {
+    "image_id": 264335,
+    "file_name": "000000264335.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000264335.jpg",
+    "gt_objects": [
+      "bird"
+    ],
+    "gt_captions": [
+      "A bird flying through a blue sky with wide wings.",
+      "A birds is soaring across the blue sky ",
+      "A bird is flying against a blue sky.",
+      "a big bird flies through the air ",
+      "A brown, white and black bird flying in blue sky."
+    ],
+    "model_caption": "This is a detailed photograph of a bird of prey in flight against a clear, bright blue sky. The image is taken from a low angle, looking up at the bird, which is the central focus.\n\nThe bird is captured in mid-flight, with its wings fully extended. The wings are broad and appear to be in a state of dynamic motion, with the tips of the wings slightly blurred, suggesting speed. The bird's body is streamlined, and its tail is fanned out, which is a characteristic feature of many raptors.\n\nThe plumage of the bird is a mix of earthy tones. The upper parts of the wings and the back are a dark brown, almost black, with a noticeable pattern of lighter, tan-colored feathers on the underside of the wings. The underside of the wings, particularly the lower surface, is a lighter, more uniform brown. The bird's head is a pale, light brown color, and its beak is a sharp, dark color, possibly black or dark brown. The eyes are not visible in the image.\n\nThe bird's tail is fanned out, and the feathers are clearly visible. The tail feathers are long and appear to be a dark brown color, with a lighter, tan-colored tip. The bird's legs are not visible in the image.\n\nThe background is a clear, bright blue sky, which provides a stark contrast to the bird's dark feathers. The sky is uniform in color, with no clouds or other objects visible. The lighting is bright and even, suggesting it is a sunny day. The image is well-lit, with no harsh shadows, and the colors are vibrant and natural.\n\nThere is no text or any other objects visible in the image. The focus is entirely on the bird and its flight. The image is a high-quality photograph, with a clear and detailed depiction of the bird in flight.",
+    "baseline_caption": "This is a detailed photograph of a bird of prey in flight against a clear, bright blue sky. The bird is the central subject, captured from a side profile as it soars.\n\n- **Bird's Anatomy and Posture**: The bird is in a dynamic, soaring flight, with its wings fully extended. Its body is angled slightly towards the right of the frame, and its head is turned to look forward. The wings are broad and powerful, with the tips of the primary feathers showing a distinct dark brown or black coloration, which contrasts with the lighter, more mottled brown and white feathers on the rest of the wing. The tail is long and forked, with the two outer feathers being particularly long and pointed, giving it a distinctive appearance.\n\n- **Coloration and Feathers**: The plumage of the bird is a mix of earthy tones. The upper parts of the body and wings are a rich, dark brown, while the underparts, including the chest and belly, are a lighter, more uniform brown. The feathers on the wings have a complex pattern, with a lighter, almost cream-colored band near the base of the wing, which is visible on the underside of the wing. The tips of the wings are dark, and the feathers on the tail are long and pointed.\n\n- **Size and Scale**: The bird appears to be a medium-sized raptor, likely a type of kite or hawk. Its wings are large and spread wide, indicating it is in a state of active flight. The size of the bird is comparable to that of a large falcon or a similar species.\n\n- **Background and Lighting**: The background is a uniform, clear blue sky, which provides a stark contrast to the bird's dark and earthy colors. The lighting is bright and even, suggesting it is a sunny day. The sunlight illuminates the bird from the front and side, highlighting the",
+    "model_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "f1_delta": 0.33333333333333337,
+    "precision_delta": 0.5,
+    "recall_delta": 0.0
+  },
+  {
+    "image_id": 110211,
+    "file_name": "000000110211.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000110211.jpg",
+    "gt_objects": [
+      "zebra"
+    ],
+    "gt_captions": [
+      "Zebras and rhinos out in the wild on a sunny day ",
+      "A herd of zebra walking across a grass covered field.",
+      " Zebras with feral hogs in a wild habitat.",
+      "A large open area of land that has several zebra of different sizes and warthogs near them.",
+      "Zebras share a grassland with wild pigs in Africa."
+    ],
+    "model_caption": "This is a wide, natural landscape photograph capturing a group of animals in a savanna environment. The scene is dominated by a vast expanse of dry, golden-brown grass that stretches to the horizon, with a few scattered trees and shrubs in the background. The lighting suggests it is either early morning or late afternoon, casting a warm, golden hue over the entire scene.\n\nIn the foreground and midground, a group of zebras is the central focus. There are at least five zebras visible, with their characteristic black and white stripes clearly defined. They are positioned in various ways: one zebra is in the immediate foreground, walking from left to right, while another stands slightly behind it. A third zebra is in the middle ground, facing towards the right, and a fourth is partially visible on the far right. A fifth zebra is seen on the far right, standing with its head turned slightly away from the camera. The zebras are on a patch of green grass, which contrasts with the surrounding dry grass.\n\nTo the right of the zebras, a small, dark-colored animal, likely a warthog, is visible. It is standing on the grass, and its body is partially obscured by the zebras. The warthog is positioned in the midground, and its size is smaller than the zebras.\n\nThe background features a distant, hazy landscape with rolling hills and a few trees. The sky is a pale, light blue, suggesting a clear day. The overall composition of the image is balanced, with the animals in the foreground and the expansive savanna stretching into the distance. The image is rich in detail, capturing the natural beauty and wildlife of the African savanna.",
+    "baseline_caption": "This is a wide, natural landscape photograph capturing a group of animals in a savanna environment, likely in Africa. The scene is bathed in the warm, golden light of either early morning or late afternoon, which casts long shadows and highlights the textures of the landscape.\n\nThe composition is dominated by a large herd of zebras and a few other animals in a vast, open field. The foreground is a mix of green grass and patches of dry, yellow-brown grass, with a dirt path visible on the left. The middle ground is filled with a dense, golden-brown grassland that stretches to the horizon. In the background, a line of trees and shrubs marks the edge of the savanna, with a distant, hazy skyline.\n\nThe animals are the central focus. On the left, a large zebra is in the foreground, walking from right to left. Its body is angled towards the right, and its striped coat is clearly visible. Behind it, another zebra is partially obscured, and a third zebra is seen further back, also walking. To the right, a small, young zebra stands near a larger adult zebra, which is facing the camera. The young zebra is smaller and has a lighter, more delicate coat. A small, dark-colored warthog is visible in the middle of the field, near the center of the image, and appears to be grazing or moving slowly. The warthog is a small, pig-like animal with a prominent snout and a thick, coarse coat. The warthog is positioned between the two adult zebras and the young zebra.\n\nThe colors in the image are rich and natural. The zebras' black and white stripes contrast sharply with the golden-brown grass and the green patches of grass in the foreground. The warthog's brownish-gray coat blends in with the earthy tones of the landscape",
+    "model_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "f1_delta": 0.33333333333333337,
+    "precision_delta": 0.5,
+    "recall_delta": 0.0
+  },
+  {
+    "image_id": 42563,
+    "file_name": "000000042563.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000042563.jpg",
+    "gt_objects": [
+      "train"
+    ],
+    "gt_captions": [
+      "Railway car on snow covered tracks approaching urban area.",
+      "A train riding on a snow covered track near trees. ",
+      "A yellow bus travels through a snowy, tree lined street.",
+      "A metro style train speeding down the tracks between evergreen trees.",
+      "A train traveling along a forest through the snow."
+    ],
+    "model_caption": "This is a wide-angle, eye-level photograph capturing a train moving through a snowy, forested landscape on a winter day. The scene is dominated by a muted, overcast sky, which casts a soft, diffused light across the entire image, giving it a cool, grayish tone.\n\nThe central subject is a train, likely a modern electric multiple unit (EMU) or a regional train, traveling from the left side of the frame towards the right. The train is a bright yellow and white color, with a dark, possibly black, front section. It is moving along a set of tracks that are covered in a thick layer of snow. The train is in motion, and its wheels are kicking up a spray of snow, indicating it is moving at a moderate speed. The train's headlights are on, and the front of the train is illuminated, creating a small, bright spot against the gray background.\n\nThe tracks are flanked on both sides by dense trees. On the left, the trees are mostly bare, with their branches heavily laden with snow, suggesting a winter season. On the right, the trees are more coniferous, with their dark green needles also dusted with snow. The trees are arranged in a natural, somewhat dense line, creating a corridor-like effect that leads the viewer's eye into the distance.\n\nThe tracks themselves are a prominent feature, stretching from the foreground into the mid-ground. They are clearly visible, with the rails and the steel supports of the overhead electrical lines (catenary) running parallel to the tracks. The overhead lines are supported by metal poles and are visible above the train and the trees.\n\nIn the lower right portion of the image, a railway signal is visible. It is a dark, rectangular box with a small, illuminated light, possibly a red or yellow light, indicating the train's status. The signal is mounted on a metal pole and is positioned at",
+    "baseline_caption": "This is a wide, high-angle photograph of a train traveling through a snowy, forested landscape on a winter day. The scene is dominated by a muted, overcast sky, which casts a soft, diffused light across the entire image, giving it a cool, grayish tone.\n\nThe central subject is a modern passenger train, likely a Class 380 or similar model, moving from the left side of the frame towards the right. The train is a bright yellow and white color, with a dark green or black front section. It is on a set of tracks that are covered in a layer of snow, and the train is kicking up a spray of snow as it moves forward. The train's headlights are on, and the front of the train has a digital display showing the route or destination.\n\nThe tracks are flanked by dense trees on both sides. On the left, there is a mix of deciduous trees, many of which are bare, and on the right, there are several evergreen trees, likely pines or firs, which are also dusted with snow. The trees are tall and form a natural corridor, with their branches and trunks partially covered in snow. The ground is entirely covered in snow, and the snow appears to be a light, powdery layer.\n\nAbove the tracks, a complex network of overhead electrical wires and poles is visible. These are the catenary wires that power the train, and they are supported by metal poles that are also covered in snow. The wires are arranged in a crisscross pattern, and the poles are spaced at regular intervals.\n\nIn the distance, the landscape opens up to a more open area with a few buildings visible, possibly a small village or town. The sky is completely overcast, and the overall atmosphere is quiet and serene, with a sense of calm and stillness. The image captures a moment of travel in",
+    "model_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "f1_delta": 0.33333333333333337,
+    "precision_delta": 0.5,
+    "recall_delta": 0.0
+  },
+  {
+    "image_id": 297396,
+    "file_name": "000000297396.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000297396.jpg",
+    "gt_objects": [
+      "cake",
+      "dining table",
+      "knife"
+    ],
+    "gt_captions": [
+      "Small pieces of cake have been arranged on a plate",
+      "Chocolate dessert bars covered in frosting and sprinkles.",
+      "A plate of desserts on a table looking delicious.",
+      "A plate of desserts with frosting and sprinkles.",
+      "A set up small chocolate cakes decorated like trains."
+    ],
+    "model_caption": "This is a close-up, slightly angled photograph of a dessert platter, likely a holiday or festive treat. The image is taken from a low angle, focusing on the food, which is arranged on a plate.\n\nThe central subject is a collection of chocolate cakes, possibly bundt or a similar type of cake, arranged on a yellow plate with a white rim. The cakes are dark brown, suggesting they are chocolate-based, and are decorated with a thick, white icing that is piped in a zigzag or wavy pattern across the top. The icing appears to be a simple, possibly sugar-based glaze, and some of the cakes have small, colorful sprinkles on top, possibly red and white, which could be candy or edible glitter.\n\nThe plate is placed on a white tablecloth, which is visible in the foreground and background. The tablecloth has a subtle, textured pattern, possibly a fine weave or a small, repeating design. The lighting in the image is warm and appears to be from an indoor source, casting soft shadows and giving the scene a cozy, inviting feel.\n\nIn the background, the setting is slightly out of focus, but a dark, possibly wooden, structure is visible. It could be a piece of furniture, like a table or a cabinet, with a dark, possibly metallic, frame. The overall composition is warm and focused on the dessert, with the background elements providing context but not distracting from the main subject.\n\nThere is no text visible on the image.",
+    "baseline_caption": "This is a close-up, slightly angled photograph of a dessert platter, likely for a holiday or festive occasion. The image is dominated by several chocolate cakes, which appear to be bundt or ring-shaped, arranged on a light-colored plate.\n\nThe central focus is a collection of chocolate cakes, each decorated with white icing. The cakes are arranged in a somewhat circular pattern on a plate with a pale yellow or cream-colored rim. The cakes themselves are a rich, dark brown, suggesting a chocolate base. The white icing is applied in a decorative, drizzled pattern, with some cakes having a more prominent, thick drizzle, while others have a more delicate, thin line. The icing is also adorned with small, colorful sprinkles, possibly red and green, which add a festive touch.\n\nThe plate is set on a white tablecloth, which is visible in the foreground and background. The tablecloth has a subtle, textured pattern. The lighting is warm and appears to be from an indoor source, casting soft shadows and highlighting the glossy surface of the cakes.\n\nIn the background, the setting is slightly out of focus, but a glass display case is visible, suggesting the desserts are part of a larger display. The overall composition is warm and inviting, with a strong emphasis on the textures and colors of the chocolate and icing.",
+    "model_metrics": {
+      "f1": 0.8,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "mentioned": 2,
+      "correct": 2,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "baseline_metrics": {
+      "f1": 0.5,
+      "precision": 1.0,
+      "recall": 0.3333333333333333,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "f1_delta": 0.30000000000000004,
+    "precision_delta": 0.0,
+    "recall_delta": 0.3333333333333333
+  },
+  {
+    "image_id": 283520,
+    "file_name": "000000283520.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000283520.jpg",
+    "gt_objects": [
+      "frisbee",
+      "person"
+    ],
+    "gt_captions": [
+      "Two men play around on a nature trail.",
+      "Two men stand in the woods as one of them throws a Frisbee.",
+      "Two people standing in front of some trees.",
+      "A man throwing a frisbee on a course as another looks on.",
+      "Two guys in the woods playing with a disc."
+    ],
+    "model_caption": "This is a full-length, outdoor photograph taken in a wooded area, likely a park or a natural trail. The scene is captured from a slightly low angle, looking out from a dirt path towards a group of people.\n\nThe central focus is on two men standing on a dirt path, with a third person partially visible on the far right. The man on the left is standing with his body angled slightly to the right, holding a blue frisbee in his right hand. He is wearing a dark, short-sleeved t-shirt with a purple and white graphic on the chest, and blue jeans. He has dark hair and is wearing glasses. His posture is relaxed, and he is looking towards the right side of the frame.\n\nThe man on the right is in the middle of a dynamic action. He is wearing a light blue t-shirt, camouflage shorts, and grey sneakers. He is holding a red frisbee in his right hand, which is extended forward, and his left arm is bent at the elbow. His body is in motion, suggesting he is throwing the frisbee. He is looking towards the left, following the direction of the throw. The background is filled with dense green trees and foliage, creating a natural, somewhat secluded atmosphere.\n\nThe path is made of dirt and is surrounded by green grass and bushes. A wooden bench is visible in the background, partially obscured by the trees. The lighting is natural daylight, and the overall color palette is dominated by greens, browns, and the blue and red of the frisbees. The image captures a moment of casual outdoor recreation.",
+    "baseline_caption": "This is a full-length, outdoor photograph taken in a wooded area, likely a park or a natural trail. The scene is centered on two men engaged in a game of disc golf, with a third person partially visible on the far right.\n\nThe image is composed with a natural, slightly overcast lighting, which gives the scene a soft, diffused quality. The background is filled with dense trees and foliage, creating a natural, secluded atmosphere. The ground is a mix of dirt and small rocks, with a wooden bench visible in the mid-ground.\n\nThe two main subjects are positioned in the foreground and mid-ground.\n\n- **Man on the left**: This man is standing with a relaxed posture. He is wearing a dark, short-sleeved t-shirt with a purple and white graphic on the chest, and blue jeans. He has a beard and is wearing glasses. In his hands, he holds a blue disc golf disc. He is looking towards the right side of the frame.\n\n- **Man on the right**: This man is in the act of throwing a disc. He is wearing a light blue t-shirt with a faint graphic on the front, and camouflage shorts. He is wearing grey athletic shoes. His body is in motion, with his right arm extended forward, releasing a red disc. His left arm is bent and held back for balance. He is looking towards the direction of the throw.\n\n- **Third person**: On the far right, a third person is partially visible. Only their arm and shoulder are in the frame. They are wearing a light-colored, possibly white or light blue, t-shirt.\n\n- **Background elements**: Behind the two men, there is a wooden bench made of weathered wood, supported by thick, rough-hewn posts. A blue plastic bag hangs from the bench. The trees are tall and have a mix of green leaves and some brown, exposed bark. The ground is",
+    "model_metrics": {
+      "f1": 0.8,
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "mentioned": 3,
+      "correct": 2,
+      "hallucinated": 1,
+      "gt_count": 2
+    },
+    "baseline_metrics": {
+      "f1": 0.5,
+      "precision": 0.5,
+      "recall": 0.5,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 2
+    },
+    "f1_delta": 0.30000000000000004,
+    "precision_delta": 0.16666666666666663,
+    "recall_delta": 0.5
+  },
+  {
+    "image_id": 12639,
+    "file_name": "000000012639.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000012639.jpg",
+    "gt_objects": [
+      "baseball bat",
+      "baseball glove",
+      "person"
+    ],
+    "gt_captions": [
+      "A little boy about to hit a baseball during a game.",
+      "A little-league baseball game with a kid up to bat.",
+      "A little boy holding a bat standing at home plate.",
+      "A boy preparing to swing a baseball bat with parents looking on.",
+      "A boy holding a baaeball bat at a game"
+    ],
+    "model_caption": "This is a detailed description of the image provided.\n\nThe image captures a youth baseball game in progress on a sunny day, set in a park with a large, grassy area and trees in the background. The scene is viewed from a slightly elevated angle, focusing on the action at home plate.\n\nIn the foreground, a young batter is the central figure. They are wearing a white t-shirt with a small, dark logo on the left chest, light gray or beige pants, and a black helmet with a face mask. The batter is in a ready stance, holding a white baseball bat with both hands, and is looking towards the pitcher. Their body is slightly turned, and they appear to be preparing to swing.\n\nTo the left of the batter, a catcher is in a crouched position. They are wearing a red and black protective uniform, including a red jersey, gray pants, and a black helmet with a face mask. The catcher is wearing a large, brown leather glove on their left hand, which is extended forward, likely in a defensive gesture. The catcher's body is angled towards the batter, and their focus is on the pitcher.\n\nThe ground is a mix of dirt and gravel, with a white home plate visible in the center of the frame. The background is filled with spectators sitting on the grass, some in groups and others standing. The people are dressed in casual clothing, and the scene is bathed in bright, natural sunlight, suggesting it is midday.\n\nThe trees in the background are lush and green, with their leaves forming a canopy over the field. The overall atmosphere is one of a casual, community-based sporting event. There is no visible text on the clothing or equipment in the image.",
+    "baseline_caption": "This is a detailed description of the image, focusing on the scene, the people, and the environment.\n\nThe image captures a youth baseball game in progress on a sunny day, set in a park. The scene is centered on a dirt and grass area, with a large group of spectators sitting on the grass in the background.\n\nIn the foreground, two young players are the main focus. On the left, a young catcher is in a crouched position, wearing a red jersey, grey pants, and a black protective mask. He is holding a brown leather baseball glove, which is extended towards the batter. His body is angled, and he appears to be ready to receive the pitch. The catcher is wearing a black helmet with a face mask and a red and black chest protector.\n\nTo the right, a young batter stands in a ready stance, holding a white baseball bat. The batter is wearing a light grey t-shirt with the word \"Act\" printed in black on the front, grey sweatpants, and black shoes. He is wearing a black helmet with a face mask. His body is turned slightly to his right, and he is looking towards the pitcher's mound.\n\nThe ground is a mix of dirt and grass, with a white home plate visible in the center of the frame. The background is filled with trees and a large group of people sitting on the grass. The people are dressed in casual clothes, and some are watching the game, while others are sitting on the grass. The trees are lush and green, and the sunlight is bright, casting shadows on the ground.\n\nIn the background, a few people are standing, including a man in a white t-shirt and black shorts, who appears to be a coach or umpire. The overall atmosphere is one of a casual, community-based youth sports event.",
+    "model_metrics": {
+      "f1": 0.8,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "mentioned": 2,
+      "correct": 2,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "baseline_metrics": {
+      "f1": 0.5,
+      "precision": 1.0,
+      "recall": 0.3333333333333333,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "f1_delta": 0.30000000000000004,
+    "precision_delta": 0.0,
+    "recall_delta": 0.3333333333333333
+  },
+  {
+    "image_id": 500423,
+    "file_name": "000000500423.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000500423.jpg",
+    "gt_objects": [
+      "person",
+      "train"
+    ],
+    "gt_captions": [
+      "An orange, white, and gray train is sitting at the platform.",
+      "a train parked next to a railway platform ",
+      "a train at a station near a platform",
+      "A two story train stopped at an indoor train stop.",
+      "A modern subway train is lit up at night. "
+    ],
+    "model_caption": "This is a detailed photograph of a modern passenger train at a station platform. The image is taken from a low angle, looking along the length of the train, which is positioned on the right side of the frame.\n\nThe train is a multi-carriage, high-speed or long-distance passenger train, likely a German or European model, given the \"City Night Line\" branding. The train's body is predominantly white, with a wide, vibrant orange stripe running horizontally along its side. This stripe is a key visual element, contrasting sharply with the white. The train has a sleek, modern design with a smooth, aerodynamic profile.\n\nThe train is composed of several connected carriages. The visible carriages are long and have a streamlined shape. The windows are rectangular and are arranged in a regular pattern along the side of the train. The windows are dark, possibly tinted, and are set into the white and orange bodywork. The train's undercarriage is visible, showing the wheels and suspension system.\n\nThe train is situated on a platform, which is made of light-colored, possibly concrete or stone, tiles. The platform is clean and well-maintained. The train is positioned on the right side of the image, and the platform extends to the left, with a slight curve. The platform is marked with a white line, which is a safety feature to guide passengers.\n\nAbove the train, the station's infrastructure is visible. The ceiling is made of a grid of metal beams and panels, with a large, illuminated blue sign that reads \"C\" in a bold, sans-serif font. This sign is likely indicating the platform or a specific station. The lighting in the station is bright, with a mix of artificial lighting from the ceiling and the sign, creating a well-lit environment.\n\nThe overall impression is one of modernity, efficiency, and cleanliness. The train is a symbol of modern transportation,",
+    "baseline_caption": "This is a detailed photograph of a modern passenger train at a station platform. The image is taken from a low angle, looking along the length of the train, which is positioned on the platform.\n\nThe train is a double-decker, high-speed, or long-distance coach, likely a German regional or intercity train. Its exterior is painted in a two-tone color scheme: the lower half is white, and the upper half is a vibrant orange stripe that runs horizontally along the side. The train has a sleek, modern design with a smooth, aerodynamic profile.\n\nThe train is on a platform with a light-colored, possibly white or light gray, tiled floor. The platform edge is defined by a dark gray or black border. The train is stationary, and the platform is well-lit by overhead lights.\n\nOn the side of the train, the text \"City Night Line\" is clearly visible in a dark, sans-serif font. Below this, a series of numbers and letters, likely a train identification number, are printed in a smaller font. The train's windows are rectangular and are arranged in a row, with some of them appearing to be tinted or darkened.\n\nAbove the train, a large, illuminated blue sign with a white letter \"C\" is mounted on the station's overhead structure. This sign indicates the platform number. The station's architecture features a modern design with a high ceiling, exposed structural beams, and a network of lights and ventilation systems.\n\nThe overall scene is well-lit, with a clean and organized appearance, suggesting a well-maintained and modern railway station. The image captures the train in a static, yet detailed, view, emphasizing its design and the station's infrastructure.",
+    "model_metrics": {
+      "f1": 0.8,
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "mentioned": 3,
+      "correct": 2,
+      "hallucinated": 1,
+      "gt_count": 2
+    },
+    "baseline_metrics": {
+      "f1": 0.5,
+      "precision": 0.5,
+      "recall": 0.5,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 2
+    },
+    "f1_delta": 0.30000000000000004,
+    "precision_delta": 0.16666666666666663,
+    "recall_delta": 0.5
+  },
+  {
+    "image_id": 557172,
+    "file_name": "000000557172.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000557172.jpg",
+    "gt_objects": [
+      "bottle",
+      "sink",
+      "toilet"
+    ],
+    "gt_captions": [
+      "A bathroom sink and mirror reflecting the shower and bathtub.",
+      "A sink that is in front of a mirror.",
+      "A CONTEMPORARY BATHROOM THAT HAS A VERY LARGE MIRROR",
+      "A bathroom with a sink, tub, shower head and mirror.",
+      "The vanity features a very contemporary style motif."
+    ],
+    "model_caption": "This is a detailed photograph of a modern bathroom, captured from a slightly elevated angle. The scene is well-lit, with a combination of ambient light and bright, vertical light strips on the mirror, creating a clean and contemporary atmosphere.\n\nThe central focus is a large, rectangular mirror that dominates the wall. It is framed by a sleek, dark, possibly black or dark brown, frame. The mirror is flanked by two vertical, illuminated light strips, one on the left and one on the right, which cast a soft, bright glow on the wall and the mirror's surface. The mirror reflects the bathroom's interior, including a glass-enclosed shower area with a chrome showerhead and a white towel hanging on a rack.\n\nBelow the mirror, a long, white countertop extends across the width of the bathroom. On the countertop, there is a white, rectangular, undermount sink with a modern, curved faucet. The sink is positioned in the center of the counter. To the right of the sink, a small, dark brown tray holds a few toiletries, including a white bottle and a small, dark-colored object. The countertop is a smooth, light-colored surface, likely white or off-white.\n\nTo the left of the sink, a white, rectangular bathtub is visible. It is partially obscured by the mirror and the light strips. The bathtub has a modern design with a smooth, white finish. The wall behind the bathtub is a light, neutral color, possibly beige or off-white.\n\nThe walls of the bathroom are a light, neutral color, likely a pale beige or off-white. The overall color palette is neutral, with white, beige, and dark brown/black accents. The lighting is soft and even, highlighting the clean lines and modern design of the bathroom fixtures. The image is a clear, well-composed shot that captures the functional and aesthetic elements of the space.",
+    "baseline_caption": "This is a detailed, well-lit photograph of a modern bathroom, captured from a perspective that looks into the space from the sink area. The image is rich in detail, showcasing the clean lines and contemporary design of the bathroom fixtures and layout.\n\nThe central focus is a large, rectangular mirror mounted on the wall, which reflects the entire bathroom. The mirror is framed by a slim, dark-colored border and is flanked by two vertical, illuminated light strips. These strips are on the left and right sides of the mirror, providing bright, even lighting that highlights the reflection and the surrounding area. The light strips are likely LED, as they are bright and have a clean, modern appearance.\n\nThe mirror reflects a large, white, rectangular sink with a modern, minimalist design. The sink is set into a wide, white countertop that extends across the room. The sink has a single, sleek, chrome faucet with a modern, curved design. A small, dark brown soap dish is placed on the countertop to the right of the sink. The countertop is a smooth, white surface, and the sink is set into a dark, possibly black, countertop that contrasts with the white surface.\n\nTo the left of the sink, a white bathtub is visible. It has a chrome faucet and a white, textured tile surround. The bathtub is positioned against a wall with a light-colored, possibly beige or off-white, tiled wall. The tiles are arranged in a grid pattern, and the wall is illuminated by a recessed, circular light fixture.\n\nTo the right of the sink, a glass shower enclosure is visible. It is made of clear glass and has a dark, horizontal band across the middle. The shower has a chrome showerhead and a chrome shower rod. A white towel is hanging on a hook inside the shower enclosure.\n\nOn the right side of the countertop, there is a small, dark brown tray",
+    "model_metrics": {
+      "f1": 0.8,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "mentioned": 2,
+      "correct": 2,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "baseline_metrics": {
+      "f1": 0.5,
+      "precision": 1.0,
+      "recall": 0.3333333333333333,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "f1_delta": 0.30000000000000004,
+    "precision_delta": 0.0,
+    "recall_delta": 0.3333333333333333
+  },
+  {
+    "image_id": 142790,
+    "file_name": "000000142790.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000142790.jpg",
+    "gt_objects": [
+      "person",
+      "skis",
+      "snowboard"
+    ],
+    "gt_captions": [
+      "Two snow boarders during a snowy day at the hill.",
+      "Two people sitting in the snow beside their skis.",
+      "two people on skis falling in the snow",
+      "A ski is laying loose while two people struggle to get up.",
+      "Two people are out skiing in the cold. One appears to have possibly crashed. "
+    ],
+    "model_caption": "This is a low-resolution, grainy photograph taken in a snowy, forested environment, likely during a winter sports activity. The image captures a moment of interaction between two people on a snow-covered slope.\n\n- **Main Subjects**: The central focus is on two individuals, both dressed in dark winter gear, likely ski or snowboard attire. The person on the left is seated on the snow, wearing a dark jacket, a helmet, and goggles. The person on the right is kneeling, leaning forward, and appears to be helping or assisting the seated individual. Both are wearing dark, possibly black, jackets and pants, and their faces are partially obscured by the snow and their gear.\n\n- **Objects and Equipment**: The person on the left has a pair of skis lying on the snow in front of them, with the ski poles resting on the snow. The person on the right is holding a ski pole and is leaning over the seated person. The skis are black and appear to be in a resting or resting state. The person on the right is also wearing a dark jacket and pants, and their gear is visible.\n\n- **Background and Environment**: The background is dominated by a dense forest of evergreen trees, which are heavily covered in snow. The trees are dark green and white, and their branches are laden with snow. The sky is overcast and white, suggesting a foggy or snowy day. The ground is entirely covered in snow, and the overall scene is very bright and white.\n\n- **Color Palette**: The dominant colors are white (snow), dark green (trees), and black (clothing). The image has a muted, somewhat desaturated color palette, which is typical of a snowy, overcast day.\n\n- **Spatial Relationships**: The two individuals are positioned in the center of the frame, with the person on the left seated and the person on the right kneeling. The skis",
+    "baseline_caption": "This is a photograph taken in a snowy, forested environment, likely during a ski trip. The image captures a moment of interaction between two people on a snow-covered slope, with a dense forest of evergreen trees in the background.\n\nThe scene is dominated by a thick, white snowfall, which creates a hazy, overcast atmosphere. The lighting is diffuse and soft, suggesting an overcast day, and the overall color palette is muted, consisting primarily of whites, grays, and dark greens.\n\nThe two individuals are the central focus of the image. The person on the left is lying on their back in the snow, wearing a black ski jacket, a black helmet, and dark ski pants. They are wearing a black ski mask and appear to be in a state of rest or possibly injury. A red and black ski is lying in the snow near their feet. The person on the right is kneeling on the snow, also dressed in a black ski outfit, including a helmet and goggles. This person is leaning forward, with their hands on the other person's shoulders or back, suggesting they are providing assistance or checking on them. A second ski is visible near the kneeling person's feet.\n\nThe background is a dense forest of tall, snow-covered evergreen trees, which are slightly blurred due to the fog and snow. The ground is completely covered in snow, and the overall scene conveys a sense of cold, quiet, and the challenges of winter sports. There is no visible text or fine details on the clothing or equipment.",
+    "model_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 3,
+      "correct": 3,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "baseline_metrics": {
+      "f1": 0.8,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "mentioned": 2,
+      "correct": 2,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "f1_delta": 0.19999999999999996,
+    "precision_delta": 0.0,
+    "recall_delta": 0.33333333333333337
+  }
+]
