@@ -144,6 +144,17 @@ merge_and_upload() {
         ossutil cp "$ckpt_file" "${oss_step_path}/model.safetensors" -f >> "$LOG_FILE" 2>&1
     fi
 
+    # Upload traces if present (once per experiment, on first step upload)
+    local trace_dir="${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}"
+    local oss_trace_path="${OSS_BASE}/${oss_name}/training_artifacts/traces"
+    if [[ -d "$trace_dir" ]] && [[ ! -f "${WATCH_DIR:-${CKPT_BASE}/${EXPERIMENT_NAME}}/.traces_uploaded" ]]; then
+        local trace_marker="${WATCH_DIR:-${CKPT_BASE}/${EXPERIMENT_NAME}}/.traces_uploaded"
+        log "Uploading traces: ${trace_dir} -> ${oss_trace_path}/ ..."
+        ossutil cp -r "${trace_dir%/}/" "${oss_trace_path%/}/" -f >> "$LOG_FILE" 2>&1
+        touch "$trace_marker"
+        log "  ✅ Traces uploaded and marked."
+    fi
+
     # Delete merged safetensors to free disk space
     rm -f "$ckpt_file" "$sha256_file"
     touch "${step_dir}/.oss_uploaded"
@@ -175,6 +186,13 @@ merge_and_upload() {
         log "All steps uploaded for $(basename "$ckpt_parent"), cleaning current FSDP shards: $(basename "$step_dir")"
         rm -rf "${step_dir}/actor" "${step_dir}/critic" "${step_dir}/ref"
         log "  Freed space from $(basename "$step_dir")"
+
+        # Clean up local trace directory after all steps are uploaded
+        if [[ -d "$trace_dir" ]]; then
+            log "All steps uploaded, cleaning local trace dir: ${trace_dir}"
+            rm -rf "$trace_dir"
+            log "  ✅ Trace dir cleaned."
+        fi
     fi
 }
 

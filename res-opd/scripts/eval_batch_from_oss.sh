@@ -69,6 +69,7 @@ CHAIR_SAVE_LOGPROBS="${CHAIR_SAVE_LOGPROBS:-False}"
 CHAIR_TOP_LOGPROBS="${CHAIR_TOP_LOGPROBS:-5}"
 OSS_NAMES=()
 LOCAL_NAMES=()
+STUDENT_RATIOS=()
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -84,6 +85,13 @@ while [[ $# -gt 0 ]]; do
             shift
             while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
                 LOCAL_NAMES+=("$1")
+                shift
+            done
+            ;;
+        --student-ratios)
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
+                STUDENT_RATIOS+=("$1")
                 shift
             done
             ;;
@@ -220,8 +228,19 @@ echo " Experiments: ${#OSS_NAMES[@]}"
 echo " Started at: $(date)"
 echo "=========================================="
 
+VLLM_BASE_PORT="${VLLM_BASE_PORT:-8000}"
+
 for idx in "${!OSS_NAMES[@]}"; do
     oss_name="${OSS_NAMES[$idx]}"
+
+    # Increment port for each experiment to avoid vLLM port conflicts
+    export VLLM_PORT=$((VLLM_BASE_PORT + idx))
+
+    # Set per-experiment student ratio if provided
+    if [[ $idx -lt ${#STUDENT_RATIOS[@]} && -n "${STUDENT_RATIOS[$idx]}" ]]; then
+        export STUDENT_RATIO="${STUDENT_RATIOS[$idx]}"
+        echo "  Student ratio: ${STUDENT_RATIO}"
+    fi
 
     # Derive local experiment name with triple fallback:
     #   1. Explicit --local-names (if provided for this index)

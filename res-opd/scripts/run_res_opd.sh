@@ -357,7 +357,6 @@ sync_training_artifacts_to_oss() {
 
     upload_file_to_oss "manifest" "$manifest_path" "${oss_artifact_path}/manifest.txt"
     upload_dir_to_oss "rollouts" "$TRAINER_ROLLOUT_DATA_DIR" "${oss_artifact_path}/rollouts"
-    upload_dir_to_oss "traces" "$OPD_TRACE_DIR" "${oss_artifact_path}/traces"
     upload_file_to_oss "trainer latest checkpoint marker" \
         "${TRAINER_DEFAULT_LOCAL_DIR}/latest_checkpointed_iteration.txt" \
         "${oss_artifact_path}/checkpoint_metadata/latest_checkpointed_iteration.txt"
@@ -387,11 +386,6 @@ sync_training_artifacts_to_oss() {
         stop_experiment_watcher
         delete_experiment_dir "checkpoint dir" "$TRAINER_DEFAULT_LOCAL_DIR" "${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
         delete_experiment_dir "rollout dir" "$TRAINER_ROLLOUT_DATA_DIR" "${RES_OPD_ROOT}/rollouts/${EXPERIMENT_NAME}"
-        if [[ "$OPD_TRACE_DIR" == "${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}" ]]; then
-            delete_experiment_dir "trace dir" "$OPD_TRACE_DIR" "${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}"
-        else
-            echo "  Skipping custom trace dir cleanup: $OPD_TRACE_DIR"
-        fi
         if is_truthy "$POST_TRAIN_CLEAN_LOGS"; then
             rm -f -- "${RES_OPD_ROOT}/logs/${EXPERIMENT_NAME}.log"
             rm -f -- "${RES_OPD_ROOT}/logs/ckpt_watcher_${EXPERIMENT_NAME}.log"
@@ -413,11 +407,6 @@ if is_truthy "$FORCE_FRESH_START"; then
     fi
     delete_experiment_dir "checkpoint dir" "$TRAINER_DEFAULT_LOCAL_DIR" "${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
     delete_experiment_dir "rollout dir" "$TRAINER_ROLLOUT_DATA_DIR" "${RES_OPD_ROOT}/rollouts/${EXPERIMENT_NAME}"
-    if [[ "$OPD_TRACE_DIR" == "${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}" ]]; then
-        delete_experiment_dir "trace dir" "$OPD_TRACE_DIR" "${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}"
-    else
-        echo "  Skipping custom trace dir cleanup: $OPD_TRACE_DIR"
-    fi
 fi
 
 mkdir -p "$TRAINER_ROLLOUT_DATA_DIR"
