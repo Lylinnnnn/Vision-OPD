@@ -139,8 +139,26 @@ TRAINER_SAVE_FREQ="${SAVE_FREQ:-20}"
 TRAINER_TOTAL_EPOCHS="${TOTAL_EPOCHS:-1}"
 TRAINER_MAX_ACTOR_CKPT_TO_KEEP=1
 TRAINER_LOGGER='["console","swanlab"]'
+TRAINER_RESUME_MODE="${TRAINER_RESUME_MODE:-auto}"  # auto / disable / resume_path
+FORCE_FRESH_START="${FORCE_FRESH_START:-False}"
+OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
+POST_TRAIN_SYNC_TO_OSS="${POST_TRAIN_SYNC_TO_OSS:-False}"
+POST_TRAIN_CLEAN_LOCAL="${POST_TRAIN_CLEAN_LOCAL:-False}"
+POST_TRAIN_SYNC_ON_FAILURE="${POST_TRAIN_SYNC_ON_FAILURE:-False}"
+POST_TRAIN_UPLOAD_WAIT_SECONDS="${POST_TRAIN_UPLOAD_WAIT_SECONDS:-1800}"
+POST_TRAIN_UPLOAD_SWANLOG="${POST_TRAIN_UPLOAD_SWANLOG:-False}"
+POST_TRAIN_CLEAN_LOGS="${POST_TRAIN_CLEAN_LOGS:-False}"
 ROLLOUT_AGENT_NUM_WORKERS=8
 DATA_DATALOADER_NUM_WORKERS="${DATA_DATALOADER_NUM_WORKERS:-0}"
+
+case "$TRAINER_RESUME_MODE" in
+    auto|disable|resume_path)
+        ;;
+    *)
+        echo "Error: Unknown TRAINER_RESUME_MODE=$TRAINER_RESUME_MODE (expected: auto, disable, resume_path)" >&2
+        exit 1
+        ;;
+esac
 
 # --- Data paths ---
 DATA_DIR="${RES_OPD_ROOT}/data"
@@ -165,6 +183,243 @@ TRAINER_DEFAULT_LOCAL_DIR="${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
 TRAINER_ROLLOUT_DATA_DIR="${RES_OPD_ROOT}/rollouts/${EXPERIMENT_NAME}"
 OPD_TRACE_DIR="${OPD_TRACE_DIR:-${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}}"
 export EXPERIMENT="$EXPERIMENT_NAME"
+WATCHER_SCRIPT="${RES_OPD_ROOT}/scripts/ckpt_upload_watcher.sh"
+WATCHER_PID_FILE="${TRAINER_DEFAULT_LOCAL_DIR}/.watcher.pid"
+
+is_truthy() {
+    case "${1:-}" in
+        True|true|TRUE|1|yes|YES|y|Y)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+delete_experiment_dir() {
+    local label="$1"
+    local path="$2"
+    local expected_path="$3"
+
+    if [[ -z "$path" || "$path" == "/" ]]; then
+        echo "Error: refusing to delete invalid ${label} path: ${path:-<empty>}" >&2
+        exit 1
+    fi
+    if [[ "$path" != "$expected_path" ]]; then
+        echo "Error: refusing to delete unexpected ${label} path: $path" >&2
+        echo "Expected: $expected_path" >&2
+        exit 1
+    fi
+    if [[ -e "$path" ]]; then
+        echo "  Removing ${label}: $path"
+        rm -rf -- "$path"
+    else
+        echo "  ${label} does not exist: $path"
+    fi
+}
+
+get_oss_name() {
+    local ckpt_dir_name="$1"
+    local suffix
+    suffix="${ckpt_dir_name#Res-OPD-Qwen3VL-2B-Instruct-}"
+    if [[ "$suffix" == "$ckpt_dir_name" ]]; then
+        suffix="$ckpt_dir_name"
+    fi
+
+    local epoch_tag=""
+    if [[ "$suffix" =~ ^(.+)-(e[0-9]+)$ ]]; then
+        suffix="${BASH_REMATCH[1]}"
+        epoch_tag="-${BASH_REMATCH[2]}"
+    fi
+
+    echo "ResOPD_${suffix//-/_}${epoch_tag}"
+}
+
+all_checkpoint_steps_uploaded() {
+    local step_dir
+    for step_dir in "${TRAINER_DEFAULT_LOCAL_DIR}"/global_step_*; do
+        [[ -d "$step_dir" ]] || continue
+        if [[ ! -f "${step_dir}/.oss_uploaded" ]]; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+wait_for_checkpoint_uploads() {
+    local timeout_seconds="${1:-1800}"
+    local interval_seconds=15
+    local waited=0
+
+    while true; do
+        if all_checkpoint_steps_uploaded; then
+            return 0
+        fi
+        if (( waited >= timeout_seconds )); then
+            return 1
+        fi
+        echo "Waiting for checkpoint watcher uploads... (${waited}/${timeout_seconds}s)"
+        sleep "$interval_seconds"
+        waited=$((waited + interval_seconds))
+    done
+}
+
+upload_file_to_oss() {
+    local label="$1"
+    local local_path="$2"
+    local oss_path="$3"
+
+    if [[ ! -f "$local_path" ]]; then
+        echo "  ${label} not found, skip: $local_path"
+        return 0
+    fi
+    echo "  Uploading ${label}: $local_path -> $oss_path"
+    ossutil cp "$local_path" "$oss_path" -f
+}
+
+upload_dir_to_oss() {
+    local label="$1"
+    local local_path="$2"
+    local oss_path="$3"
+
+    if [[ ! -d "$local_path" ]]; then
+        echo "  ${label} dir not found, skip: $local_path"
+        return 0
+    fi
+    echo "  Uploading ${label}: $local_path -> $oss_path"
+    ossutil cp -r "${local_path%/}/" "${oss_path%/}/" -f
+}
+
+stop_experiment_watcher() {
+    if [[ -f "$WATCHER_PID_FILE" ]]; then
+        local watcher_pid
+        watcher_pid="$(cat "$WATCHER_PID_FILE" 2>/dev/null || true)"
+        if [[ -n "$watcher_pid" ]] && kill -0 "$watcher_pid" 2>/dev/null; then
+            echo "Stopping ckpt_watcher PID: $watcher_pid"
+            kill "$watcher_pid" 2>/dev/null || true
+            sleep 1
+        fi
+    fi
+}
+
+sync_training_artifacts_to_oss() {
+    local train_exit_code="$1"
+
+    if ! is_truthy "$POST_TRAIN_SYNC_TO_OSS"; then
+        if is_truthy "$POST_TRAIN_CLEAN_LOCAL"; then
+            echo "WARNING: POST_TRAIN_CLEAN_LOCAL=True ignored because POST_TRAIN_SYNC_TO_OSS is not enabled." >&2
+        fi
+        return 0
+    fi
+    if [[ "$train_exit_code" -ne 0 ]] && ! is_truthy "$POST_TRAIN_SYNC_ON_FAILURE"; then
+        echo "Training failed with exit code ${train_exit_code}; skipping post-train OSS sync."
+        return 0
+    fi
+    if ! command -v ossutil >/dev/null 2>&1; then
+        echo "ERROR: POST_TRAIN_SYNC_TO_OSS=True requires ossutil in PATH." >&2
+        return 1
+    fi
+
+    local oss_name
+    oss_name="$(get_oss_name "$EXPERIMENT_NAME")"
+    local oss_exp_path="${OSS_BASE%/}/${oss_name}"
+    local oss_artifact_path="${oss_exp_path}/training_artifacts"
+
+    echo "============================================================"
+    echo " Post-train OSS sync"
+    echo "============================================================"
+    echo "OSS experiment:   $oss_exp_path"
+    echo "Artifact target:  $oss_artifact_path"
+    echo "Clean local:      $POST_TRAIN_CLEAN_LOCAL"
+
+    if [[ -f "$WATCHER_SCRIPT" ]]; then
+        if ! wait_for_checkpoint_uploads "$POST_TRAIN_UPLOAD_WAIT_SECONDS"; then
+            echo "Checkpoint watcher did not finish before timeout; running one-shot upload scan."
+            OSS_BASE="$OSS_BASE" bash "$WATCHER_SCRIPT" --watch-dir "$TRAINER_DEFAULT_LOCAL_DIR" --once
+            wait_for_checkpoint_uploads 300
+        fi
+    else
+        echo "WARNING: ckpt_upload_watcher.sh not found; checkpoint upload cannot be finalized." >&2
+    fi
+
+    local manifest_path="${TRAINER_DEFAULT_LOCAL_DIR}/post_train_artifacts_manifest.txt"
+    mkdir -p "$TRAINER_DEFAULT_LOCAL_DIR"
+    {
+        echo "experiment_name=${EXPERIMENT_NAME}"
+        echo "oss_experiment_path=${oss_exp_path}"
+        echo "train_exit_code=${train_exit_code}"
+        echo "synced_at=$(date '+%Y-%m-%d %H:%M:%S')"
+        echo "checkpoint_dir=${TRAINER_DEFAULT_LOCAL_DIR}"
+        echo "rollout_dir=${TRAINER_ROLLOUT_DATA_DIR}"
+        echo "trace_dir=${OPD_TRACE_DIR}"
+    } > "$manifest_path"
+
+    upload_file_to_oss "manifest" "$manifest_path" "${oss_artifact_path}/manifest.txt"
+    upload_dir_to_oss "rollouts" "$TRAINER_ROLLOUT_DATA_DIR" "${oss_artifact_path}/rollouts"
+    upload_dir_to_oss "traces" "$OPD_TRACE_DIR" "${oss_artifact_path}/traces"
+    upload_file_to_oss "trainer latest checkpoint marker" \
+        "${TRAINER_DEFAULT_LOCAL_DIR}/latest_checkpointed_iteration.txt" \
+        "${oss_artifact_path}/checkpoint_metadata/latest_checkpointed_iteration.txt"
+    upload_file_to_oss "post-train manifest copy" \
+        "$manifest_path" \
+        "${oss_artifact_path}/checkpoint_metadata/post_train_artifacts_manifest.txt"
+
+    upload_file_to_oss "training log" \
+        "${RES_OPD_ROOT}/logs/${EXPERIMENT_NAME}.log" \
+        "${oss_artifact_path}/logs/${EXPERIMENT_NAME}.log"
+    upload_file_to_oss "watcher log" \
+        "${RES_OPD_ROOT}/logs/ckpt_watcher_${EXPERIMENT_NAME}.log" \
+        "${oss_artifact_path}/logs/ckpt_watcher_${EXPERIMENT_NAME}.log"
+    upload_file_to_oss "legacy watcher log" \
+        "${RES_OPD_ROOT}/logs/watcher_${EXPERIMENT_NAME}.log" \
+        "${oss_artifact_path}/logs/watcher_${EXPERIMENT_NAME}.log"
+
+    if is_truthy "$POST_TRAIN_UPLOAD_SWANLOG"; then
+        upload_dir_to_oss "swanlab local logs" \
+            "${VISION_OPD_ROOT}/swanlog" \
+            "${oss_artifact_path}/swanlog"
+    fi
+
+    echo "Post-train OSS sync completed."
+
+    if is_truthy "$POST_TRAIN_CLEAN_LOCAL"; then
+        stop_experiment_watcher
+        delete_experiment_dir "checkpoint dir" "$TRAINER_DEFAULT_LOCAL_DIR" "${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
+        delete_experiment_dir "rollout dir" "$TRAINER_ROLLOUT_DATA_DIR" "${RES_OPD_ROOT}/rollouts/${EXPERIMENT_NAME}"
+        if [[ "$OPD_TRACE_DIR" == "${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}" ]]; then
+            delete_experiment_dir "trace dir" "$OPD_TRACE_DIR" "${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}"
+        else
+            echo "  Skipping custom trace dir cleanup: $OPD_TRACE_DIR"
+        fi
+        if is_truthy "$POST_TRAIN_CLEAN_LOGS"; then
+            rm -f -- "${RES_OPD_ROOT}/logs/${EXPERIMENT_NAME}.log"
+            rm -f -- "${RES_OPD_ROOT}/logs/ckpt_watcher_${EXPERIMENT_NAME}.log"
+            rm -f -- "${RES_OPD_ROOT}/logs/watcher_${EXPERIMENT_NAME}.log"
+        fi
+    fi
+}
+
+if is_truthy "$FORCE_FRESH_START"; then
+    echo "FORCE_FRESH_START=True: starting from scratch for ${EXPERIMENT_NAME}"
+    TRAINER_RESUME_MODE="disable"
+    if [[ -f "$WATCHER_PID_FILE" ]]; then
+        watcher_pid="$(cat "$WATCHER_PID_FILE" 2>/dev/null || true)"
+        if [[ -n "$watcher_pid" ]] && kill -0 "$watcher_pid" 2>/dev/null; then
+            echo "  Stopping old ckpt_watcher PID: $watcher_pid"
+            kill "$watcher_pid" 2>/dev/null || true
+            sleep 1
+        fi
+    fi
+    delete_experiment_dir "checkpoint dir" "$TRAINER_DEFAULT_LOCAL_DIR" "${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
+    delete_experiment_dir "rollout dir" "$TRAINER_ROLLOUT_DATA_DIR" "${RES_OPD_ROOT}/rollouts/${EXPERIMENT_NAME}"
+    if [[ "$OPD_TRACE_DIR" == "${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}" ]]; then
+        delete_experiment_dir "trace dir" "$OPD_TRACE_DIR" "${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}"
+    else
+        echo "  Skipping custom trace dir cleanup: $OPD_TRACE_DIR"
+    fi
+fi
+
 mkdir -p "$TRAINER_ROLLOUT_DATA_DIR"
 
 EXTRA_ARGS=("$@")
@@ -189,8 +444,6 @@ ulimit -c 0
 # experiment's checkpoint directory, avoiding cross-machine conflicts
 # on shared filesystems.
 # =============================================================================
-WATCHER_SCRIPT="${RES_OPD_ROOT}/scripts/ckpt_upload_watcher.sh"
-WATCHER_PID_FILE="${TRAINER_DEFAULT_LOCAL_DIR}/.watcher.pid"
 if [[ -f "$WATCHER_SCRIPT" ]]; then
     # Check if a watcher is already running for THIS experiment
     if [[ -f "$WATCHER_PID_FILE" ]] && kill -0 "$(cat "$WATCHER_PID_FILE")" 2>/dev/null; then
@@ -198,7 +451,7 @@ if [[ -f "$WATCHER_SCRIPT" ]]; then
     else
         echo "Starting per-experiment ckpt_watcher for ${EXPERIMENT_NAME} ..."
         mkdir -p "$TRAINER_DEFAULT_LOCAL_DIR"
-        nohup bash "$WATCHER_SCRIPT" --watch-dir "$TRAINER_DEFAULT_LOCAL_DIR" > /dev/null 2>&1 &
+        OSS_BASE="$OSS_BASE" nohup bash "$WATCHER_SCRIPT" --watch-dir "$TRAINER_DEFAULT_LOCAL_DIR" > /dev/null 2>&1 &
         echo $! > "$WATCHER_PID_FILE"
         echo "  Watcher PID: $! (monitoring: $TRAINER_DEFAULT_LOCAL_DIR)"
     fi
@@ -237,6 +490,9 @@ echo "Batch size:       $TRAIN_BATCH_SIZE"
 echo "OPD metrics:      $OPD_TRAIN_METRICS (entropy curve=$OPD_METRICS_ENTROPY)"
 echo "OPD token trace:  $OPD_TRACE_TOKEN (every ${OPD_TRACE_EVERY_N_STEPS} steps, max ${OPD_TRACE_MAX_SAMPLES}/rank, topk=${OPD_TRACE_TOPK})"
 echo "Trace dir:        $OPD_TRACE_DIR"
+echo "Resume mode:      $TRAINER_RESUME_MODE (force fresh=$FORCE_FRESH_START)"
+echo "OSS base:         $OSS_BASE"
+echo "Post-train OSS:   sync=$POST_TRAIN_SYNC_TO_OSS clean_local=$POST_TRAIN_CLEAN_LOCAL"
 echo "Experiment:       $EXPERIMENT_NAME"
 echo "Data:             $TASK_TRAIN_FILE"
 echo "Dataset class:    ResOPDDataset ($CUSTOM_DATASET_PATH)"
@@ -247,6 +503,7 @@ echo "============================================================"
 # LAUNCH TRAINING
 # =============================================================================
 PYTHON_BIN="/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3"
+set +e
 "$PYTHON_BIN" -m verl.trainer.main_ppo --config-name "$CONFIG_NAME" \
     data.train_files="[\"$TASK_TRAIN_FILE\"]" \
     data.val_files="[\"${RES_OPD_ROOT}/data/val.parquet\"]" \
@@ -335,6 +592,7 @@ PYTHON_BIN="/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3"
     trainer.nnodes=$TRAINER_NNODES \
     trainer.save_freq=$TRAINER_SAVE_FREQ \
     trainer.test_freq="${TEST_FREQ:-20}" \
+    trainer.resume_mode=$TRAINER_RESUME_MODE \
     +trainer.save_at_epoch_end="${SAVE_AT_EPOCH_END:-True}" \
     +trainer.test_at_epoch_end="${TEST_AT_EPOCH_END:-False}" \
     actor_rollout_ref.rollout.val_kwargs.n="${VAL_N:-6}" \
@@ -345,3 +603,8 @@ PYTHON_BIN="/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3"
     trainer.default_local_dir=$TRAINER_DEFAULT_LOCAL_DIR \
     trainer.rollout_data_dir="$TRAINER_ROLLOUT_DATA_DIR" \
     "${EXTRA_ARGS[@]}"
+TRAIN_EXIT_CODE=$?
+set -e
+
+sync_training_artifacts_to_oss "$TRAIN_EXIT_CODE"
+exit "$TRAIN_EXIT_CODE"

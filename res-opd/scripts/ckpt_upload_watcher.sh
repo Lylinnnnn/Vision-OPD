@@ -11,6 +11,9 @@
 #   # Monitor a SINGLE experiment directory (recommended)
 #   bash res-opd/scripts/ckpt_upload_watcher.sh --watch-dir /path/to/checkpoints/Res-OPD-xxx
 #
+#   # Scan once and exit (used by run_res_opd.sh after training)
+#   bash res-opd/scripts/ckpt_upload_watcher.sh --watch-dir /path/to/checkpoints/Res-OPD-xxx --once
+#
 # When --watch-dir is specified, only that single experiment directory is
 # monitored. This avoids cross-machine conflicts on shared filesystems.
 # =============================================================================
@@ -23,11 +26,16 @@ cd "$VISION_OPD_ROOT"
 
 # Parse arguments
 WATCH_DIR=""
+ONCE=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --watch-dir)
             WATCH_DIR="$2"
             shift 2
+            ;;
+        --once)
+            ONCE=true
+            shift
             ;;
         *)
             echo "Unknown argument: $1" >&2
@@ -36,8 +44,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-OSS_BASE="oss://industry-algo/yanlin/ckpt/OPD/v4"
-SCAN_INTERVAL=30  # seconds between scans
+OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
+SCAN_INTERVAL="${SCAN_INTERVAL:-30}"  # seconds between scans
 
 if [[ -n "$WATCH_DIR" ]]; then
     # Single-experiment mode: monitor only the specified directory
@@ -179,6 +187,7 @@ if [[ -n "$WATCH_DIR" ]]; then
     log "Monitoring: ${WATCH_DIR}"
     log "OSS target: ${OSS_BASE}"
     log "Scan interval: ${SCAN_INTERVAL}s"
+    log "Once mode: ${ONCE}"
     log "=========================================="
 
     oss_name=$(get_oss_name "$EXPERIMENT_NAME")
@@ -203,6 +212,10 @@ if [[ -n "$WATCH_DIR" ]]; then
             fi
         done
 
+        if $ONCE; then
+            log "One-shot scan completed."
+            break
+        fi
         sleep "$SCAN_INTERVAL"
     done
 else
@@ -211,6 +224,7 @@ else
     log "Monitoring: ${CKPT_BASE}"
     log "OSS target: ${OSS_BASE}"
     log "Scan interval: ${SCAN_INTERVAL}s"
+    log "Once mode: ${ONCE}"
     log "=========================================="
 
     # NOTE: all-experiments mode only scans directories matching Res-OPD-*.
@@ -240,6 +254,10 @@ else
             done
         done
 
+        if $ONCE; then
+            log "One-shot scan completed."
+            break
+        fi
         sleep "$SCAN_INTERVAL"
     done
 fi
