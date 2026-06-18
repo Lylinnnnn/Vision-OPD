@@ -70,6 +70,14 @@ class SelfDistillationConfig(BaseConfig):
         fallback_to_policy_loss_on_missing_teacher (bool): When teacher_always_on=True, fall back to vanilla
             policy loss for samples whose teacher_image_key column is empty.
         log_prob_dump_dir (Optional[str]): Optional directory used to dump student/teacher log-prob tensors for each step.
+        train_metrics_enabled (bool): Whether to log lightweight OPD train-time scalar metrics.
+        trace_enabled (bool): Whether to dump low-frequency token-level student/teacher traces.
+        trace_dump_dir (Optional[str]): Directory for JSONL traces. If unset, log_prob_dump_dir is reused.
+        trace_every_n_steps (int): Dump traces every N global steps when trace_enabled=True.
+        trace_max_samples (int): Maximum traced samples per actor rank and step; <=0 means all valid samples.
+        trace_topk (Optional[int]): Number of top-k tokens to keep in traces; if unset, distillation_topk or 100 is used.
+        trace_entropy (bool): Whether to include full-vocab entropy in low-frequency traces.
+        trace_only_first_ppo_epoch (bool): Avoid duplicate traces when ppo_epochs > 1.
     """
 
     full_logit_distillation: bool = True
@@ -114,6 +122,14 @@ class SelfDistillationConfig(BaseConfig):
     )
     fallback_to_policy_loss_on_missing_teacher: bool = False
     log_prob_dump_dir: Optional[str] = None
+    train_metrics_enabled: bool = True
+    trace_enabled: bool = False
+    trace_dump_dir: Optional[str] = None
+    trace_every_n_steps: int = 5
+    trace_max_samples: int = 4
+    trace_topk: Optional[int] = None
+    trace_entropy: bool = True
+    trace_only_first_ppo_epoch: bool = True
 
     def __post_init__(self):
         if not 0.0 <= self.alpha <= 1.0:
@@ -139,6 +155,13 @@ class SelfDistillationConfig(BaseConfig):
             raise ValueError(
                 f"self_distillation.distillation_topk must be a positive integer, got {self.distillation_topk}"
             )
+        if self.trace_every_n_steps <= 0:
+            raise ValueError(
+                "self_distillation.trace_every_n_steps must be a positive integer, "
+                f"got {self.trace_every_n_steps}"
+            )
+        if self.trace_topk is not None and self.trace_topk <= 0:
+            raise ValueError(f"self_distillation.trace_topk must be a positive integer, got {self.trace_topk}")
         if self.is_clip is not None and self.is_clip <= 0:
             raise ValueError(f"self_distillation.is_clip must be positive, got {self.is_clip}")
         if self.teacher_prompt_mode is not None and self.teacher_prompt_mode != "answer_hint":

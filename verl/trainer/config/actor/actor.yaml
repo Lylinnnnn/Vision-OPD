@@ -160,6 +160,19 @@ self_distillation:
   # Optional directory for dumping per-step student/teacher distillation log-probs
   log_prob_dump_dir: null
 
+  # Log lightweight OPD scalar metrics from the existing student/teacher forwards
+  train_metrics_enabled: True
+
+  # Low-frequency JSONL token trace for student/teacher top-k distributions.
+  # Teacher does not generate; it forwards on the same response prefix.
+  trace_enabled: False
+  trace_dump_dir: null
+  trace_every_n_steps: 5
+  trace_max_samples: 4
+  trace_topk: null
+  trace_entropy: True
+  trace_only_first_ppo_epoch: True
+
   # IS clip for loss; null disables IS weighting
   is_clip: 2
 

@@ -105,6 +105,14 @@ esac
 ALPHA="${ALPHA:-0.5}"                 # 0.5=JSD, 1.0=RKL, 0.0=FKL
 LOSS_MODE="vopd"
 DISTILLATION_TOPK="${DISTILLATION_TOPK:-100}"
+OPD_TRAIN_METRICS="${OPD_TRAIN_METRICS:-True}"
+OPD_METRICS_ENTROPY="${OPD_METRICS_ENTROPY:-False}"
+OPD_TRACE_TOKEN="${OPD_TRACE_TOKEN:-False}"
+OPD_TRACE_EVERY_N_STEPS="${OPD_TRACE_EVERY_N_STEPS:-5}"
+OPD_TRACE_MAX_SAMPLES="${OPD_TRACE_MAX_SAMPLES:-4}"
+OPD_TRACE_TOPK="${OPD_TRACE_TOPK:-$DISTILLATION_TOPK}"
+OPD_TRACE_ENTROPY="${OPD_TRACE_ENTROPY:-True}"
+OPD_TRACE_ONLY_FIRST_PPO_EPOCH="${OPD_TRACE_ONLY_FIRST_PPO_EPOCH:-True}"
 
 # --- Training hyperparams ---
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-32}"
@@ -155,6 +163,8 @@ fi
 PROJECT_NAME="Res-OPD"
 TRAINER_DEFAULT_LOCAL_DIR="${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
 TRAINER_ROLLOUT_DATA_DIR="${RES_OPD_ROOT}/rollouts/${EXPERIMENT_NAME}"
+OPD_TRACE_DIR="${OPD_TRACE_DIR:-${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}}"
+export EXPERIMENT="$EXPERIMENT_NAME"
 mkdir -p "$TRAINER_ROLLOUT_DATA_DIR"
 
 EXTRA_ARGS=("$@")
@@ -224,6 +234,9 @@ echo "Alpha (loss):     $ALPHA (0.5=JSD, 1.0=RKL, 0.0=FKL)"
 echo "Rollout N:        $ROLLOUT_N (1=pure KD, >1=GRPO+KD)"
 echo "Learning rate:    $LR"
 echo "Batch size:       $TRAIN_BATCH_SIZE"
+echo "OPD metrics:      $OPD_TRAIN_METRICS (entropy curve=$OPD_METRICS_ENTROPY)"
+echo "OPD token trace:  $OPD_TRACE_TOKEN (every ${OPD_TRACE_EVERY_N_STEPS} steps, max ${OPD_TRACE_MAX_SAMPLES}/rank, topk=${OPD_TRACE_TOPK})"
+echo "Trace dir:        $OPD_TRACE_DIR"
 echo "Experiment:       $EXPERIMENT_NAME"
 echo "Data:             $TASK_TRAIN_FILE"
 echo "Dataset class:    ResOPDDataset ($CUSTOM_DATASET_PATH)"
@@ -271,7 +284,7 @@ PYTHON_BIN="/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3"
     actor_rollout_ref.actor.clip_ratio_low=0.2 \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.actor.policy_loss.loss_mode=$LOSS_MODE \
-    actor_rollout_ref.actor.calculate_entropy=False \
+    actor_rollout_ref.actor.calculate_entropy=$OPD_METRICS_ENTROPY \
     actor_rollout_ref.actor.self_distillation.distillation_topk=$DISTILLATION_TOPK \
     actor_rollout_ref.actor.self_distillation.max_reprompt_len=10240 \
     actor_rollout_ref.actor.self_distillation.is_clip=2.0 \
@@ -283,6 +296,14 @@ PYTHON_BIN="/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3"
     actor_rollout_ref.actor.self_distillation.dont_reprompt_on_self_success=$DONT_REPROMPT_ON_SELF_SUCCESS \
     actor_rollout_ref.actor.self_distillation.alpha=$ALPHA \
     actor_rollout_ref.actor.self_distillation.include_environment_feedback=False \
+    actor_rollout_ref.actor.self_distillation.train_metrics_enabled=$OPD_TRAIN_METRICS \
+    actor_rollout_ref.actor.self_distillation.trace_enabled=$OPD_TRACE_TOKEN \
+    actor_rollout_ref.actor.self_distillation.trace_dump_dir="$OPD_TRACE_DIR" \
+    actor_rollout_ref.actor.self_distillation.trace_every_n_steps=$OPD_TRACE_EVERY_N_STEPS \
+    actor_rollout_ref.actor.self_distillation.trace_max_samples=$OPD_TRACE_MAX_SAMPLES \
+    actor_rollout_ref.actor.self_distillation.trace_topk=$OPD_TRACE_TOPK \
+    actor_rollout_ref.actor.self_distillation.trace_entropy=$OPD_TRACE_ENTROPY \
+    actor_rollout_ref.actor.self_distillation.trace_only_first_ppo_epoch=$OPD_TRACE_ONLY_FIRST_PPO_EPOCH \
     actor_rollout_ref.actor.optim.lr_warmup_steps=10 \
     algorithm.rollout_correction.rollout_is=token \
     algorithm.rollout_correction.rollout_is_threshold=2.0 \

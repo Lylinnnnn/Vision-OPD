@@ -41,6 +41,10 @@ KEEP_BENCHMARK_DATA="${KEEP_BENCHMARK_DATA:-False}"
 MME_CATEGORIES="${MME_CATEGORIES:-existence,count,position,color}"
 MME_MAX_SAMPLES="${MME_MAX_SAMPLES:-0}"
 MME_PARALLEL_WORKERS="${MME_PARALLEL_WORKERS:-64}"
+STUDENT_PX="${STUDENT_PX:-}"
+TARGET_PX="${TARGET_PX:-448}"
+DEGRADATION_MODE="${DEGRADATION_MODE:-}"
+STUDENT_RATIO="${STUDENT_RATIO:-}"
 STAGED_DATASET=0
 STAGED_DATASET_ROOT=""
 STAGED_CONVERT_DIR=""
@@ -56,6 +60,26 @@ fi
 EXPERIMENT_NAME="$(basename "$CKPT_ROOT")"
 [[ -n "$STEP_TAG" ]] && EXPERIMENT_NAME="${EXPERIMENT_NAME}_${STEP_TAG}"
 OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${EXPERIMENT_NAME}/final_hallucination"
+
+infer_eval_spec() {
+    local exp_name="$1"
+    local inferred_mode="square"
+    local inferred_student_px="0"
+    local inferred_student_ratio="1.0"
+    if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr ]]; then
+        inferred_mode="original"
+        inferred_student_px="0"
+        inferred_student_ratio="${BASH_REMATCH[1]}"
+    elif [[ "$exp_name" =~ -s([0-9]+)(-|_) ]]; then
+        inferred_mode="square"
+        inferred_student_px="${BASH_REMATCH[1]}"
+    fi
+    DEGRADATION_MODE="${DEGRADATION_MODE:-$inferred_mode}"
+    STUDENT_PX="${STUDENT_PX:-$inferred_student_px}"
+    STUDENT_RATIO="${STUDENT_RATIO:-$inferred_student_ratio}"
+}
+
+infer_eval_spec "$EXPERIMENT_NAME"
 
 stage_from_oss() {
     local oss_uri="$1"
@@ -184,6 +208,7 @@ echo " Classic MME Perception Eval"
 echo "============================================================"
 echo "Model:      $MODEL_PATH"
 echo "Categories: $MME_CATEGORIES"
+echo "Student:    mode=$DEGRADATION_MODE px=$STUDENT_PX target=$TARGET_PX ratio=$STUDENT_RATIO"
 if [[ -n "${MME_JSON:-}" ]]; then
     echo "MME JSON:   $MME_JSON"
 elif [[ "$MME_SOURCE_KIND" == "hf_root" ]]; then
@@ -254,6 +279,10 @@ fi
     --model-name "$MODEL_NAME" \
     "${source_args[@]}" \
     --output-dir "$OUTPUT_DIR" \
+    --student-px "$STUDENT_PX" \
+    --target-px "$TARGET_PX" \
+    --degradation-mode "$DEGRADATION_MODE" \
+    --student-ratio "$STUDENT_RATIO" \
     --max-samples "$MME_MAX_SAMPLES" \
     --parallel-workers "$MME_PARALLEL_WORKERS"
 

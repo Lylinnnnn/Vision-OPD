@@ -33,6 +33,10 @@ KEEP_BENCHMARK_DATA="${KEEP_BENCHMARK_DATA:-False}"
 AMBER_EVAL_TYPE="${AMBER_EVAL_TYPE:-a}"
 AMBER_MAX_SAMPLES="${AMBER_MAX_SAMPLES:-0}"
 AMBER_PARALLEL_WORKERS="${AMBER_PARALLEL_WORKERS:-64}"
+STUDENT_PX="${STUDENT_PX:-}"
+TARGET_PX="${TARGET_PX:-448}"
+DEGRADATION_MODE="${DEGRADATION_MODE:-}"
+STUDENT_RATIO="${STUDENT_RATIO:-}"
 STAGED_DATASET=0
 
 CKPT_ROOT="$MODEL_PATH"
@@ -44,6 +48,26 @@ fi
 EXPERIMENT_NAME="$(basename "$CKPT_ROOT")"
 [[ -n "$STEP_TAG" ]] && EXPERIMENT_NAME="${EXPERIMENT_NAME}_${STEP_TAG}"
 OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${EXPERIMENT_NAME}/final_hallucination"
+
+infer_eval_spec() {
+    local exp_name="$1"
+    local inferred_mode="square"
+    local inferred_student_px="0"
+    local inferred_student_ratio="1.0"
+    if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr ]]; then
+        inferred_mode="original"
+        inferred_student_px="0"
+        inferred_student_ratio="${BASH_REMATCH[1]}"
+    elif [[ "$exp_name" =~ -s([0-9]+)(-|_) ]]; then
+        inferred_mode="square"
+        inferred_student_px="${BASH_REMATCH[1]}"
+    fi
+    DEGRADATION_MODE="${DEGRADATION_MODE:-$inferred_mode}"
+    STUDENT_PX="${STUDENT_PX:-$inferred_student_px}"
+    STUDENT_RATIO="${STUDENT_RATIO:-$inferred_student_ratio}"
+}
+
+infer_eval_spec "$EXPERIMENT_NAME"
 
 stage_from_oss() {
     local oss_uri="$1"
@@ -141,6 +165,7 @@ echo "Model:     $MODEL_PATH"
 echo "AMBER:     $AMBER_ROOT"
 echo "AMBER OSS: ${AMBER_OSS_URI:-<none>}"
 echo "Eval type: $AMBER_EVAL_TYPE"
+echo "Student:   mode=$DEGRADATION_MODE px=$STUDENT_PX target=$TARGET_PX ratio=$STUDENT_RATIO"
 echo "Output:    $OUTPUT_DIR"
 echo "============================================================"
 
@@ -185,6 +210,10 @@ amber_args=()
     --amber-root "$AMBER_ROOT" \
     "${amber_args[@]}" \
     --output-dir "$OUTPUT_DIR" \
+    --student-px "$STUDENT_PX" \
+    --target-px "$TARGET_PX" \
+    --degradation-mode "$DEGRADATION_MODE" \
+    --student-ratio "$STUDENT_RATIO" \
     --evaluation-type "$AMBER_EVAL_TYPE" \
     --max-samples "$AMBER_MAX_SAMPLES" \
     --parallel-workers "$AMBER_PARALLEL_WORKERS"

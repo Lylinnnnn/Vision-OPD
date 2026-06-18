@@ -17,6 +17,7 @@
 Single Process Actor
 """
 
+import json
 import logging
 import os
 import time
@@ -296,6 +297,344 @@ class DataParallelPPOActor(BasePPOActor):
             save_path,
         )
 
+    @staticmethod
+    def _masked_mean_item(values: torch.Tensor, mask: torch.Tensor) -> Optional[float]:
+        valid = mask > 0
+        if not valid.any():
+            return None
+        return values.detach()[valid].to(torch.float32).mean().item()
+
+    @staticmethod
+    def _json_safe(value):
+        if isinstance(value, torch.Tensor):
+            value = value.detach().cpu()
+            if value.numel() == 1:
+                return value.item()
+            return value.tolist()
+        if isinstance(value, dict):
+            return {str(k): DataParallelPPOActor._json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [DataParallelPPOActor._json_safe(v) for v in value]
+        if hasattr(value, "item"):
+            try:
+                return value.item()
+            except Exception:
+                pass
+        if hasattr(value, "tolist"):
+            try:
+                return DataParallelPPOActor._json_safe(value.tolist())
+            except Exception:
+                pass
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)
+
+    @staticmethod
+    def _sample_value(values, idx: int):
+        if values is None:
+            return None
+        try:
+            return values[idx]
+        except Exception:
+            return None
+
+    @staticmethod
+    def _find_rank(ids: list[int], token_id: int) -> Optional[int]:
+        try:
+            return ids.index(token_id) + 1
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _mean_or_none(values: list[float]) -> Optional[float]:
+        values = [value for value in values if value is not None]
+        if not values:
+            return None
+        return float(sum(values) / len(values))
+
+    def _decode_token_id(self, token_id: int) -> str:
+        tokenizer = getattr(self, "tokenizer", None)
+        if tokenizer is None:
+            return ""
+        try:
+            return tokenizer.decode([token_id], skip_special_tokens=False)
+        except Exception:
+            return ""
+
+    def _decode_token_ids(self, token_ids: list[int], *, skip_special_tokens: bool) -> str:
+        tokenizer = getattr(self, "tokenizer", None)
+        if tokenizer is None:
+            return ""
+        try:
+            return tokenizer.decode(token_ids, skip_special_tokens=skip_special_tokens)
+        except Exception:
+            return ""
+
+    def _add_opd_train_metrics(
+        self,
+        micro_batch_metrics: dict,
+        *,
+        response_mask: torch.Tensor,
+        self_distillation_mask: Optional[torch.Tensor],
+        responses: torch.Tensor,
+        student_log_probs: torch.Tensor,
+        teacher_log_probs: torch.Tensor,
+        student_topk_indices: Optional[torch.Tensor],
+        student_topk_logps: Optional[torch.Tensor],
+        teacher_logps_on_student_topk: Optional[torch.Tensor],
+        student_entropy: Optional[torch.Tensor],
+    ) -> None:
+        loss_mask = response_mask
+        if self_distillation_mask is not None:
+            loss_mask = loss_mask * self_distillation_mask.unsqueeze(1).to(response_mask.dtype)
+        valid = loss_mask > 0
+        if not valid.any():
+            return
+
+        def add(name: str, values: torch.Tensor) -> None:
+            metric = self._masked_mean_item(values, loss_mask)
+            if metric is not None:
+                micro_batch_metrics[name] = metric
+
+        add("opd/train/student_selected_logprob_mean", student_log_probs)
+        add("opd/train/teacher_selected_logprob_mean", teacher_log_probs)
+        add("opd/train/teacher_minus_student_selected_logprob_mean", teacher_log_probs - student_log_probs)
+        micro_batch_metrics["opd/train/teacher_selected_logprob_lt_student_frac"] = (
+            (teacher_log_probs.detach() < student_log_probs.detach()).to(torch.float32)[valid].mean().item()
+        )
+
+        if student_entropy is not None:
+            add("opd/train/student_entropy_mean", student_entropy)
+
+        if student_topk_logps is not None:
+            student_topk_logps_f = student_topk_logps.detach().to(torch.float32)
+            add("opd/train/student_topk_mass_mean", torch.exp(student_topk_logps_f).sum(dim=-1))
+            add("opd/train/student_top1_logprob_mean", student_topk_logps_f[..., 0])
+            if student_topk_logps_f.size(-1) > 1:
+                add(
+                    "opd/train/student_top1_top2_margin_mean",
+                    student_topk_logps_f[..., 0] - student_topk_logps_f[..., 1],
+                )
+
+        if student_topk_indices is not None:
+            selected_in_student_topk = (student_topk_indices.detach() == responses.unsqueeze(-1)).any(dim=-1)
+            micro_batch_metrics["opd/train/selected_token_in_student_topk_frac"] = (
+                selected_in_student_topk.to(torch.float32)[valid].mean().item()
+            )
+            student_top1_is_selected = student_topk_indices.detach()[..., 0] == responses
+            micro_batch_metrics["opd/train/selected_token_is_student_top1_frac"] = (
+                student_top1_is_selected.to(torch.float32)[valid].mean().item()
+            )
+
+        if teacher_logps_on_student_topk is not None:
+            teacher_logps_on_student_topk_f = teacher_logps_on_student_topk.detach().to(torch.float32)
+            add("opd/train/teacher_mass_on_student_topk_mean", torch.exp(teacher_logps_on_student_topk_f).sum(dim=-1))
+            add("opd/train/teacher_logprob_on_student_top1_mean", teacher_logps_on_student_topk_f[..., 0])
+
+    def _dump_opd_token_trace(
+        self,
+        *,
+        meta_info: dict,
+        self_distillation_cfg,
+        model_inputs: dict,
+        response_mask: torch.Tensor,
+        self_distillation_mask: Optional[torch.Tensor],
+        responses: torch.Tensor,
+        student_log_probs: torch.Tensor,
+        teacher_log_probs: torch.Tensor,
+        student_topk_indices: Optional[torch.Tensor],
+        student_topk_logps: Optional[torch.Tensor],
+        teacher_topk_indices: Optional[torch.Tensor],
+        teacher_topk_logps: Optional[torch.Tensor],
+        student_entropy: Optional[torch.Tensor],
+        teacher_entropy: Optional[torch.Tensor],
+        max_samples: Optional[int],
+    ) -> int:
+        dump_root = self_distillation_cfg.get("trace_dump_dir", None) or self_distillation_cfg.get(
+            "log_prob_dump_dir", None
+        )
+        if not dump_root:
+            raise ValueError("self_distillation.trace_enabled=True requires trace_dump_dir or log_prob_dump_dir.")
+
+        global_step = meta_info.get("global_steps")
+        if global_step is None:
+            return 0
+        if (
+            student_topk_indices is None
+            or student_topk_logps is None
+            or teacher_topk_indices is None
+            or teacher_topk_logps is None
+        ):
+            raise ValueError("OPD token trace requires both student and teacher top-k ids/logprobs.")
+
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            rank = torch.distributed.get_rank()
+        else:
+            rank = 0
+        experiment_name = os.environ.get("EXPERIMENT", "unknown_experiment")
+        normalized_root = os.path.normpath(dump_root)
+        if os.path.basename(normalized_root) == experiment_name:
+            save_dir = normalized_root
+        else:
+            save_dir = os.path.join(normalized_root, experiment_name)
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, f"{int(global_step)}.rank{rank}.jsonl")
+
+        response_mask_cpu = response_mask.detach().cpu()
+        distill_mask_cpu = self_distillation_mask.detach().cpu() if self_distillation_mask is not None else None
+        responses_cpu = responses.detach().cpu()
+        student_log_probs_cpu = student_log_probs.detach().cpu().to(torch.float32)
+        teacher_log_probs_cpu = teacher_log_probs.detach().cpu().to(torch.float32)
+        student_topk_indices_cpu = student_topk_indices.detach().cpu() if student_topk_indices is not None else None
+        student_topk_logps_cpu = (
+            student_topk_logps.detach().cpu().to(torch.float32) if student_topk_logps is not None else None
+        )
+        teacher_topk_indices_cpu = teacher_topk_indices.detach().cpu() if teacher_topk_indices is not None else None
+        teacher_topk_logps_cpu = (
+            teacher_topk_logps.detach().cpu().to(torch.float32) if teacher_topk_logps is not None else None
+        )
+        student_entropy_cpu = student_entropy.detach().cpu().to(torch.float32) if student_entropy is not None else None
+        teacher_entropy_cpu = teacher_entropy.detach().cpu().to(torch.float32) if teacher_entropy is not None else None
+
+        records = []
+        batch_size = responses_cpu.size(0)
+        for sample_idx in range(batch_size):
+            if max_samples is not None and len(records) >= max_samples:
+                break
+            if distill_mask_cpu is not None and float(distill_mask_cpu[sample_idx].item()) <= 0.5:
+                continue
+            valid_positions = torch.nonzero(response_mask_cpu[sample_idx] > 0, as_tuple=False).flatten().tolist()
+            if not valid_positions:
+                continue
+
+            token_ids = [int(responses_cpu[sample_idx, pos].item()) for pos in valid_positions]
+            extra_info = self._json_safe(self._sample_value(model_inputs.get("extra_info"), sample_idx))
+            metadata = {
+                "uid": self._json_safe(self._sample_value(model_inputs.get("uid"), sample_idx)),
+                "index": self._json_safe(self._sample_value(model_inputs.get("index"), sample_idx)),
+                "data_source": self._json_safe(self._sample_value(model_inputs.get("data_source"), sample_idx)),
+                "extra_info": extra_info,
+            }
+            if isinstance(extra_info, dict):
+                metadata["image_id"] = extra_info.get("image_id")
+                metadata["file_name"] = extra_info.get("file_name")
+
+            token_records = []
+            overlap_ratios = []
+            topk_jaccards = []
+            top1_matches = []
+            student_selected_logps = []
+            teacher_selected_logps = []
+            student_entropies = []
+            teacher_entropies = []
+            student_topk_masses = []
+            teacher_topk_masses = []
+            student_top1_top2_margins = []
+            teacher_top1_top2_margins = []
+
+            for step, pos in enumerate(valid_positions):
+                token_id = int(responses_cpu[sample_idx, pos].item())
+                token_record = {
+                    "step": step,
+                    "response_position": int(pos),
+                    "token_id": token_id,
+                    "token_text": self._decode_token_id(token_id),
+                    "student_selected_logprob": float(student_log_probs_cpu[sample_idx, pos].item()),
+                    "teacher_selected_logprob": float(teacher_log_probs_cpu[sample_idx, pos].item()),
+                }
+                student_selected_logps.append(token_record["student_selected_logprob"])
+                teacher_selected_logps.append(token_record["teacher_selected_logprob"])
+
+                if student_entropy_cpu is not None:
+                    token_record["student_entropy"] = float(student_entropy_cpu[sample_idx, pos].item())
+                    student_entropies.append(token_record["student_entropy"])
+                if teacher_entropy_cpu is not None:
+                    token_record["teacher_entropy"] = float(teacher_entropy_cpu[sample_idx, pos].item())
+                    teacher_entropies.append(token_record["teacher_entropy"])
+
+                if student_topk_indices_cpu is not None and student_topk_logps_cpu is not None:
+                    student_ids = [int(value) for value in student_topk_indices_cpu[sample_idx, pos].tolist()]
+                    student_logps = [float(value) for value in student_topk_logps_cpu[sample_idx, pos].tolist()]
+                    token_record["student_topk_token_ids"] = student_ids
+                    token_record["student_topk_logprobs"] = student_logps
+                    token_record["student_top1_token_id"] = student_ids[0] if student_ids else None
+                    student_topk_mass = float(torch.exp(student_topk_logps_cpu[sample_idx, pos]).sum().item())
+                    student_top1_top2_margin = student_logps[0] - student_logps[1] if len(student_logps) > 1 else None
+                    token_record["student_topk_mass"] = student_topk_mass
+                    token_record["student_top1_top2_margin"] = student_top1_top2_margin
+                    student_topk_masses.append(student_topk_mass)
+                    student_top1_top2_margins.append(student_top1_top2_margin)
+                    token_record["selected_token_rank_in_student_topk"] = self._find_rank(student_ids, token_id)
+                else:
+                    student_ids = []
+
+                if teacher_topk_indices_cpu is not None and teacher_topk_logps_cpu is not None:
+                    teacher_ids = [int(value) for value in teacher_topk_indices_cpu[sample_idx, pos].tolist()]
+                    teacher_logps = [float(value) for value in teacher_topk_logps_cpu[sample_idx, pos].tolist()]
+                    token_record["teacher_topk_token_ids"] = teacher_ids
+                    token_record["teacher_topk_logprobs"] = teacher_logps
+                    token_record["teacher_top1_token_id"] = teacher_ids[0] if teacher_ids else None
+                    teacher_topk_mass = float(torch.exp(teacher_topk_logps_cpu[sample_idx, pos]).sum().item())
+                    teacher_top1_top2_margin = teacher_logps[0] - teacher_logps[1] if len(teacher_logps) > 1 else None
+                    token_record["teacher_topk_mass"] = teacher_topk_mass
+                    token_record["teacher_top1_top2_margin"] = teacher_top1_top2_margin
+                    teacher_topk_masses.append(teacher_topk_mass)
+                    teacher_top1_top2_margins.append(teacher_top1_top2_margin)
+                    token_record["selected_token_rank_in_teacher_topk"] = self._find_rank(teacher_ids, token_id)
+                else:
+                    teacher_ids = []
+
+                if student_ids and teacher_ids:
+                    student_set = set(student_ids)
+                    teacher_set = set(teacher_ids)
+                    overlap_count = len(student_set & teacher_set)
+                    union_count = len(student_set | teacher_set)
+                    overlap_ratio = overlap_count / min(len(student_set), len(teacher_set))
+                    top1_match = student_ids[0] == teacher_ids[0]
+                    token_record["topk_overlap_count"] = overlap_count
+                    token_record["topk_overlap_ratio"] = overlap_ratio
+                    token_record["topk_jaccard"] = overlap_count / union_count if union_count else None
+                    token_record["top1_match"] = top1_match
+                    overlap_ratios.append(overlap_ratio)
+                    topk_jaccards.append(token_record["topk_jaccard"])
+                    top1_matches.append(1.0 if top1_match else 0.0)
+
+                token_records.append(token_record)
+
+            records.append(
+                {
+                    "global_step": int(global_step),
+                    "rank": int(rank),
+                    "sample_index_in_rank_batch": int(sample_idx),
+                    "metadata": metadata,
+                    "response_token_ids": token_ids,
+                    "response_text": self._decode_token_ids(token_ids, skip_special_tokens=True),
+                    "summary": {
+                        "num_tokens": len(token_records),
+                        "student_selected_logprob_mean": self._mean_or_none(student_selected_logps),
+                        "teacher_selected_logprob_mean": self._mean_or_none(teacher_selected_logps),
+                        "student_entropy_mean": self._mean_or_none(student_entropies),
+                        "teacher_entropy_mean": self._mean_or_none(teacher_entropies),
+                        "student_topk_mass_mean": self._mean_or_none(student_topk_masses),
+                        "teacher_topk_mass_mean": self._mean_or_none(teacher_topk_masses),
+                        "student_top1_top2_margin_mean": self._mean_or_none(student_top1_top2_margins),
+                        "teacher_top1_top2_margin_mean": self._mean_or_none(teacher_top1_top2_margins),
+                        "topk_overlap_ratio_mean": self._mean_or_none(overlap_ratios),
+                        "topk_jaccard_mean": self._mean_or_none(topk_jaccards),
+                        "top1_match_frac": self._mean_or_none(top1_matches),
+                    },
+                    "token_records": token_records,
+                }
+            )
+
+        if not records:
+            return 0
+
+        with open(save_path, "a", encoding="utf-8") as file:
+            for record in records:
+                file.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        return len(records)
+
     def _forward_micro_batch(
         self,
         micro_batch: dict[str, torch.Tensor],
@@ -304,6 +643,7 @@ class DataParallelPPOActor(BasePPOActor):
         return_all_logps: bool = False,
         distill_topk: Optional[int] = None,
         topk_indices: Optional[torch.Tensor] = None,
+        trace_topk: Optional[int] = None,
         module: Optional[nn.Module] = None,
     ) -> dict[str, torch.Tensor]:
         """
@@ -317,14 +657,18 @@ class DataParallelPPOActor(BasePPOActor):
                 if distill_topk or topk_indices is set:
                     topk_logps: (bs, response_len, k)
                     topk_indices: (bs, response_len, k)
+                if trace_topk is set:
+                    trace_topk_logps: (bs, response_len, trace_topk)
+                    trace_topk_indices: (bs, response_len, trace_topk)
         """
         calculate_sum_pi_squared = self.config.get("calculate_sum_pi_squared", False)
         sum_pi_squared_checkpointing = self.config.get("sum_pi_squared_checkpointing", False)
         use_topk = distill_topk is not None or topk_indices is not None
+        use_trace_topk = trace_topk is not None
         compute_all_logps = return_all_logps and not use_topk
         return_topk_indices = use_topk and topk_indices is None
-        if (return_all_logps or use_topk) and self.use_fused_kernels:
-            raise ValueError("Logit distillation requires disabling fused kernels.")
+        if (return_all_logps or use_topk or use_trace_topk) and self.use_fused_kernels:
+            raise ValueError("Logit distillation/tracing requires disabling fused kernels.")
 
         model = module or self.actor_module
 
@@ -337,6 +681,7 @@ class DataParallelPPOActor(BasePPOActor):
                 and not self.use_dynamic_bsz
                 and not return_all_logps
                 and not use_topk
+                and not use_trace_topk
             )
             if can_use_pg and "response_mask" in micro_batch and "uid" in micro_batch:
                 from verl.trainer.ppo.prefix_grouper_utils import forward_micro_batch_with_prefix_grouper
@@ -525,6 +870,17 @@ class DataParallelPPOActor(BasePPOActor):
                             topk_logits_rmpad = torch.gather(logits_rmpad, dim=-1, index=topk_indices_rmpad)
                         logsumexp_rmpad = torch.logsumexp(logits_rmpad, dim=-1, keepdim=True)
                         topk_logps_rmpad = topk_logits_rmpad - logsumexp_rmpad
+                    if use_trace_topk:
+                        trace_k = min(trace_topk, logits_rmpad.shape[-1])
+                        if use_topk and return_topk_indices and trace_k == topk_logps_rmpad.size(-1):
+                            trace_topk_indices_rmpad = topk_indices_rmpad
+                            trace_topk_logps_rmpad = topk_logps_rmpad
+                        else:
+                            trace_topk_logits_rmpad, trace_topk_indices_rmpad = torch.topk(
+                                logits_rmpad, trace_k, dim=-1
+                            )
+                            logsumexp_rmpad = torch.logsumexp(logits_rmpad, dim=-1, keepdim=True)
+                            trace_topk_logps_rmpad = trace_topk_logits_rmpad - logsumexp_rmpad
 
                     # Compute sum_pi_squared if requested (for optimal_token_baseline)
                     if calculate_sum_pi_squared:
@@ -566,6 +922,19 @@ class DataParallelPPOActor(BasePPOActor):
                                 unpad_dim=0,
                                 padding_size=pad_size,
                             )
+                    if use_trace_topk:
+                        trace_topk_logps_rmpad = gather_outputs_and_unpad(
+                            trace_topk_logps_rmpad,
+                            gather_dim=0,
+                            unpad_dim=0,
+                            padding_size=pad_size,
+                        )
+                        trace_topk_indices_rmpad = gather_outputs_and_unpad(
+                            trace_topk_indices_rmpad,
+                            gather_dim=0,
+                            unpad_dim=0,
+                            padding_size=pad_size,
+                        )
                     if calculate_sum_pi_squared:
                         sum_pi_squared_rmpad = gather_outputs_and_unpad(
                             sum_pi_squared_rmpad, gather_dim=0, unpad_dim=0, padding_size=pad_size
@@ -581,6 +950,9 @@ class DataParallelPPOActor(BasePPOActor):
                         topk_logps_rmpad = topk_logps_rmpad[:0]
                         if return_topk_indices:
                             topk_indices_rmpad = topk_indices_rmpad[:0]
+                    if use_trace_topk:
+                        trace_topk_logps_rmpad = trace_topk_logps_rmpad[:0]
+                        trace_topk_indices_rmpad = trace_topk_indices_rmpad[:0]
 
                 # pad back to (bsz, seqlen)
                 if calculate_entropy:
@@ -618,6 +990,19 @@ class DataParallelPPOActor(BasePPOActor):
                             batch=batch_size,
                             seqlen=seqlen,
                         )
+                if use_trace_topk:
+                    full_trace_topk_logps = pad_input(
+                        hidden_states=trace_topk_logps_rmpad,
+                        indices=indices,
+                        batch=batch_size,
+                        seqlen=seqlen,
+                    )
+                    full_trace_topk_indices = pad_input(
+                        hidden_states=trace_topk_indices_rmpad,
+                        indices=indices,
+                        batch=batch_size,
+                        seqlen=seqlen,
+                    )
                 full_log_probs = pad_input(
                     hidden_states=log_probs.unsqueeze(-1),
                     indices=indices,
@@ -662,6 +1047,17 @@ class DataParallelPPOActor(BasePPOActor):
                             response_length=response_length,
                             response_start_idx=response_start_idx,
                         )
+                if use_trace_topk:
+                    trace_topk_logps = self._select_response_positions(
+                        full_trace_topk_logps,
+                        response_length=response_length,
+                        response_start_idx=response_start_idx,
+                    )
+                    trace_topk_indices = self._select_response_positions(
+                        full_trace_topk_indices,
+                        response_length=response_length,
+                        response_start_idx=response_start_idx,
+                    )
 
             else:  # not using rmpad and no ulysses sp
                 extra_args = {}
@@ -702,6 +1098,15 @@ class DataParallelPPOActor(BasePPOActor):
                             topk_logits = torch.gather(logits, dim=-1, index=topk_indices)
                         logsumexp = torch.logsumexp(logits, dim=-1, keepdim=True)
                         topk_logps = topk_logits - logsumexp
+                    if use_trace_topk:
+                        trace_k = min(trace_topk, logits.size(-1))
+                        if use_topk and return_topk_indices and trace_k == topk_logps.size(-1):
+                            trace_topk_indices = topk_indices
+                            trace_topk_logps = topk_logps
+                        else:
+                            trace_topk_logits, trace_topk_indices = torch.topk(logits, trace_k, dim=-1)
+                            logsumexp = torch.logsumexp(logits, dim=-1, keepdim=True)
+                            trace_topk_logps = trace_topk_logits - logsumexp
                     if calculate_entropy:
                         if not self.config.entropy_checkpointing:
                             entropy = verl_F.entropy_from_logits(logits)  # (bsz, response_length)
@@ -726,6 +1131,9 @@ class DataParallelPPOActor(BasePPOActor):
                 outputs["topk_logps"] = topk_logps
                 if return_topk_indices:
                     outputs["topk_indices"] = topk_indices
+            if use_trace_topk:
+                outputs["trace_topk_logps"] = trace_topk_logps
+                outputs["trace_topk_indices"] = trace_topk_indices
             return outputs
 
     def _optimizer_step(self):
@@ -853,6 +1261,11 @@ class DataParallelPPOActor(BasePPOActor):
 
         self_distillation_enabled = loss_mode == "vopd"
         self_distillation_cfg = getattr(self.config, "self_distillation", None)
+        trace_enabled = bool(
+            self_distillation_enabled
+            and self_distillation_cfg is not None
+            and self_distillation_cfg.get("trace_enabled", False)
+        )
         if self_distillation_enabled:
             if self_distillation_cfg is None:
                 raise ValueError(f"loss_mode={loss_mode} requires actor.self_distillation config.")
@@ -902,6 +1315,10 @@ class DataParallelPPOActor(BasePPOActor):
             non_tensor_select_keys.append("teacher_multi_modal_inputs")
         if self.use_prefix_grouper and "uid" in data.non_tensor_batch.keys():
             non_tensor_select_keys.append("uid")
+        if trace_enabled:
+            for key in ("uid", "index", "data_source", "extra_info"):
+                if key in data.non_tensor_batch.keys() and key not in non_tensor_select_keys:
+                    non_tensor_select_keys.append(key)
 
         data = data.select(batch_keys=select_keys, non_tensor_batch_keys=non_tensor_select_keys)
 
@@ -920,6 +1337,23 @@ class DataParallelPPOActor(BasePPOActor):
             metrics["actor/vopd_loss"] = 0.0
             metrics["actor/vopd_loss_weighted"] = 0.0
         distill_dump_chunks = []
+        trace_samples_written = 0
+        trace_due_for_step = False
+        trace_topk = None
+        trace_max_samples = None
+        trace_entropy = False
+        if trace_enabled:
+            global_step = data.meta_info.get("global_steps")
+            trace_every_n_steps = int(self_distillation_cfg.get("trace_every_n_steps", 5))
+            trace_due_for_step = global_step is not None and int(global_step) % trace_every_n_steps == 0
+            trace_topk = int(
+                self_distillation_cfg.get("trace_topk", None)
+                or self_distillation_cfg.get("distillation_topk", None)
+                or 100
+            )
+            configured_max_samples = int(self_distillation_cfg.get("trace_max_samples", 4))
+            trace_max_samples = None if configured_max_samples <= 0 else configured_max_samples
+            trace_entropy = bool(self_distillation_cfg.get("trace_entropy", True))
         stage_wall_time_totals = None
         if self_distillation_enabled:
             stage_wall_time_totals = {
@@ -931,7 +1365,7 @@ class DataParallelPPOActor(BasePPOActor):
                 "timing_s/update_actor/teacher_ema_update": 0.0,
             }
         did_update = False
-        for _ in range(self.config.ppo_epochs):
+        for ppo_epoch_idx in range(self.config.ppo_epochs):
             for batch_idx, mini_batch in enumerate(mini_batches):
                 if self.config.use_dynamic_bsz:
                     max_token_len = self.config.ppo_max_token_len_per_gpu * self.ulysses_sequence_parallel_size
@@ -955,8 +1389,14 @@ class DataParallelPPOActor(BasePPOActor):
                     entropy_coeff = self.config.entropy_coeff
                     loss_agg_mode = self.config.loss_agg_mode
 
-                    calculate_entropy = self.config.calculate_entropy or (entropy_coeff != 0)
+                    policy_calculate_entropy = self.config.calculate_entropy or (entropy_coeff != 0)
                     self_distillation_mask = model_inputs.get("self_distillation_mask") if self_distillation_enabled else None
+                    trace_this_micro_batch = (
+                        trace_due_for_step
+                        and (not self_distillation_cfg.get("trace_only_first_ppo_epoch", True) or ppo_epoch_idx == 0)
+                        and (trace_max_samples is None or trace_samples_written < trace_max_samples)
+                    )
+                    calculate_entropy = policy_calculate_entropy or (trace_this_micro_batch and trace_entropy)
                     policy_fallback_mask = None
                     if self_distillation_enabled and self_distillation_mask is not None:
                         policy_fallback_mask = (self_distillation_mask <= 0.5).to(response_mask.dtype)
@@ -984,6 +1424,7 @@ class DataParallelPPOActor(BasePPOActor):
                         calculate_entropy=calculate_entropy,
                         return_all_logps=return_all_logps,
                         distill_topk=distill_topk,
+                        trace_topk=trace_topk if trace_this_micro_batch else None,
                     )
                     if self_distillation_enabled:
                         student_forward_time = time.perf_counter() - student_forward_start
@@ -993,6 +1434,8 @@ class DataParallelPPOActor(BasePPOActor):
                     student_all_logps = outputs.get("all_logps") if return_all_logps else None
                     student_topk_logps = outputs.get("topk_logps") if distill_topk else None
                     student_topk_indices = outputs.get("topk_indices") if distill_topk else None
+                    student_trace_topk_logps = outputs.get("trace_topk_logps") if trace_this_micro_batch else None
+                    student_trace_topk_indices = outputs.get("trace_topk_indices") if trace_this_micro_batch else None
 
                     # for fully_async_policy
                     if hasattr(self.config, "use_rollout_log_probs") and self.config.use_rollout_log_probs:
@@ -1029,10 +1472,11 @@ class DataParallelPPOActor(BasePPOActor):
                             teacher_outputs = self._forward_micro_batch(
                                 teacher_inputs,
                                 temperature=temperature,
-                                calculate_entropy=False,
+                                calculate_entropy=trace_this_micro_batch and trace_entropy,
                                 return_all_logps=return_all_logps,
                                 distill_topk=distill_topk,
                                 topk_indices=student_topk_indices,
+                                trace_topk=trace_topk if trace_this_micro_batch else None,
                                 module=teacher_model,
                             )
                             teacher_forward_time = time.perf_counter() - teacher_forward_start
@@ -1040,6 +1484,56 @@ class DataParallelPPOActor(BasePPOActor):
                         teacher_log_prob = teacher_outputs["log_probs"]
                         teacher_all_logps = teacher_outputs.get("all_logps") if return_all_logps else None
                         teacher_topk_logps = teacher_outputs.get("topk_logps") if distill_topk else None
+                        teacher_entropy = teacher_outputs.get("entropys") if trace_this_micro_batch and trace_entropy else None
+                        teacher_trace_topk_logps = (
+                            teacher_outputs.get("trace_topk_logps") if trace_this_micro_batch else None
+                        )
+                        teacher_trace_topk_indices = (
+                            teacher_outputs.get("trace_topk_indices") if trace_this_micro_batch else None
+                        )
+                        if self_distillation_cfg.get("train_metrics_enabled", True):
+                            self._add_opd_train_metrics(
+                                micro_batch_metrics,
+                                response_mask=response_mask,
+                                self_distillation_mask=self_distillation_mask,
+                                responses=model_inputs["responses"],
+                                student_log_probs=log_prob,
+                                teacher_log_probs=teacher_log_prob,
+                                student_topk_indices=student_topk_indices,
+                                student_topk_logps=student_topk_logps,
+                                teacher_logps_on_student_topk=teacher_topk_logps,
+                                student_entropy=entropy if policy_calculate_entropy else None,
+                            )
+                        if trace_this_micro_batch:
+                            remaining_samples = (
+                                None if trace_max_samples is None else trace_max_samples - trace_samples_written
+                            )
+                            trace_student_topk_indices = (
+                                student_trace_topk_indices
+                                if student_trace_topk_indices is not None
+                                else student_topk_indices
+                            )
+                            trace_student_topk_logps = (
+                                student_trace_topk_logps if student_trace_topk_logps is not None else student_topk_logps
+                            )
+                            written = self._dump_opd_token_trace(
+                                meta_info=data.meta_info,
+                                self_distillation_cfg=self_distillation_cfg,
+                                model_inputs=model_inputs,
+                                response_mask=response_mask,
+                                self_distillation_mask=self_distillation_mask,
+                                responses=model_inputs["responses"],
+                                student_log_probs=log_prob,
+                                teacher_log_probs=teacher_log_prob,
+                                student_topk_indices=trace_student_topk_indices,
+                                student_topk_logps=trace_student_topk_logps,
+                                teacher_topk_indices=teacher_trace_topk_indices,
+                                teacher_topk_logps=teacher_trace_topk_logps,
+                                student_entropy=entropy if trace_entropy else None,
+                                teacher_entropy=teacher_entropy,
+                                max_samples=remaining_samples,
+                            )
+                            trace_samples_written += written
                         if self_distillation_cfg.get("log_prob_dump_dir", None):
                             if distill_topk:
                                 student_distill_log_probs = student_topk_logps
@@ -1143,7 +1637,7 @@ class DataParallelPPOActor(BasePPOActor):
                         micro_batch_metrics.update(rollout_corr_metrics)
 
                     policy_loss = pg_loss
-                    if calculate_entropy and entropy is not None:
+                    if policy_calculate_entropy and entropy is not None:
                         entropy_agg = agg_loss(loss_mat=entropy, loss_mask=response_mask, loss_agg_mode=loss_agg_mode)
                         micro_batch_metrics["actor/entropy"] = entropy_agg.detach().item()
                         if entropy_coeff != 0:

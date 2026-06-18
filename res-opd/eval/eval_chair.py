@@ -31,6 +31,7 @@ Usage:
 import argparse
 import io
 import json
+import math
 import os
 import re
 import sys
@@ -95,6 +96,10 @@ def parse_args():
                         help="Number of concurrent API workers (only for --api-base mode)")
     parser.add_argument("--max-retries", type=int, default=3,
                         help="Max retries per sample on API failure")
+    parser.add_argument("--save-logprobs", action="store_true",
+                        help="Request and save generated-token logprobs in API/direct mode")
+    parser.add_argument("--top-logprobs", type=int, default=5,
+                        help="Top-k logprobs to save when --save-logprobs is enabled")
     return parser.parse_args()
 
 
@@ -152,9 +157,95 @@ def load_existing_results(eval_results_path):
     return completed
 
 
+def _safe_mean(values):
+    values = [v for v in values if v is not None]
+    return sum(values) / len(values) if values else None
+
+
+def _as_numeric(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and math.isfinite(float(value)):
+        return float(value)
+    return None
+
+
+def _get_attr(obj, name, default=None):
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _entropy_from_logprobs(logprobs):
+    if not logprobs:
+        return None
+    max_logprob = max(logprobs)
+    weights = [math.exp(lp - max_logprob) for lp in logprobs]
+    total = sum(weights)
+    if total <= 0:
+        return None
+    probs = [w / total for w in weights]
+    return -sum(p * math.log(max(p, 1e-12)) for p in probs)
+
+
+def _summarize_token_logprobs(token_logprobs, top_logprobs):
+    top1_top2_margins = []
+    topk_entropies = []
+    for topk in top_logprobs:
+        vals = [entry.get("logprob") for entry in topk if entry.get("logprob") is not None]
+        if len(vals) >= 2:
+            sorted_vals = sorted(vals, reverse=True)
+            top1_top2_margins.append(sorted_vals[0] - sorted_vals[1])
+            topk_entropies.append(_entropy_from_logprobs(sorted_vals))
+    return {
+        "mean_token_logprob": _safe_mean(token_logprobs),
+        "mean_top1_top2_logprob_margin": _safe_mean(top1_top2_margins),
+        "mean_topk_entropy": _safe_mean(topk_entropies),
+    }
+
+
+def serialize_api_logprobs(choice):
+    """Serialize OpenAI/vLLM chat logprobs into JSON-friendly fields."""
+    logprobs = _get_attr(choice, "logprobs")
+    content = _get_attr(logprobs, "content")
+    if not content:
+        return {}
+
+    tokens = []
+    token_logprobs = []
+    top_logprobs = []
+    for item in content:
+        token = _get_attr(item, "token")
+        logprob = _as_numeric(_get_attr(item, "logprob"))
+        tokens.append(token)
+        token_logprobs.append(logprob)
+
+        serialized_topk = []
+        for top_item in _get_attr(item, "top_logprobs", []) or []:
+            top_token = _get_attr(top_item, "token")
+            top_logprob = _as_numeric(_get_attr(top_item, "logprob"))
+            if top_logprob is not None:
+                serialized_topk.append({
+                    "token": top_token,
+                    "logprob": top_logprob,
+                })
+        top_logprobs.append(serialized_topk)
+
+    fields = {
+        "generated_tokens": tokens,
+        "token_logprobs": token_logprobs,
+        "top_logprobs": top_logprobs,
+    }
+    fields.update(_summarize_token_logprobs(token_logprobs, top_logprobs))
+    return fields
+
+
 def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
                      max_new_tokens, student_px, target_px, max_retries,
-                     degradation_mode="square", student_ratio=1.0):
+                     degradation_mode="square", student_ratio=1.0,
+                     save_logprobs=False, top_logprobs=5):
     """Generate a single caption via API with retry logic. Thread-safe."""
     import base64
 
@@ -183,29 +274,41 @@ def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
 
     for attempt in range(1, max_retries + 1):
         try:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[{
+            request_kwargs = {
+                "model": model_name,
+                "messages": [{
                     "role": "user",
                     "content": [
                         {"type": "image_url", "image_url": {"url": image_url}},
                         {"type": "text", "text": prompt},
                     ],
                 }],
-                max_tokens=max_new_tokens,
-                temperature=0.0,
-            )
-            return response.choices[0].message.content
+                "max_tokens": max_new_tokens,
+                "temperature": 0.0,
+            }
+            if save_logprobs:
+                request_kwargs["logprobs"] = True
+                request_kwargs["top_logprobs"] = top_logprobs
+
+            response = client.chat.completions.create(**request_kwargs)
+            choice = response.choices[0]
+            result = {
+                "generated_caption": choice.message.content,
+            }
+            if save_logprobs:
+                result.update(serialize_api_logprobs(choice))
+            return result
         except Exception as exc:
             if attempt == max_retries:
-                return f"[ERROR] {exc}"
+                return {"generated_caption": f"[ERROR] {exc}"}
             time.sleep(1.0 * attempt)
-    return "[ERROR] unknown"
+    return {"generated_caption": "[ERROR] unknown"}
 
 
 def generate_via_model(model, processor, image_path, prompt, max_new_tokens,
                        device, student_px=0, target_px=448,
-                       degradation_mode="square", student_ratio=1.0):
+                       degradation_mode="square", student_ratio=1.0,
+                       save_logprobs=False, top_logprobs=5):
     """Generate caption via direct model inference (sequential only)."""
     import torch
     from qwen_vl_utils import process_vision_info
@@ -230,12 +333,51 @@ def generate_via_model(model, processor, image_path, prompt, max_new_tokens,
     inputs = {k: v.to(device) for k, v in inputs.items() if torch.is_tensor(v)}
 
     with torch.no_grad():
-        output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens,
-                                    do_sample=False)
+        output_ids = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            return_dict_in_generate=save_logprobs,
+            output_scores=save_logprobs,
+        )
     input_len = inputs["input_ids"].shape[1]
-    generated_text = processor.decode(output_ids[0, input_len:],
+    sequences = output_ids.sequences if save_logprobs else output_ids
+    generated_ids = sequences[0, input_len:]
+    generated_text = processor.decode(generated_ids,
                                       skip_special_tokens=True)
-    return generated_text
+
+    result = {"generated_caption": generated_text}
+    if save_logprobs:
+        token_logprobs = []
+        serialized_top_logprobs = []
+        for step, score in enumerate(output_ids.scores):
+            if step >= generated_ids.shape[0]:
+                break
+            log_probs = torch.log_softmax(score[0].float(), dim=-1)
+            token_id = int(generated_ids[step].item())
+            token_logprobs.append(float(log_probs[token_id].item()))
+            k = min(max(top_logprobs, 0), log_probs.shape[-1])
+            if k > 0:
+                top_vals, top_ids = torch.topk(log_probs, k=k)
+                serialized_top_logprobs.append([
+                    {
+                        "token_id": int(tok_id.item()),
+                        "token": processor.decode([int(tok_id.item())]),
+                        "logprob": float(tok_lp.item()),
+                    }
+                    for tok_id, tok_lp in zip(top_ids, top_vals)
+                ])
+            else:
+                serialized_top_logprobs.append([])
+        result.update({
+            "generated_token_ids": [int(x) for x in generated_ids.tolist()],
+            "token_logprobs": token_logprobs,
+            "top_logprobs": serialized_top_logprobs,
+        })
+        result.update(_summarize_token_logprobs(
+            token_logprobs, serialized_top_logprobs
+        ))
+    return result
 
 
 def main():
@@ -316,14 +458,16 @@ def main():
                     image_path, PROMPT_TEXT, args.max_new_tokens,
                     args.student_px, args.target_px, args.max_retries,
                     args.degradation_mode, args.student_ratio,
+                    args.save_logprobs, args.top_logprobs,
                 )
-                return {
+                result = {
                     "image_id": sample["image_id"],
                     "file_name": sample["file_name"],
-                    "generated_caption": caption,
                     "gt_captions": sample.get("captions", []),
                     "gt_objects": sample.get("objects", []),
                 }
+                result.update(caption)
+                return result
 
             with ThreadPoolExecutor(max_workers=args.parallel_workers) as executor, \
                  open(eval_results_path, "a") as f_out:
@@ -350,19 +494,20 @@ def main():
                     if not os.path.exists(image_path):
                         print(f"  Warning: {image_path} not found, skipping.")
                         continue
-                    caption = generate_via_model(
+                    generation = generate_via_model(
                         model, processor, image_path, PROMPT_TEXT,
                         args.max_new_tokens, device,
                         args.student_px, args.target_px,
                         args.degradation_mode, args.student_ratio,
+                        args.save_logprobs, args.top_logprobs,
                     )
                     result = {
                         "image_id": sample["image_id"],
                         "file_name": sample["file_name"],
-                        "generated_caption": caption,
                         "gt_captions": sample.get("captions", []),
                         "gt_objects": sample.get("objects", []),
                     }
+                    result.update(generation)
                     f_out.write(json.dumps(result) + "\n")
                     f_out.flush()
                     done_count += 1

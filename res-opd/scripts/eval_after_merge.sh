@@ -55,11 +55,12 @@ VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
 export PYTHONPATH="$VISION_OPD_ROOT:${PYTHONPATH:-}"
 
 MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [student_px] [version_tag]}"
-STUDENT_PX="${2:-0}"
+STUDENT_PX="${2:-${STUDENT_PX:-}}"
 VERSION_TAG="${3:-latest}"
 EVAL_MODE="${4:-${EVAL_MODE:-chair}}"
-DEGRADATION_MODE="${DEGRADATION_MODE:-square}"
-STUDENT_RATIO="${STUDENT_RATIO:-1.0}"
+DEGRADATION_MODE="${DEGRADATION_MODE:-}"
+STUDENT_RATIO="${STUDENT_RATIO:-}"
+TARGET_PX="${TARGET_PX:-448}"
 PORT="${VLLM_PORT:-8000}"
 MODEL_NAME="Res-OPD"
 TEST_JSON="${RES_OPD_ROOT}/data/test.json"
@@ -72,6 +73,11 @@ POPE_PARALLEL_WORKERS="${POPE_PARALLEL_WORKERS:-64}"
 POPE_MAX_NEW_TOKENS="${POPE_MAX_NEW_TOKENS:-16}"
 POPE_MAX_SAMPLES="${POPE_MAX_SAMPLES:-0}"
 POPE_USE_PREPARED_QUERY="${POPE_USE_PREPARED_QUERY:-False}"
+CHAIR_MAX_NEW_TOKENS="${CHAIR_MAX_NEW_TOKENS:-384}"
+CHAIR_PARALLEL_WORKERS="${CHAIR_PARALLEL_WORKERS:-8}"
+CHAIR_MAX_SAMPLES="${CHAIR_MAX_SAMPLES:-0}"
+CHAIR_SAVE_LOGPROBS="${CHAIR_SAVE_LOGPROBS:-False}"
+CHAIR_TOP_LOGPROBS="${CHAIR_TOP_LOGPROBS:-5}"
 VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar}"
 VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
@@ -117,6 +123,35 @@ if [[ -n "$STEP_TAG" ]]; then
     EXPERIMENT_NAME="${EXPERIMENT_NAME}_${STEP_TAG}"
 fi
 
+infer_eval_spec() {
+    local exp_name="$1"
+    local inferred_mode="square"
+    local inferred_student_px="0"
+    local inferred_student_ratio="1.0"
+    if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr ]]; then
+        inferred_mode="original"
+        inferred_student_px="0"
+        inferred_student_ratio="${BASH_REMATCH[1]}"
+    elif [[ "$exp_name" =~ -s([0-9]+)(-|_) ]]; then
+        inferred_mode="square"
+        inferred_student_px="${BASH_REMATCH[1]}"
+    fi
+    DEGRADATION_MODE="${DEGRADATION_MODE:-$inferred_mode}"
+    STUDENT_PX="${STUDENT_PX:-$inferred_student_px}"
+    STUDENT_RATIO="${STUDENT_RATIO:-$inferred_student_ratio}"
+}
+
+infer_eval_spec "$EXPERIMENT_NAME"
+
+case "$DEGRADATION_MODE" in
+    square|original)
+        ;;
+    *)
+        echo "Error: DEGRADATION_MODE must be square or original. Got: $DEGRADATION_MODE" >&2
+        exit 1
+        ;;
+esac
+
 # Build dataset tag from actual data file sizes
 TRAIN_FILE="${RES_OPD_ROOT}/data/train.parquet"
 TEST_FILE="${RES_OPD_ROOT}/data/test.json"
@@ -146,10 +181,12 @@ echo "============================================================"
 echo "Model:       $MODEL_PATH"
 echo "Deg mode:    $DEGRADATION_MODE"
 echo "Student px:  $STUDENT_PX (0 = original image)"
+echo "Target px:   $TARGET_PX"
 echo "Student ratio: $STUDENT_RATIO (original mode)"
 echo "Eval mode:   $EVAL_MODE"
 if has_eval_task "$EVAL_MODE" "chair"; then
     echo "CHAIR data:  $TEST_JSON"
+    echo "CHAIR logprobs: ${CHAIR_SAVE_LOGPROBS} (top=${CHAIR_TOP_LOGPROBS})"
 fi
 if has_eval_task "$EVAL_MODE" "pope"; then
     echo "POPE:        $POPE_BENCHMARK"
@@ -214,14 +251,24 @@ echo "[2/3] Running selected evaluation(s) ..."
 EVAL_FAILURES=0
 if has_eval_task "$EVAL_MODE" "chair"; then
     echo "  Running CHAIR ..."
+    chair_extra_args=(
+        --max-new-tokens "$CHAIR_MAX_NEW_TOKENS"
+        --parallel-workers "$CHAIR_PARALLEL_WORKERS"
+        --max-samples "$CHAIR_MAX_SAMPLES"
+    )
+    if [[ "$CHAIR_SAVE_LOGPROBS" == "True" || "$CHAIR_SAVE_LOGPROBS" == "true" || "$CHAIR_SAVE_LOGPROBS" == "1" ]]; then
+        chair_extra_args+=(--save-logprobs --top-logprobs "$CHAIR_TOP_LOGPROBS")
+    fi
     if ! "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/eval_chair.py" \
         --api-base "http://localhost:$PORT/v1/" \
         --model-name "$MODEL_NAME" \
         --test-json "$TEST_JSON" \
         --output-dir "$OUTPUT_DIR" \
         --student-px "$STUDENT_PX" \
+        --target-px "$TARGET_PX" \
         --degradation-mode "$DEGRADATION_MODE" \
-        --student-ratio "$STUDENT_RATIO"; then
+        --student-ratio "$STUDENT_RATIO" \
+        "${chair_extra_args[@]}"; then
         echo "  WARNING: CHAIR failed; keeping any completed outputs." >&2
         EVAL_FAILURES=$((EVAL_FAILURES + 1))
     fi
@@ -245,6 +292,7 @@ if has_eval_task "$EVAL_MODE" "pope"; then
         --vision-opd-root "$VISION_OPD_ROOT" \
         --output-dir "$OUTPUT_DIR" \
         --student-px "$STUDENT_PX" \
+        --target-px "$TARGET_PX" \
         --degradation-mode "$DEGRADATION_MODE" \
         --student-ratio "$STUDENT_RATIO" \
         --max-new-tokens "$POPE_MAX_NEW_TOKENS" \

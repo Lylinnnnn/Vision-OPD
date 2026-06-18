@@ -5,12 +5,15 @@ import argparse
 import base64
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import io
 import json
 import mimetypes
 import os
 from pathlib import Path
 import threading
 import time
+
+from PIL import Image
 
 
 PERCEPTION_TASKS = {
@@ -152,11 +155,42 @@ def load_existing(path: Path) -> dict[str, dict]:
     return records
 
 
-def image_to_data_uri(path: str) -> str:
+def load_eval_image(path: str, degradation_mode: str, student_px: int, target_px: int, student_ratio: float):
+    image = Image.open(path).convert("RGB")
+    if degradation_mode == "original":
+        width, height = image.size
+        if student_ratio <= 0:
+            return Image.new("RGB", (width, height), color=(128, 128, 128))
+        if student_ratio >= 1.0:
+            return image
+        small_size = (
+            max(1, int(round(width * student_ratio))),
+            max(1, int(round(height * student_ratio))),
+        )
+        return image.resize(small_size, Image.LANCZOS).resize((width, height), Image.LANCZOS)
+    if student_px > 0:
+        return image.resize((student_px, student_px), Image.LANCZOS).resize((target_px, target_px), Image.LANCZOS)
+    return image
+
+
+def image_to_data_uri(
+    path: str,
+    degradation_mode: str = "square",
+    student_px: int = 0,
+    target_px: int = 448,
+    student_ratio: float = 1.0,
+) -> str:
     p = Path(path)
-    with open(p, "rb") as f:
-        payload = f.read()
-    mime = mimetypes.guess_type(str(p))[0] or "image/jpeg"
+    if degradation_mode == "original" or student_px > 0:
+        image = load_eval_image(str(p), degradation_mode, student_px, target_px, student_ratio)
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG")
+        payload = buf.getvalue()
+        mime = "image/jpeg"
+    else:
+        with open(p, "rb") as f:
+            payload = f.read()
+        mime = mimetypes.guess_type(str(p))[0] or "image/jpeg"
     return f"data:{mime};base64,{base64.b64encode(payload).decode('utf-8')}"
 
 
@@ -248,6 +282,10 @@ def main():
         help="Comma-separated MME categories.",
     )
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--student-px", type=int, default=0)
+    parser.add_argument("--target-px", type=int, default=448)
+    parser.add_argument("--degradation-mode", choices=["square", "original"], default="square")
+    parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--max-new-tokens", type=int, default=16)
     parser.add_argument("--max-samples", type=int, default=0)
     parser.add_argument("--parallel-workers", type=int, default=64)
@@ -302,7 +340,18 @@ def main():
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": image_to_data_uri(image_path)}},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image_to_data_uri(
+                                image_path,
+                                degradation_mode=args.degradation_mode,
+                                student_px=args.student_px,
+                                target_px=args.target_px,
+                                student_ratio=args.student_ratio,
+                            )
+                        },
+                    },
                     {"type": "text", "text": build_prompt(sample["query"])},
                 ],
             }
@@ -325,6 +374,10 @@ def main():
                     time.sleep(float(attempt))
 
         record = dict(sample)
+        record["student_px"] = args.student_px
+        record["target_px"] = args.target_px
+        record["degradation_mode"] = args.degradation_mode
+        record["student_ratio"] = args.student_ratio
         record["model_answer"] = answer
         record["pred_answer"] = extract_yes_no(answer)
         record["correct"] = record["pred_answer"] == record["response"]
@@ -359,6 +412,10 @@ def main():
             "benchmark": "mme",
             "source_path": str(source_path),
             "extractor": "first_sentence_yes_no",
+            "student_px": args.student_px,
+            "target_px": args.target_px,
+            "degradation_mode": args.degradation_mode,
+            "student_ratio": args.student_ratio,
         }
     )
     with open(metrics_path, "w", encoding="utf-8") as f:

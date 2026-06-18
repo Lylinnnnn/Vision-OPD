@@ -4,6 +4,7 @@
 import argparse
 import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import io
 import json
 import mimetypes
 import os
@@ -14,6 +15,8 @@ import sys
 import threading
 import time
 from typing import Optional
+
+from PIL import Image
 
 
 QUERY_MAP = {
@@ -31,10 +34,41 @@ def load_json(path: Path):
         return json.load(f)
 
 
-def image_to_data_uri(path: Path) -> str:
-    with open(path, "rb") as f:
-        payload = f.read()
-    mime = mimetypes.guess_type(str(path))[0] or "image/jpeg"
+def load_eval_image(path: Path, degradation_mode: str, student_px: int, target_px: int, student_ratio: float):
+    image = Image.open(path).convert("RGB")
+    if degradation_mode == "original":
+        width, height = image.size
+        if student_ratio <= 0:
+            return Image.new("RGB", (width, height), color=(128, 128, 128))
+        if student_ratio >= 1.0:
+            return image
+        small_size = (
+            max(1, int(round(width * student_ratio))),
+            max(1, int(round(height * student_ratio))),
+        )
+        return image.resize(small_size, Image.LANCZOS).resize((width, height), Image.LANCZOS)
+    if student_px > 0:
+        return image.resize((student_px, student_px), Image.LANCZOS).resize((target_px, target_px), Image.LANCZOS)
+    return image
+
+
+def image_to_data_uri(
+    path: Path,
+    degradation_mode: str = "square",
+    student_px: int = 0,
+    target_px: int = 448,
+    student_ratio: float = 1.0,
+) -> str:
+    if degradation_mode == "original" or student_px > 0:
+        image = load_eval_image(path, degradation_mode, student_px, target_px, student_ratio)
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG")
+        payload = buf.getvalue()
+        mime = "image/jpeg"
+    else:
+        with open(path, "rb") as f:
+            payload = f.read()
+        mime = mimetypes.guess_type(str(path))[0] or "image/jpeg"
     return f"data:{mime};base64,{base64.b64encode(payload).decode('utf-8')}"
 
 
@@ -159,6 +193,10 @@ def run_official_eval(args, response_path: Path, out_dir: Path) -> None:
         "official_returncode": proc.returncode,
         "official_log": str(official_log),
         "response_path": str(response_path),
+        "student_px": args.student_px,
+        "target_px": args.target_px,
+        "degradation_mode": args.degradation_mode,
+        "student_ratio": args.student_ratio,
         "metrics": parse_official_stdout(proc.stdout),
     }
     with open(out_dir / "amber_metrics.json", "w", encoding="utf-8") as f:
@@ -175,6 +213,10 @@ def main():
     parser.add_argument("--amber-root", type=Path, required=True)
     parser.add_argument("--image-root", type=Path, default=None)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--student-px", type=int, default=0)
+    parser.add_argument("--target-px", type=int, default=448)
+    parser.add_argument("--degradation-mode", choices=["square", "original"], default="square")
+    parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--evaluation-type", choices=sorted(QUERY_MAP), default="a")
     parser.add_argument("--max-new-tokens-generative", type=int, default=384)
     parser.add_argument("--max-new-tokens-discriminative", type=int, default=16)
@@ -222,7 +264,18 @@ def main():
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": image_to_data_uri(image_path)}},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image_to_data_uri(
+                                image_path,
+                                degradation_mode=args.degradation_mode,
+                                student_px=args.student_px,
+                                target_px=args.target_px,
+                                student_ratio=args.student_ratio,
+                            )
+                        },
+                    },
                     {"type": "text", "text": build_prompt(item["query"], is_discriminative)},
                 ],
             }
@@ -250,6 +303,10 @@ def main():
         raw_record.update(
             {
                 "image_path": str(image_path),
+                "student_px": args.student_px,
+                "target_px": args.target_px,
+                "degradation_mode": args.degradation_mode,
+                "student_ratio": args.student_ratio,
                 "model_answer": answer,
                 "official_response": official_answer,
                 "is_discriminative": is_discriminative,
