@@ -1,0 +1,1531 @@
+[
+  {
+    "image_id": 507223,
+    "file_name": "000000507223.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000507223.jpg",
+    "gt_objects": [
+      "baseball bat",
+      "baseball glove",
+      "person"
+    ],
+    "gt_captions": [
+      "A man that is standing in the dirt with a bat.",
+      "a baseball player is holding a bat on a field",
+      "A baseball players is ealking toward the opposing team.",
+      "The player approaches home plate to take his turn at bat.",
+      "A group of baseball players standing next to each other on top of a field."
+    ],
+    "model_caption": "This is a detailed, eye-level photograph of a baseball game in progress, captured through a protective netting in the foreground. The scene is set on a sunlit baseball field, with a green grass infield and a dirt base path. The image is framed by a chain-link fence, which is visible in the foreground and slightly obscures the view of the players.\n\nThe central focus is on three main figures: a batter, an umpire, and a catcher.\n\n- **The Batter**: Positioned in the center, the batter is wearing a blue Philadelphia Phillies jersey with the team name \"Phillies\" in red script across the chest. He is also wearing a red baseball cap with a white \"P\" logo. His uniform includes white pants with a red stripe down the side, and he is wearing red cleats. He is holding a black baseball bat, which is held in a ready stance, and is looking towards the right side of the frame. His posture suggests he is preparing to swing.\n\n- **The Umpire**: To the left of the batter, the umpire is wearing a black uniform with the number \"40\" in white on the sleeve. He is wearing a black protective mask and a black shirt. He is standing with his hands on his hips, observing the batter. His body is angled slightly towards the batter, and he appears to be in a ready stance.\n\n- **The Catcher**: To the right of the batter, the catcher is in a crouched position, wearing a dark blue pinstriped jersey with the number \"7\" in white on the back. He is wearing white pinstriped pants, a black helmet, and a large, brown leather catcher's mitt. He is leaning forward, looking down at the ground, and appears to be in the process of catching a ball. His body is angled towards the batter, and his mitt is extended",
+    "baseline_caption": "This is a detailed, eye-level photograph of a baseball game in progress, taken from behind a protective netting, likely a spectator's viewpoint. The scene is brightly lit by natural sunlight, suggesting a daytime game on a clear day.\n\nThe central focus is on three main figures on the baseball field.\n\n- **The Batter**: A man in a blue Philadelphia Phillies uniform stands in the center. He wears a red helmet with a white \"P\" logo, a blue jersey with \"Phillies\" written in red script across the chest, and light gray pants with a red stripe down the side. He is holding a black baseball bat with both hands, and his posture suggests he is preparing to swing. His red cleats are visible. He is looking forward, focused on the game.\n\n- **The Catcher**: To the right, a baseball catcher is in a crouched position, wearing a dark blue pinstriped uniform with a white \"C\" on the back, a black helmet, and protective gear. He is holding a brown leather glove in his left hand and is looking down, possibly at the ground or the ball. His body is angled towards the batter.\n\n- **The Umpire**: To the left, an umpire is standing, wearing a black uniform with the number \"40\" in white on the sleeve. He is wearing a black protective mask and a black shirt. He is looking towards the batter, likely observing the play.\n\nIn the background, there is a blue metal fence and a white banner with red text. The banner reads \"Canon\" in large red letters, with \"CANON BUSINESS SOLUTIONS\" written below it in smaller black text. The field is a mix of green grass and brown dirt, typical of a baseball diamond. The netting in the foreground is slightly out of focus, creating a sense of depth.",
+    "model_metrics": {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "mentioned": 0,
+      "correct": 0,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "baseline_metrics": {
+      "f1": 0.8,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "mentioned": 2,
+      "correct": 2,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "f1_delta": -0.8,
+    "precision_delta": -1.0,
+    "recall_delta": -0.6666666666666666,
+    "model_mentioned_objects": [],
+    "baseline_mentioned_objects": [
+      "baseball bat",
+      "person"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [],
+      "model_missed_gt": [
+        "baseball bat",
+        "baseball glove",
+        "person"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "baseball bat",
+        "person"
+      ],
+      "baseline_missed_gt": [
+        "baseball glove"
+      ],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "baseball bat",
+        "person"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.0,
+      "gt_coverage_baseline": 0.6666666666666666,
+      "gt_coverage_delta": -0.6666666666666666
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
+  },
+  {
+    "image_id": 507975,
+    "file_name": "000000507975.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000507975.jpg",
+    "gt_objects": [
+      "car",
+      "horse",
+      "person"
+    ],
+    "gt_captions": [
+      "Some very pretty horses with riders in the grass.",
+      "three men riding horses through a grassy field",
+      "a couple of people are riding horses outside",
+      "three horses and three jockeys are racing near a silver car",
+      "Three jockeys and three horses competing in a race against each other"
+    ],
+    "model_caption": "This is a dynamic, action-oriented photograph capturing a horse race in progress. The image is taken from a low angle, emphasizing the speed and power of the horses as they gallop across a grassy track.\n\nThe central focus is on three racehorses and their jockeys, who are in a tight, forward-leaning position, suggesting a high-speed competition. The horses are in a line, with the one in the foreground being the most prominent.\n\n- **Horse 1 (Foreground):** This is a dark brown or black horse with a sleek, muscular build. It is wearing a blue saddle cloth with the number \"4\" in white. The horse's head is turned slightly to the right, and its legs are in mid-stride, with the front left leg lifted. The horse's mane and tail are dark and appear to be flowing with the motion. The jockey is wearing a white and black racing jacket, a black helmet, and sunglasses.\n\n- **Horse 2 (Middle):** This is a chestnut-colored horse with a white blaze on its face. It is positioned slightly behind the first horse. The jockey is wearing a red helmet and a white and black racing jacket. The horse's head is turned forward, and its legs are in motion, with the front right leg lifted. The jockey's body is angled forward, and the horse's mane is a rich chestnut color.\n\n- **Horse 3 (Background):** This is a lighter brown or tan horse, also in motion. It is positioned behind the other two horses. The jockey is wearing a white helmet and a white and black racing jacket. The horse's head is turned forward, and its legs are in motion, with the front left leg lifted. The horse's mane is a lighter shade of brown.\n\nThe jockeys are wearing full racing gear, including helmets and",
+    "baseline_caption": "This is a dynamic, action-oriented photograph capturing a moment during a horse race. The image is taken from a low angle, emphasizing the speed and power of the horses as they gallop across a grassy track.\n\nIn the foreground, three racehorses are in a tight, forward-leaning formation, their bodies angled towards the right of the frame. The horse in the lead is a dark brown or black horse, with a prominent blue saddle cloth featuring the number \"4\" in white. It is ridden by a jockey wearing a white and black striped silks, a black helmet, and dark sunglasses. The second horse is a chestnut brown horse, ridden by a jockey in a red helmet and white silks. The third horse, slightly behind, is a lighter brown horse with a white blaze on its face, ridden by a jockey in a white helmet and white silks. All three jockeys are leaning forward, their bodies and the horses' legs in motion, conveying a sense of intense speed.\n\nThe background is a natural, slightly blurred landscape of green hills and trees, suggesting the race is taking place in a rural or countryside setting. To the right of the horses, a modern, silver-colored car is parked on the grass, its front end visible. The car's headlights are on, and its front grille and emblem are clearly visible. A white metal railing runs along the edge of the track, separating the grass from the car.\n\nIn the background, several spectators are visible. On the left, a man in a dark jacket and a woman with short, light-colored hair are watching the race. The woman is wearing a white hat. The man is wearing a dark cap and a dark jacket. The spectators are positioned behind the track, adding to the sense of a public event.\n\nThe overall lighting is bright and natural, suggesting it is daytime. The image is sharp and detailed",
+    "model_metrics": {
+      "f1": 0.5,
+      "precision": 1.0,
+      "recall": 0.3333333333333333,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 3,
+      "correct": 3,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "f1_delta": -0.5,
+    "precision_delta": 0.0,
+    "recall_delta": -0.6666666666666667,
+    "model_mentioned_objects": [
+      "horse"
+    ],
+    "baseline_mentioned_objects": [
+      "car",
+      "horse",
+      "person"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "horse"
+      ],
+      "model_missed_gt": [
+        "car",
+        "person"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "car",
+        "horse",
+        "person"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "car",
+        "person"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.3333333333333333,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.6666666666666666
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
+  },
+  {
+    "image_id": 217753,
+    "file_name": "000000217753.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000217753.jpg",
+    "gt_objects": [
+      "apple",
+      "orange"
+    ],
+    "gt_captions": [
+      "A large display of fruit: applies, grapes, oranges, lemons, limes and grapefruit",
+      "Various fruits packaged, tagged and displayed for sale.",
+      "Apples, lemons, grapes, oranges and other fruits in crates.",
+      "A display with lots of containers of different fruits.",
+      "A bunch of fruits and vegetables for sale on display"
+    ],
+    "model_caption": "This is a detailed, high-angle photograph of a fruit market stall, showcasing a variety of fresh fruits arranged in green plastic crates and wooden boxes. The scene is well-lit, highlighting the vibrant colors and textures of the produce.\n\nThe image is organized into several distinct sections, each containing different types of fruit.\n\n- **Top-Left Section:**\n  - A large green plastic crate holds several clear plastic containers. Each container is filled with red, round fruits, likely red apples, and is sealed with a white label. The fruits are arranged in a neat, organized manner.\n  - To the right of the containers, a large green plastic crate holds a pile of yellow, round fruits, possibly yellow pears or a similar citrus fruit. They are also in clear plastic containers, with a white label visible on the top of the container.\n  - The top-right section contains a large green plastic crate filled with dark purple, round fruits, possibly grapes or a similar fruit. These are also in clear plastic containers, with a white label on the top of the container.\n\n- **Middle-Left Section:**\n  - A wooden box contains a large quantity of red, round fruits, likely red apples. They are arranged in a neat, organized manner.\n  - To the right of the red apples, a green plastic crate holds a pile of green, round fruits, likely green apples. They are also in clear plastic containers, with a white label visible on the top of the container.\n\n- **Middle-Right Section:**\n  - A green plastic crate holds a pile of red, round fruits, likely red apples. They are arranged in a neat, organized manner.\n  - To the right of the red apples, a green plastic crate holds a pile of yellow, round fruits, possibly yellow pears or a similar citrus fruit. They are also in clear plastic containers, with a white label visible on the",
+    "baseline_caption": "This is a detailed, high-angle photograph of a fruit market stall, showcasing a variety of fresh fruits arranged in green plastic crates and wooden boxes. The scene is well-lit, highlighting the vibrant colors and textures of the produce.\n\nThe image is organized into several distinct sections, each containing different types of fruit.\n\n- **Top-Left Section:**\n  - A large green plastic crate holds two types of fruit. On the left, there are several clear plastic containers with a white label, each holding a bunch of red, round fruits, likely red apples. The container is filled with a mix of red and green apples, some of which are wrapped in clear plastic.\n  - To the right, a large green plastic crate contains a pile of yellow, round fruits, possibly yellow pears or a similar citrus fruit. The fruits are arranged in a neat, stacked manner, and each one has a small, white label with a red symbol on it.\n\n- **Top-Right Section:**\n  - This section features a large green plastic crate filled with dark purple, round fruits, possibly grapes or a similar type of berry. The fruits are packed tightly in clear plastic bags, each with a white label that has a red symbol on it. The label on the topmost bag has some text, but it is too blurry to read clearly.\n\n- **Middle-Left Section:**\n  - A green plastic crate contains a mix of green and red apples. The green apples are in a clear plastic container, while the red apples are in a white plastic container. The red apples are arranged in a neat, stacked manner, and each one has a small, white label with a red symbol on it.\n\n- **Middle-Right Section:**\n  - This section features a large green plastic crate filled with red apples. The apples are arranged in a neat, stacked manner, and each one has a small, white label",
+    "model_metrics": {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "mentioned": 1,
+      "correct": 0,
+      "hallucinated": 1,
+      "gt_count": 2
+    },
+    "baseline_metrics": {
+      "f1": 0.5,
+      "precision": 0.5,
+      "recall": 0.5,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 2
+    },
+    "f1_delta": -0.5,
+    "precision_delta": -0.5,
+    "recall_delta": -0.5,
+    "model_mentioned_objects": [
+      "bowl"
+    ],
+    "baseline_mentioned_objects": [
+      "apple",
+      "bowl"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [],
+      "model_missed_gt": [
+        "apple",
+        "orange"
+      ],
+      "model_hallucinated": [
+        "bowl"
+      ],
+      "baseline_hit_gt": [
+        "apple"
+      ],
+      "baseline_missed_gt": [
+        "orange"
+      ],
+      "baseline_hallucinated": [
+        "bowl"
+      ],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "apple"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [
+        "bowl"
+      ],
+      "gt_coverage_model": 0.0,
+      "gt_coverage_baseline": 0.5,
+      "gt_coverage_delta": -0.5
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
+  },
+  {
+    "image_id": 10583,
+    "file_name": "000000010583.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000010583.jpg",
+    "gt_objects": [
+      "dining table",
+      "knife",
+      "sandwich"
+    ],
+    "gt_captions": [
+      "a plate of meat topped with potatoes veggies and gravy",
+      "A white plate with a pile of food on it.",
+      "A large pile of food on a plate with knife.",
+      "A white plate sitting on a table filled with food. ",
+      "Plate of food with gravy on mesh table with knife"
+    ],
+    "model_caption": "This is a close-up, appetizing photograph of a hearty, stacked meal served on a white plate. The image is taken from a slightly elevated angle, focusing on the food, with a dark, textured tablecloth in the background.\n\nThe main subject is a towering, multi-layered dish, likely a type of meatloaf or a similar savory stack. The base of the stack is a thick, round, dark brown piece of meat, possibly a steak or a thick-cut sausage, which is partially covered by a thick, creamy, light-brown gravy. This gravy is generously poured over the meat and also drizzled down the sides of the plate. The top of the stack is crowned with a generous amount of a lighter-colored, possibly white or pale yellow, sauce, which appears to be a type of cheese or a thick sauce, and is also topped with a layer of chopped green herbs, likely parsley.\n\nThe entire stack is garnished with a variety of ingredients. At the very top, there are several slices of a red tomato, which are slightly charred, and a few pieces of what appear to be cooked onions. The dish is also sprinkled with finely chopped green herbs, likely parsley, which are scattered across the plate and the gravy.\n\nThe plate is white and has a slightly textured surface. A knife with a black handle is visible on the right side of the plate, resting on the edge. The background is a dark, textured tablecloth with a grid-like pattern. In the upper left corner, a portion of another dish, possibly a plate of fries, is visible. The overall lighting is warm and focused, highlighting the textures and colors of the food.",
+    "baseline_caption": "This is a close-up, appetizing photograph of a hearty, stacked meal served on a white plate. The image is taken from a slightly elevated angle, focusing on the food as the central subject.\n\nThe main dish is a towering stack of what appears to be a savory, meat-based sandwich or burger, possibly a meatloaf or a thick patty, served on a round, white, textured plate. The stack is built with layers of ingredients, starting with a thick, dark brown gravy that coats the bottom layer and drips down the sides. This gravy is thick and rich, with a glossy sheen, and is generously sprinkled with finely chopped green herbs, likely parsley, which are scattered across the plate and on top of the food.\n\nThe top of the stack is crowned with a generous amount of a light-colored, creamy sauce, possibly a white sauce or a type of cheese sauce, which is also topped with a slice of a red tomato. The tomato is cut into a round, slightly curved shape and is placed on top of the other ingredients. The entire stack is garnished with a sprinkle of fresh green herbs, adding a touch of color and freshness.\n\nThe plate is set on a dark, textured table mat with a grid-like pattern. In the background, a portion of another dish is visible, which appears to be a side of golden-brown fries. A black-handled knife is resting on the plate, partially visible on the right side. The overall lighting is warm and highlights the textures and colors of the food, creating an inviting and delicious-looking meal.",
+    "model_metrics": {
+      "f1": 0.5,
+      "precision": 1.0,
+      "recall": 0.3333333333333333,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 3,
+      "correct": 3,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "f1_delta": -0.5,
+    "precision_delta": 0.0,
+    "recall_delta": -0.6666666666666667,
+    "model_mentioned_objects": [
+      "knife"
+    ],
+    "baseline_mentioned_objects": [
+      "dining table",
+      "knife",
+      "sandwich"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "knife"
+      ],
+      "model_missed_gt": [
+        "dining table",
+        "sandwich"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "dining table",
+        "knife",
+        "sandwich"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "dining table",
+        "sandwich"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.3333333333333333,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.6666666666666666
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
+  },
+  {
+    "image_id": 281179,
+    "file_name": "000000281179.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000281179.jpg",
+    "gt_objects": [
+      "bench",
+      "fire hydrant",
+      "traffic light"
+    ],
+    "gt_captions": [
+      "A rain covered terrain after a night of rain. ",
+      "A red traffic light at night next to a Christmas Tree.",
+      "A street at night time with many different lights. ",
+      "An empty street at night with lots of lights in the background.",
+      "A bright city street with a stop light and a big Christmas tree."
+    ],
+    "model_caption": "This is a low-angle, nighttime photograph of a wet city street, likely taken during the holiday season. The scene is illuminated by a variety of artificial lights, creating a warm and festive atmosphere.\n\n- **Foreground and Midground:**\n  - The most prominent feature is the wet asphalt of the street, which reflects the surrounding lights. The reflection of the streetlights and the red traffic light is clearly visible on the surface.\n  - The street is bordered by a grassy area in the immediate foreground, which appears dark and damp.\n  - A sidewalk runs along the edge of the street, and a small, dark, possibly wooden or metal, post is visible on the left side of the frame.\n  - The street is lined with a row of trees and buildings in the background, which are mostly obscured by the distance and the lighting.\n\n- **Background and Lighting:**\n  - A large, decorated Christmas tree stands in the background, illuminated with numerous small, colorful lights (red, blue, and green). It is positioned on the right side of the image.\n  - The buildings in the background are lit up with warm yellow and white lights, and their architectural details are visible.\n  - The street is lit by several streetlights, which cast a warm, yellow glow on the wet pavement.\n  - The traffic light on the left side of the image is red, and the light is reflected on the wet surface.\n  - The overall lighting is dim, with the primary sources being the streetlights, the Christmas tree, and the building lights.\n\n- **Color and Texture:**\n  - The dominant colors are the dark, reflective gray of the wet pavement, the warm yellow and orange of the streetlights, and the cool blue and red of the Christmas tree lights.\n  - The texture of the wet pavement is smooth and glossy, with clear reflections of the lights.\n  - The grass in the",
+    "baseline_caption": "This is a low-angle, nighttime photograph of a wet city street, likely taken during the holiday season. The scene is illuminated by artificial lights, creating a warm, reflective atmosphere.\n\n- **Foreground and Midground:**\n  - The lower portion of the image is dominated by a wet, dark asphalt road and a grassy area in the immediate foreground. The road is highly reflective, mirroring the warm yellow and orange glow from the streetlights and the red light from a traffic signal.\n  - The grass is dark and appears damp, with some patches of lighter, possibly dry, grass visible.\n  - The road is marked with a faint, dark line, possibly a painted curb or a road delineation.\n  - A tall, black lamppost stands on the left side of the frame, its pole and base reflecting the red light from the traffic signal.\n\n- **Background and Central Elements:**\n  - In the center of the image, a large, decorated Christmas tree stands on the sidewalk. It is adorned with numerous small, colorful lights—primarily blue, green, and red—which create a festive, glowing effect against the dark background.\n  - To the right of the tree, a large, modern building with a stone or brick facade is visible. The building has large, rectangular windows and a prominent entrance with a dark, possibly glass, door.\n  - The building's entrance is flanked by two large, square pillars made of a light-colored stone or concrete.\n  - A long, dark bench is visible on the sidewalk in front of the building, partially obscured by the tree and the building's structure.\n  - A yellow fire hydrant is visible on the sidewalk near the base of the tree.\n\n- **Lighting and Color:**\n  - The scene is lit by a combination of artificial lights. The streetlights emit a warm, yellow-orange glow, which reflects off the wet",
+    "model_metrics": {
+      "f1": 0.4,
+      "precision": 0.5,
+      "recall": 0.3333333333333333,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 3
+    },
+    "baseline_metrics": {
+      "f1": 0.8571428571428571,
+      "precision": 0.75,
+      "recall": 1.0,
+      "mentioned": 4,
+      "correct": 3,
+      "hallucinated": 1,
+      "gt_count": 3
+    },
+    "f1_delta": -0.4571428571428571,
+    "precision_delta": -0.25,
+    "recall_delta": -0.6666666666666667,
+    "model_mentioned_objects": [
+      "orange",
+      "traffic light"
+    ],
+    "baseline_mentioned_objects": [
+      "bench",
+      "fire hydrant",
+      "orange",
+      "traffic light"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "traffic light"
+      ],
+      "model_missed_gt": [
+        "bench",
+        "fire hydrant"
+      ],
+      "model_hallucinated": [
+        "orange"
+      ],
+      "baseline_hit_gt": [
+        "bench",
+        "fire hydrant",
+        "traffic light"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [
+        "orange"
+      ],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "bench",
+        "fire hydrant"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [
+        "orange"
+      ],
+      "gt_coverage_model": 0.3333333333333333,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.6666666666666666
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
+  },
+  {
+    "image_id": 471893,
+    "file_name": "000000471893.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000471893.jpg",
+    "gt_objects": [
+      "book",
+      "chair",
+      "dining table",
+      "person",
+      "remote"
+    ],
+    "gt_captions": [
+      "an  image of two people playing video games",
+      "two people standing next to a table playing nintendo wii",
+      "A man and boy with video game controllers playing a game.",
+      "A man and boy playing a game with a Nintendo Wii controller.",
+      "A man and a boy hold video controllers on opposite sides of a dining table containing a projector."
+    ],
+    "model_caption": "This is a detailed description of the image provided.\n\nThe image captures an indoor scene, likely a community room or a library, with two people standing in the foreground. The setting is characterized by a brick wall, large windows, and a wooden bookshelf filled with books. The overall lighting is warm and appears to be from artificial sources, possibly from a projector or overhead lights.\n\n---\n\n### **Main Subjects**\n\n- **Man on the Right:**\n  - A man with a bald head and a light complexion stands on the right side of the frame. He is wearing a grey, long-sleeved zip-up sweatshirt with a black collar and a small, dark logo on the left chest. He is also wearing blue jeans.\n  - He is holding a white, rectangular object, which appears to be a Nintendo Wii remote, in his right hand. His left hand is slightly raised, and he is looking towards the left side of the image.\n  - His expression is neutral, and he seems to be focused on something off-camera.\n\n- **Boy on the Left:**\n  - A young boy stands on the left side of the image, wearing a white and red hooded sweatshirt. The word \"CANADA\" is printed in red capital letters across the chest, with a small red maple leaf logo on the left side of the chest.\n  - He is holding a white, rectangular object, which is also a Nintendo Wii remote, in his right hand. His left hand is slightly raised, and he is looking towards the right side of the image.\n  - He has a curious expression, with his mouth slightly open.\n\n---\n\n### **Background and Environment**\n\n- **Bookshelf:**\n  - A large wooden bookshelf is visible in the background, filled with books. The books are arranged in multiple rows, and the spines are mostly visible. The bookshelf is positioned against the brick wall.\n",
+    "baseline_caption": "This is a detailed description of the image provided.\n\nThe image captures an indoor scene, likely a community room or a library, with two individuals standing in the foreground, seemingly engaged in a video game. The setting is characterized by a brick wall, large windows, and a wooden bookshelf filled with books.\n\n**Foreground and Central Subjects:**\n\n- **Man on the Right:** A man with a shaved head stands on the right side of the frame. He is wearing a grey zip-up sweatshirt over a black t-shirt and blue jeans. He is holding a white Nintendo Wii remote in his right hand and is looking towards the left, as if focused on the game. His expression is neutral and attentive.\n- **Boy on the Left:** A young boy stands on the left side of the frame, wearing a white and red hooded sweatshirt with \"CANADA\" written in red letters across the chest. He is holding a white Nintendo Wii remote in his left hand and is looking towards the right, possibly at the man or the game screen. He appears to be focused on the game as well.\n\n**Central Table and Equipment:**\n\n- A wooden table occupies the center of the image, positioned between the two individuals. On the table, there is a black projector with a blue light emanating from its lens, a white paper plate, a few sheets of paper, and a small white box. A black object, possibly a speaker or a small electronic device, is also visible on the table.\n\n**Background and Surroundings:**\n\n- **Bookshelf:** Behind the man and the boy, there is a tall, wooden bookshelf filled with books. The books are arranged in multiple rows, and the spines are visible.\n- **Chairs:** Several chairs are arranged around the table. The chairs have wooden frames and upholstered seats and backs in various colors, including red, blue, and green.\n-",
+    "model_metrics": {
+      "f1": 0.5714285714285715,
+      "precision": 1.0,
+      "recall": 0.4,
+      "mentioned": 2,
+      "correct": 2,
+      "hallucinated": 0,
+      "gt_count": 5
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 5,
+      "correct": 5,
+      "hallucinated": 0,
+      "gt_count": 5
+    },
+    "f1_delta": -0.4285714285714285,
+    "precision_delta": 0.0,
+    "recall_delta": -0.6,
+    "model_mentioned_objects": [
+      "book",
+      "person"
+    ],
+    "baseline_mentioned_objects": [
+      "book",
+      "chair",
+      "dining table",
+      "person",
+      "remote"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "book",
+        "person"
+      ],
+      "model_missed_gt": [
+        "chair",
+        "dining table",
+        "remote"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "book",
+        "chair",
+        "dining table",
+        "person",
+        "remote"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "chair",
+        "dining table",
+        "remote"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.4,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.6
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
+  },
+  {
+    "image_id": 107087,
+    "file_name": "000000107087.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000107087.jpg",
+    "gt_objects": [
+      "car",
+      "cat",
+      "chair"
+    ],
+    "gt_captions": [
+      "A black cat sits in a car and looks out.",
+      "A black cat looking out the windshield of a car.",
+      "A cat inside of a car during the day.",
+      "A cat is sitting in a car near the dash.",
+      "A black cat looks out from the inside of a car. "
+    ],
+    "model_caption": "This is a close-up, slightly angled photograph taken from the inside of a car, looking out through the windshield. The image captures a black cat sitting in the passenger seat, looking directly at the camera with wide, alert eyes. The cat is positioned in the center of the frame, with its body partially visible behind the car's interior.\n\nThe car's interior is visible, including the black leather or vinyl seat, which has a textured, possibly woven or mesh, pattern on the seat cushion. The seat is positioned behind the cat, and the cat is sitting on the seat's backrest. The car's headrest is visible above the cat's head, and the seat is angled slightly forward. The car's steering wheel is visible on the right side of the image, and the dashboard is partially visible in the background.\n\nThe windshield is the main focus of the image, and it is covered with a layer of condensation or water droplets, which are visible as dark streaks and patches across the glass. The reflection of the car's interior and the outside environment is distorted by the condensation. The reflection shows the car's interior, including the seat and the cat, as well as the outside environment, which appears to be a grassy area with some trees or bushes in the background.\n\nThe lighting in the image is natural, suggesting it was taken during the day. The colors are mostly neutral, with the black of the cat and the car's interior contrasting with the lighter, natural tones of the outside environment. The overall mood of the image is quiet and mysterious, with the cat's direct gaze creating a sense of connection with the viewer.",
+    "baseline_caption": "This is a close-up, slightly angled photograph of a black cat sitting in the back seat of a car, viewed through the windshield. The image is taken from the perspective of the driver's seat, looking out through the front windshield.\n\nThe cat is the central subject, positioned in the left half of the frame. It is a solid black cat with striking, bright green eyes that are wide open and looking directly at the camera. Its fur appears sleek and glossy, and its body is partially visible, with its head and shoulders emerging from the car's interior. The cat is sitting on the back seat, which is a dark gray or black color. The seat has a textured, woven fabric in a reddish-brown or maroon color, visible on the seat cushion and the backrest.\n\nThe car's interior is visible, including the headrests and the seat's structure. The headrests are a dark color, possibly black or dark gray, and are mounted on the car's frame. The seat is a standard car seat, and the car's interior appears to be a dark color, possibly black or dark gray. The car's dashboard and steering wheel are partially visible on the right side of the image.\n\nThe windshield is the main barrier between the viewer and the cat. It is clear but has some reflections and distortions, including vertical streaks and a faint reflection of the car's interior. The windshield wiper is visible at the bottom of the frame, and the wiper blade is in a resting position. The car's side window is also visible, showing a view of a grassy area outside, which is slightly out of focus.\n\nThe overall lighting is natural, suggesting it is daytime. The image has a slightly grainy quality, which could be due to the camera's settings or the quality of the photograph. The composition is tight, focusing on the cat and the immediate surroundings of the",
+    "model_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.6666666666666666,
+      "recall": 0.6666666666666666,
+      "mentioned": 3,
+      "correct": 2,
+      "hallucinated": 1,
+      "gt_count": 3
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 3,
+      "correct": 3,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "f1_delta": -0.33333333333333337,
+    "precision_delta": -0.33333333333333337,
+    "recall_delta": -0.33333333333333337,
+    "model_mentioned_objects": [
+      "cat",
+      "chair",
+      "person"
+    ],
+    "baseline_mentioned_objects": [
+      "car",
+      "cat",
+      "chair"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "cat",
+        "chair"
+      ],
+      "model_missed_gt": [
+        "car"
+      ],
+      "model_hallucinated": [
+        "person"
+      ],
+      "baseline_hit_gt": [
+        "car",
+        "cat",
+        "chair"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "car"
+      ],
+      "model_only_hallucinations": [
+        "person"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.6666666666666666,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.3333333333333333
+    },
+    "behavior_pattern": "mixed:hallucination_increased+object_substitution+silent_on_gt"
+  },
+  {
+    "image_id": 262227,
+    "file_name": "000000262227.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000262227.jpg",
+    "gt_objects": [
+      "book",
+      "laptop",
+      "tv"
+    ],
+    "gt_captions": [
+      "A computer monitor sitting on top of a desk.",
+      "A picture of a screen in the living room. ",
+      "A computer is lit up on the checkout counter.",
+      "a desk with a monitor and a person holding a laptop",
+      "Part of a computer screen in front of a laptop."
+    ],
+    "model_caption": "This is a detailed, low-angle photograph of a workspace, likely in a library or a similar public service area, taken in a dimly lit environment. The image is dominated by a computer monitor in the foreground, with a laptop and other objects in the background.\n\n### Foreground: Computer Monitor\n- **Monitor:** A black, widescreen computer monitor is positioned on the left side of the frame. It is turned on and displays a software interface.\n- **Screen Content:** The screen shows a user interface with a green header bar at the top. Below this, a menu with the following options is visible:\n  - Checkouts\n  - Overdue\n  - Holds\n  - Fines\n  - Due Date\n  - Copy Status\n  - Details\n  - (A small, partially obscured \"M\" is visible on the right side of the screen, likely part of a \"M\" for \"Manage\" or \"More\" options.)\n- **Buttons:** At the bottom of the screen, there are several buttons, including \"Check In Date\" and \"Check Out Date,\" with a time display showing \"6:20 PM.\"\n- **Monitor Frame:** The monitor has a black bezel and a visible power button on the bottom right corner.\n\n### Midground: Laptop and Desk\n- **Laptop:** A silver or light gray Dell laptop is propped up on a stand, angled towards the viewer. The laptop is open, and its screen is turned off. The Dell logo is visible on the back of the laptop.\n- **Laptop Stand:** The laptop is supported by a stand that is partially visible. The stand has a white base and a black support structure.\n- **Desk:** The laptop is on a desk, which is partially visible. The desk is a light color, possibly white or off-white.\n\n### Background: Room and Objects\n- **Exit Sign",
+    "baseline_caption": "This is a detailed, low-angle photograph of a workspace, likely in a library or a bookstore, taken in a warmly lit indoor environment. The image is dominated by a computer monitor in the foreground, with a laptop and other objects in the background.\n\n### Foreground: Computer Monitor\n- **Monitor:** A black, widescreen computer monitor is positioned on the left side of the frame. It is turned on and displays a software interface.\n- **Screen Content:** The screen shows a user interface with a green header bar at the top. Below this, a menu with the following options is visible:\n  - Checkouts\n  - Overdue\n  - Holds\n  - Fines\n  - Dual Date\n  - Copy Status\n  - Details\n- **Buttons and Icons:** At the bottom of the screen, there are several buttons, including \"Check In Date\" and \"Check Out Date.\" The time displayed is \"6:29 PM.\" The monitor has a black bezel and a green power button is visible on the lower right.\n- **Position:** The monitor is angled slightly to the right, and its screen is the most prominent feature in the foreground.\n\n### Midground: Laptop and Workspace\n- **Laptop:** A silver or light gray Dell laptop is propped up on a stand. The laptop is closed, and its back is visible. The Dell logo is centered on the back of the laptop. The laptop is positioned behind the monitor, slightly to the right.\n- **Laptop Stand:** The laptop is supported by a stand that is partially visible. The stand is a simple, light-colored plastic or metal structure.\n- **Other Objects:** To the right of the laptop, a white, cylindrical object, possibly a stand or a part of a bookshelf, is visible. A small, colorful object, possibly a book or a decorative item, is on the right side",
+    "model_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.6666666666666666,
+      "recall": 0.6666666666666666,
+      "mentioned": 3,
+      "correct": 2,
+      "hallucinated": 1,
+      "gt_count": 3
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 3,
+      "correct": 3,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "f1_delta": -0.33333333333333337,
+    "precision_delta": -0.33333333333333337,
+    "recall_delta": -0.33333333333333337,
+    "model_mentioned_objects": [
+      "dining table",
+      "laptop",
+      "tv"
+    ],
+    "baseline_mentioned_objects": [
+      "book",
+      "laptop",
+      "tv"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "laptop",
+        "tv"
+      ],
+      "model_missed_gt": [
+        "book"
+      ],
+      "model_hallucinated": [
+        "dining table"
+      ],
+      "baseline_hit_gt": [
+        "book",
+        "laptop",
+        "tv"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "book"
+      ],
+      "model_only_hallucinations": [
+        "dining table"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.6666666666666666,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.3333333333333333
+    },
+    "behavior_pattern": "mixed:hallucination_increased+object_substitution+silent_on_gt"
+  },
+  {
+    "image_id": 366178,
+    "file_name": "000000366178.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000366178.jpg",
+    "gt_objects": [
+      "car",
+      "fire hydrant"
+    ],
+    "gt_captions": [
+      "a road that has some snow all around it",
+      "There is a street sign on a pole on the side of a snowy highway.",
+      "A red fire hydrant sitting on the side of a road.",
+      "A fire hydrant and sign buried in the snow.  ",
+      "A road signage giving directions on a road covered with snow"
+    ],
+    "model_caption": "This is a detailed, wide-angle photograph of a winter scene on a snow-covered road and sidewalk. The image is taken from a perspective on the side of the road, looking down the length of a curving highway.\n\nThe most prominent object in the foreground is a bright red fire hydrant, which is partially covered in snow. It is positioned on the right side of the frame, near the edge of the snow-covered sidewalk. The hydrant is a standard, cylindrical design with a white cap on the top and a small, white, circular valve on the side. The snow is piled high around the base of the hydrant, and the snow on the ground is a mix of white and light gray, with some darker patches.\n\nTo the left of the hydrant, a wooden post with a yellow diamond-shaped traffic sign is visible. The sign has a black arrow pointing to the right, indicating a right turn. The post is a light brown color and is situated on the edge of the road, next to a metal guardrail. The guardrail is made of dark metal and is positioned along the edge of the road, separating the road from the sidewalk.\n\nThe road itself is a multi-lane highway that curves to the left. The road surface is dark gray and appears to be wet or icy. The road is bordered by a snow-covered shoulder and a snow-covered sidewalk. The snow on the sidewalk is thick and has been compacted, creating a path that is visible in the image. The snow on the road is also visible, particularly on the right side of the road.\n\nIn the background, the road continues to curve, and the surrounding landscape is covered in snow. There are several trees visible, including a large, snow-covered evergreen tree on the right side of the image. The sky is overcast and gray, indicating a cloudy, cold day. The overall lighting is diffuse, with no strong",
+    "baseline_caption": "This is a detailed, wide-angle photograph of a winter scene on a snow-covered road and shoulder. The image is taken from a perspective on the side of the road, looking down the length of the road and into the distance.\n\nThe scene is dominated by a thick blanket of snow covering the ground, the road, and the surrounding trees. The sky is overcast and gray, suggesting a cold, cloudy day. The road itself is a multi-lane highway, curving to the left and extending into the distance. The road surface is dark, likely asphalt, and is partially covered with snow, especially on the right side of the road. The road is bordered by a dark metal guardrail, which is also covered in snow.\n\nOn the right side of the image, a red fire hydrant is prominently visible, partially buried in the snow. It is a standard, cylindrical hydrant with a white cap on the top and a white cap on the side. The hydrant is situated on a snow-covered shoulder, and its red color contrasts sharply with the white snow.\n\nA yellow diamond-shaped traffic sign is mounted on a wooden pole. The sign has a black arrow pointing diagonally down and to the right, indicating a sharp turn or a change in direction. The sign is positioned in the foreground, slightly to the left of the center of the image.\n\nThe road is lined with a series of dark, rectangular bollards, which are also covered in snow. These bollards are placed along the edge of the road, separating it from the shoulder. In the background, a line of trees is visible, their branches heavily laden with snow. The trees are mostly bare, with some evergreen trees on the right side of the image, their branches also covered in snow.\n\nIn the distance, a dark-colored car is visible on the road, moving away from the camera's viewpoint. The car is small in",
+    "model_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 1.0,
+      "recall": 0.5,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 2
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 2,
+      "hallucinated": 0,
+      "gt_count": 2
+    },
+    "f1_delta": -0.33333333333333337,
+    "precision_delta": 0.0,
+    "recall_delta": -0.5,
+    "model_mentioned_objects": [
+      "fire hydrant"
+    ],
+    "baseline_mentioned_objects": [
+      "car",
+      "fire hydrant"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "fire hydrant"
+      ],
+      "model_missed_gt": [
+        "car"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "car",
+        "fire hydrant"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "car"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.5,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.5
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
+  },
+  {
+    "image_id": 217219,
+    "file_name": "000000217219.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000217219.jpg",
+    "gt_objects": [
+      "bed"
+    ],
+    "gt_captions": [
+      "A made up bed with a pile of newspapers on it.",
+      "a white pillow white sheets and an orange and tan bedspread",
+      "A bed with a yellow blanket and a white pillow.",
+      "A newspaper spread out on a made bed with a quilt and pillow.",
+      "A number of newspapers lay on an empty bed."
+    ],
+    "model_caption": "This is a detailed, close-up photograph of a bed, focusing on its bedding and a few items resting on it. The image is taken from a slightly elevated angle, looking down at the bed.\n\nThe bed is made with a quilt that has a distinct, multi-layered design. The quilt is composed of several sections with different patterns and colors. The main body of the quilt is a bright, warm yellow, with a textured, quilted pattern that gives it a soft, padded appearance. This yellow section is bordered by a wide, light-colored band with a delicate, floral or paisley-like pattern in muted tones of pink, blue, and green. The quilt is laid out in a way that suggests it is a patchwork or a modern interpretation of a traditional quilt, with the yellow and floral sections forming a central, contrasting design.\n\nOn top of the quilt, there are several sheets of paper, which appear to be old, possibly from a book or a journal. The papers are crumpled and have a slightly yellowed, aged look. They are spread out across the quilt, with some overlapping. The text on the papers is not legible, but their edges are slightly frayed, suggesting they have been handled or are old. The papers are placed in a way that they seem to be part of a larger collection, perhaps a collection of letters or documents.\n\nThe bed is set against a light blue wall, which provides a soft, cool contrast to the warm yellow of the quilt. The bed has a white pillow, which is positioned at the head of the bed, and a white sheet that is visible at the foot of the bed. The bed frame is partially visible, with a dark, possibly black, metal headboard that has a simple, elegant design. The overall lighting in the room is soft and even, highlighting the textures of the quilt and the details of the papers. The image",
+    "baseline_caption": "This is a detailed, close-up photograph of a bed, focusing on its bedding and a few items resting on it. The image is taken from a slightly elevated angle, looking down at the bed.\n\nThe bed is made with a quilt that has a distinct patchwork design. The quilt is composed of several sections with different colors and patterns. The main body of the quilt is a bright, mustard-yellow color, with a textured, quilted pattern. This yellow section is bordered by a band of a light-colored fabric with a delicate, faded floral or paisley pattern in soft pink, blue, and green tones. The quilt is laid out in a way that the yellow section is on the right side of the bed, and the floral section is on the left.\n\nOn top of the quilt, there are several pieces of paper, which appear to be old, possibly newspaper clippings or handwritten notes. The papers are crumpled and have a slightly yellowed, aged appearance. They are scattered across the quilt, with one piece lying flat and another partially folded. The text on the papers is not legible due to the angle and the condition of the paper.\n\nThe bed is positioned against a light blue wall. A white pillow is propped up against the headboard, which is a dark, possibly black, metal frame with a simple, curved design. The bed is covered with a white sheet, which is visible at the foot of the bed. The overall lighting is soft and even, suggesting an indoor setting with natural light. The image has a warm, slightly nostalgic feel, emphasizing the textures and colors of the bedding.",
+    "model_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "f1_delta": -0.33333333333333337,
+    "precision_delta": -0.5,
+    "recall_delta": 0.0,
+    "model_mentioned_objects": [
+      "bed",
+      "book"
+    ],
+    "baseline_mentioned_objects": [
+      "bed"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "bed"
+      ],
+      "model_missed_gt": [],
+      "model_hallucinated": [
+        "book"
+      ],
+      "baseline_hit_gt": [
+        "bed"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [],
+      "model_only_hallucinations": [
+        "book"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 1.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": 0.0
+    },
+    "behavior_pattern": "hallucination_increased"
+  },
+  {
+    "image_id": 244411,
+    "file_name": "000000244411.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000244411.jpg",
+    "gt_objects": [
+      "cow"
+    ],
+    "gt_captions": [
+      "Black cows standing in the grass of a pasture.",
+      "A couple of black cows standing on the top of a grassy hill.",
+      "Two cows in a large green grassy field.",
+      "Two cows are in a pasture and one is reaching his head to the side.",
+      "Green fields with shrubs and gentle rises and dips in the terrain has a large black cow standing on it, face-front, and a second one that is looking around at the other one.  "
+    ],
+    "model_caption": "This is a wide, natural landscape photograph capturing a pastoral scene on a bright, sunny day. The image is dominated by a vast, rolling green field that stretches into the distance, with a gentle slope rising in the background. The sky above is a pale, light blue with a few scattered, wispy white clouds.\n\nIn the foreground, two large, dark-colored cows are the central focus. The cow on the left is standing and facing the viewer, its body angled slightly to the right. It has a sleek, black coat and a prominent, muscular build. Its head is turned, and its eyes are visible, giving it a calm, observant expression. The cow on the right is positioned more towards the right side of the frame, with its back mostly to the camera. It is actively grazing, with its head lowered to the grass. This cow's body is also black, and its legs are sturdy and well-defined.\n\nThe field is covered in vibrant green grass, with some areas appearing slightly more yellowish, possibly due to the sunlight or the natural variation in the grass. The cows are casting distinct shadows on the ground, indicating the sun is high and strong. In the background, the landscape continues with more rolling hills, dotted with a few small trees and shrubs. A few other smaller animals, possibly sheep or other cattle, can be seen scattered across the field, though they are not clearly defined. The overall scene is one of tranquility and natural beauty, with the two cows providing a strong focal point against the expansive green backdrop.",
+    "baseline_caption": "This is a detailed description of the image provided.\n\nThe image captures a serene pastoral scene on a vast, rolling green hillside under a bright, partly cloudy sky. The composition is dominated by two large, dark-colored cows in the foreground, with a wide expanse of lush green pasture stretching behind them.\n\n- **The Cows:**\n  - On the left, a black cow stands facing the viewer. It has a robust build, with a thick, glossy black coat. Its head is turned slightly to its right, and its eyes are visible, giving it a calm, observant expression. The cow's legs are sturdy, and its stance is alert.\n  - On the right, a second black cow is seen from the rear, grazing. Its body is angled away from the viewer, and its head is lowered to the grass. The cow's back is mostly visible, and its legs are bent as it eats. The shadow of the cow is cast on the grass, indicating the sun is coming from the left.\n  - The two cows are positioned in the lower half of the frame, creating a strong focal point.\n\n- **The Landscape:**\n  - The foreground is a vibrant, sunlit green pasture, with the grass appearing dense and healthy. The texture of the grass is visible, with individual blades catching the light.\n  - The hillside slopes gently upwards from the foreground, revealing a series of terraced fields and patches of different shades of green. The terrain is not uniform, with some areas appearing more worn or dry.\n  - In the middle ground, a line of dark green trees and shrubs forms a natural boundary along the crest of the hill. A few small, scattered trees are also visible in the distance.\n  - A narrow, winding dirt path can be seen cutting through the pasture, leading up the hillside.\n  - In the background, the hill rises further,",
+    "model_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "f1_delta": -0.33333333333333337,
+    "precision_delta": -0.5,
+    "recall_delta": 0.0,
+    "model_mentioned_objects": [
+      "cow",
+      "sheep"
+    ],
+    "baseline_mentioned_objects": [
+      "cow"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "cow"
+      ],
+      "model_missed_gt": [],
+      "model_hallucinated": [
+        "sheep"
+      ],
+      "baseline_hit_gt": [
+        "cow"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [],
+      "model_only_hallucinations": [
+        "sheep"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 1.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": 0.0
+    },
+    "behavior_pattern": "hallucination_increased"
+  },
+  {
+    "image_id": 34071,
+    "file_name": "000000034071.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000034071.jpg",
+    "gt_objects": [
+      "parking meter"
+    ],
+    "gt_captions": [
+      "The photo of the double parking meter has a blurry city in the background.",
+      "Two parking meter with the sunshine in the background.",
+      "a double telescope for seeing things that are far away ",
+      "A close up of what appears to be two traffic machines. ",
+      "Two parking meters with the light of the sunset reflecting off one."
+    ],
+    "model_caption": "This is a low-angle, close-up photograph capturing a serene and atmospheric urban scene at either sunrise or sunset. The image is characterized by a strong sense of depth and a warm, golden color palette.\n\nIn the immediate foreground, two parking meters are prominently featured. They are positioned side-by-side, with their circular, dark-colored tops and the curved, metallic handles facing the viewer. The meters are slightly out of focus, which draws the eye to the background. The top of the left meter is slightly more in focus than the right one. The handles of the meters are dark, possibly black or dark brown, and have a smooth, slightly reflective surface. A small, white rectangular label is visible on the lower part of the left meter, though the text is illegible. The right meter has a similar label, but it is less distinct.\n\nThe background is a soft, out-of-focus cityscape. The sun is positioned low on the horizon, creating a bright, glowing orb that is partially obscured by the buildings. This light source casts a warm, golden glow across the entire scene, illuminating the tops of the buildings and creating a strong contrast with the dark silhouettes of the lower parts of the buildings. The city lights are rendered as soft, circular bokeh, with a variety of warm yellow and orange hues, suggesting a bustling city at night or dusk.\n\nThe overall composition uses a shallow depth of field, which emphasizes the parking meters in the foreground while blurring the city and the sun into a dreamy, atmospheric backdrop. The image evokes a feeling of quiet contemplation and the passage of time, with the parking meters symbolizing a moment of pause in the city's constant motion. The colors are predominantly warm, with the golden light of the sun and the dark, shadowy tones of the buildings and meters creating a rich, moody contrast.",
+    "baseline_caption": "This is a low-angle, close-up photograph capturing a serene urban scene at sunset. The image is characterized by a strong sense of depth and a warm, golden color palette, with a shallow depth of field that blurs the background.\n\nIn the foreground, two parking meters are the primary subjects. They are positioned side-by-side, slightly angled towards the viewer. The meters are dark, likely black or dark gray, and have a rounded, dome-like shape. The top of each meter is a smooth, curved arch. A small, rectangular white label is affixed to the lower part of each meter, though the text on it is illegible due to the image's resolution. The meters are in sharp focus, while the rest of the scene is softly blurred.\n\nThe background is a cityscape at dusk. The sun is low on the horizon, creating a bright, glowing orb that is partially obscured by the buildings. This light source casts a warm, golden glow across the scene, illuminating the tops of the buildings and creating a soft, hazy atmosphere. The buildings themselves are silhouetted against the bright sky, appearing as dark, indistinct shapes. The city lights are visible as soft, circular bokeh, indicating a long exposure and a shallow depth of field. These lights are scattered across the background, adding to the sense of a bustling city at night.\n\nThe overall composition uses the parking meters as a grounding element, creating a sense of perspective and scale. The warm, golden light of the sunset contrasts with the dark, silhouetted city, creating a visually striking and atmospheric image. The image evokes a feeling of quiet contemplation and the passage of time.",
+    "model_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "f1_delta": -0.33333333333333337,
+    "precision_delta": -0.5,
+    "recall_delta": 0.0,
+    "model_mentioned_objects": [
+      "orange",
+      "parking meter"
+    ],
+    "baseline_mentioned_objects": [
+      "parking meter"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "parking meter"
+      ],
+      "model_missed_gt": [],
+      "model_hallucinated": [
+        "orange"
+      ],
+      "baseline_hit_gt": [
+        "parking meter"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [],
+      "model_only_hallucinations": [
+        "orange"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 1.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": 0.0
+    },
+    "behavior_pattern": "hallucination_increased"
+  },
+  {
+    "image_id": 19742,
+    "file_name": "000000019742.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000019742.jpg",
+    "gt_objects": [
+      "vase"
+    ],
+    "gt_captions": [
+      "A brown glass on the table for display art",
+      "A glass with a lady bunched up holding her legs and head tilted with a with candle on the side and lights in the background.",
+      "A painted glass in Front of some lights",
+      "A glass vase is beside a white candle.",
+      "A picture of a cup on the table."
+    ],
+    "model_caption": "This is a detailed photograph of a decorative arrangement on a wooden surface, likely a shelf or table. The scene is illuminated by warm, soft lighting, creating a cozy and intimate atmosphere.\n\n- **Central Object**: The main focus is a large, ornate glass vase. It has a rich, amber-red or deep orange hue with a glossy finish. The vase is shaped like a classic ovoid or pear, with a wide, rounded body that tapers towards the top and a short, thick base. The surface of the vase is decorated with a complex, swirling pattern of lighter, translucent orange and yellow glass, which appears to be a hand-blown or etched design. The top rim of the vase is a solid, deep red, and it sits on a clear, circular glass base that reflects the surrounding light.\n\n- **Base and Support**: The vase is placed on a small, round, clear glass dish or coaster. The dish has a reflective surface, mirroring the vase and the surrounding light. The base of the vase is supported by a short, thick, clear glass stem.\n\n- **Left Side**: To the left of the vase, there is a white, cylindrical candle. It is placed on a small, square, white coaster. The candle is unlit and has a smooth, matte finish. The coaster is slightly raised, and the candle is positioned at a slight angle.\n\n- **Background and Lighting**: The background consists of a white wall or panel, which is framed by a wooden structure. The wall is illuminated by a string of warm, white fairy lights that are wrapped around the frame. The lights are arranged in a gentle arc, creating a soft, glowing halo effect around the vase and the candle. The lights are not directly on the vase but are reflected in the glass dish and the vase itself.\n\n- **Composition and Perspective**: The image is taken from a slightly elevated angle,",
+    "baseline_caption": "This is a detailed photograph of a decorative arrangement on a wooden surface, likely a shelf or table. The scene is illuminated by warm, soft lighting, creating a cozy and inviting atmosphere.\n\n- **Central Object**: The main focus is a large, ornate glass vase. It has a rich, amber or deep red hue and a glossy finish. The vase is shaped like a classic ovoid or pear, with a wide, rounded top that tapers down to a narrower base. The surface is decorated with a complex, swirling pattern of lighter, golden-orange and yellow glass, which appears to be a hand-blown or etched design. The vase is placed on a small, circular, mirrored base that reflects its lower portion and the surrounding lights.\n\n- **Left Side**: To the left of the vase, there is a tall, white, cylindrical candle. It is unlit and sits on a small, square, mirrored plate that is slightly raised from the surface. The candle is positioned in the foreground, and its white color contrasts with the warm tones of the vase and the background.\n\n- **Background and Lighting**: The background consists of a plain, off-white wall or panel, which is framed by a wooden structure. The edges of the frame are visible, and the wooden surface appears to be a light brown or natural wood. A string of warm, white fairy lights is draped along the left and right sides of the frame, creating a soft, glowing border. The lights are arranged in a gentle curve, and their glow is reflected on the mirrored base and the vase.\n\n- **Reflections and Composition**: The mirrored base of the vase and the small plate reflect the surrounding elements, including the candle, the vase, and the lights. The reflection of the fairy lights is visible on the surface of the vase, adding depth to the image. The overall composition is balanced, with the vase as the central point,",
+    "model_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "f1_delta": -0.33333333333333337,
+    "precision_delta": -0.5,
+    "recall_delta": 0.0,
+    "model_mentioned_objects": [
+      "orange",
+      "vase"
+    ],
+    "baseline_mentioned_objects": [
+      "vase"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "vase"
+      ],
+      "model_missed_gt": [],
+      "model_hallucinated": [
+        "orange"
+      ],
+      "baseline_hit_gt": [
+        "vase"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [],
+      "model_only_hallucinations": [
+        "orange"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 1.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": 0.0
+    },
+    "behavior_pattern": "hallucination_increased"
+  },
+  {
+    "image_id": 245102,
+    "file_name": "000000245102.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000245102.jpg",
+    "gt_objects": [
+      "traffic light"
+    ],
+    "gt_captions": [
+      "A bright red light that is on the side of a snow covered street.",
+      "A snow covered ramp in a parking garage",
+      "A light shines over a canopy on a snow covered sidewalk.",
+      "The entrance and exit to a snowy parking garage.",
+      "it is snowing near a staircase and some walls with a light"
+    ],
+    "model_caption": "This is a detailed, low-angle photograph of a snow-covered, modern underground or tunnel entrance, likely a train station or a similar transit facility. The scene is illuminated by artificial lighting, creating a stark contrast between the bright white snow and the dark, shadowed surroundings.\n\nThe image is composed with a strong sense of perspective, leading the viewer's eye down a long, narrow corridor. The floor is completely covered in a thick layer of white snow, which appears to be freshly fallen, as it is not melting or showing signs of being disturbed. The snow is uneven, with some areas appearing more compacted and others more disturbed, possibly by foot traffic or the movement of a train.\n\nOn the left side of the corridor, a large, smooth, dark gray wall is visible. It is illuminated by a series of bright, rectangular fluorescent lights mounted on a horizontal bar. These lights are evenly spaced and cast a strong, white glow on the wall, creating a pattern of light and shadow. The wall itself is smooth and has a slight sheen, suggesting it is made of a material like metal or a polished composite.\n\nOn the right side of the corridor, a set of stairs leads up to a higher level. The stairs are made of metal and are painted a dark gray or black. They are flanked by a green-painted wall on the upper level and a large, closed, corrugated metal gate on the lower level. The gate is a standard industrial-style roller shutter, and its surface is dark and textured. The stairs are positioned at an angle, leading upwards and away from the viewer.\n\nAt the far end of the corridor, a large, red traffic light is mounted on a pole. The light is illuminated, casting a bright red glow that contrasts sharply with the surrounding darkness. The light is positioned at the end of the tunnel, and its red color is a strong visual cue, likely indicating that",
+    "baseline_caption": "This is a detailed, low-angle photograph of a snow-covered railway tunnel entrance at night. The scene is illuminated by artificial lighting, creating a stark contrast between the bright white snow and the dark surroundings.\n\nThe perspective is from the entrance of the tunnel, looking down a long, straight corridor. The tunnel's walls are constructed from a smooth, dark gray or black material, possibly metal or concrete. Along the left wall, a series of bright, rectangular fluorescent lights are mounted in a row, casting a strong, white light that reflects off the snow. The right wall is darker and features a large, vertical, metallic structure with a greenish hue at the top, possibly a sign or part of a building facade. A set of stairs with a metal railing is visible on the right, leading up to a higher level.\n\nIn the center of the image, the tunnel's entrance is visible, with a bright white light illuminating the opening. The entrance is framed by a greenish wall on the left and a dark wall on the right. The tracks of the railway are visible, running from the foreground into the tunnel's opening. A red traffic light is mounted on a pole on the right side of the tunnel, glowing brightly. The light is positioned above the tracks, and its red color is prominent against the dark background.\n\nThe ground is completely covered in a thick layer of white snow, which appears to be freshly fallen. The snow is uneven, with some areas appearing more compacted and others more disturbed, possibly by foot traffic or the movement of the train. A small, rectangular, gray box, likely a signal or control unit, is mounted on a metal pole in the foreground, near the center of the image. The snow is also visible on the right side of the image, where it has accumulated on the ground and on the metal shutter doors.\n\nThe overall atmosphere is one of quiet, cold, and industrial",
+    "model_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "f1_delta": -0.33333333333333337,
+    "precision_delta": -0.5,
+    "recall_delta": 0.0,
+    "model_mentioned_objects": [
+      "traffic light",
+      "train"
+    ],
+    "baseline_mentioned_objects": [
+      "traffic light"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "traffic light"
+      ],
+      "model_missed_gt": [],
+      "model_hallucinated": [
+        "train"
+      ],
+      "baseline_hit_gt": [
+        "traffic light"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [],
+      "model_only_hallucinations": [
+        "train"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 1.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": 0.0
+    },
+    "behavior_pattern": "hallucination_increased"
+  },
+  {
+    "image_id": 407518,
+    "file_name": "000000407518.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000407518.jpg",
+    "gt_objects": [
+      "bird"
+    ],
+    "gt_captions": [
+      "A brown bird perched on top of a metal fence.",
+      "A bird is perched on top of a wire fence",
+      "a small bird sitting perched on a chain link fence",
+      "A bird with an orange beak and white stripe on its head.",
+      "Bird sitting on top a chain link fence. "
+    ],
+    "model_caption": "This is a detailed photograph of a small bird perched on a chain-link fence. The image is taken from a low angle, looking up at the bird, which is the central focus.\n\nThe bird is a small, medium-sized passerine with a stout, rounded body. Its plumage is primarily a soft, earthy brown on the back and wings, with a lighter, more buff-colored underside. The most striking feature is its head, which is adorned with a prominent, bold black and white pattern. A distinct, thick black stripe runs from the base of the beak, through the eye, and down the side of the head, bordered by a thin white line. The bird's eye is dark, and its beak is a pale, orange-yellow color. The bird's legs and feet are a pale, pinkish-orange, and it is perched on the fence with its feet gripping the metal.\n\nThe bird is positioned on a chain-link fence, which is made of interwoven metal wires. The fence is constructed from a silver-gray metal, and the wires are twisted into a classic chain-link pattern. The bird is perched on the horizontal bar of the fence, which is in the foreground. The fence is slightly out of focus, creating a shallow depth of field that makes the bird stand out. The background is a soft, out-of-focus blend of warm, earthy tones, primarily a pale orange and beige, suggesting a natural, possibly arid, environment.\n\nThe bird is positioned slightly to the right of the center of the frame, and its body is angled slightly to the left. The fence is in the foreground, and the bird is in the middle ground. The lighting appears to be natural and diffused, with no harsh shadows, which highlights the bird's features and the texture of the fence. The overall mood of the image is calm and natural.",
+    "baseline_caption": "This is a detailed photograph of a small bird perched on a chain-link fence. The image is taken from a low angle, looking up at the bird, which is the central focus.\n\nThe bird is a small passerine, likely a White-crowned Sparrow, identifiable by its distinct black and white head pattern. It has a prominent, bold white stripe that runs from the base of its beak, through the eye, and extends to the back of its head, with a black cap above it. The bird's body is a soft, earthy brown, and its wings and tail are a darker, more subdued brown. Its beak is a bright, noticeable orange, and its eyes are dark. The bird is standing on the metal fence, which is composed of interwoven metal wires, with a thick, twisted metal bar at the bottom. The fence is painted a dull gray, and the metal wires are slightly weathered. The background is a soft, out-of-focus gradient of warm, earthy tones, ranging from a pale peach to a deeper orange, suggesting a natural, possibly late afternoon, setting. The lighting is soft and diffused, highlighting the bird's features without harsh shadows. The overall composition is balanced, with the bird positioned slightly to the right of the center, creating a sense of calm and stillness.",
+    "model_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "f1_delta": -0.33333333333333337,
+    "precision_delta": -0.5,
+    "recall_delta": 0.0,
+    "model_mentioned_objects": [
+      "bird",
+      "orange"
+    ],
+    "baseline_mentioned_objects": [
+      "bird"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "bird"
+      ],
+      "model_missed_gt": [],
+      "model_hallucinated": [
+        "orange"
+      ],
+      "baseline_hit_gt": [
+        "bird"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [],
+      "model_only_hallucinations": [
+        "orange"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 1.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": 0.0
+    },
+    "behavior_pattern": "hallucination_increased"
+  },
+  {
+    "image_id": 127476,
+    "file_name": "000000127476.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000127476.jpg",
+    "gt_objects": [
+      "pizza"
+    ],
+    "gt_captions": [
+      "A pizza that is sitting on a plastic tray.",
+      "A partially eaten pizza sitting on a tray.",
+      "A pizza with different toppings sitting on a pan. ",
+      "A pizza sits half eaten on a plate.",
+      "A half cut pizza on a plate on the table"
+    ],
+    "model_caption": "This is a detailed, close-up photograph of a large, thick-crust pizza served on a dark, perforated metal tray. The image is taken from a slightly elevated angle, focusing on the pizza's toppings and texture.\n\nThe pizza is the central subject, occupying most of the frame. It is a deep-dish style, characterized by a thick, golden-brown crust that appears to be baked to a crisp, with a slightly charred, bubbly surface. The crust is generously topped with a variety of ingredients. The most prominent toppings are numerous black olives, which are scattered across the surface, and a generous amount of sliced mushrooms, which are a mix of light and dark brown. The pizza is also covered with a layer of melted white cheese, likely mozzarella, which is slightly browned in places. In addition to the olives and mushrooms, there are visible chunks of what appears to be sausage or a similar meat, and a layer of red tomato sauce that is visible beneath the toppings.\n\nA single slice has been cut from the pizza and is placed on the tray, slightly to the right of the center. The tray itself is a dark, possibly black, metal with a pattern of circular holes, which is typical for a pizza server or tray used in a restaurant. The tray is positioned on a dark, textured metal surface, possibly a grill or a table.\n\nIn the background, there is a white plate with a partially visible slice of pizza, and a dark bottle with a label that has the word \"ALE\" on it. The overall lighting is warm and appears to be from an indoor source, casting soft shadows and highlighting the textures of the food. The image has a slightly grainy quality, suggesting it might be a photograph taken with a camera in a casual setting.",
+    "baseline_caption": "This is a detailed, close-up photograph of a large, thick-cut pizza served on a dark, perforated metal tray. The image is taken from a slightly elevated angle, focusing on the pizza's toppings and the texture of the crust.\n\nThe pizza is the central subject, occupying most of the frame. It is a deep-dish style, characterized by a thick, golden-brown crust that appears to be baked to a crisp, with a slightly charred, bubbly texture. The crust is thick and substantial, with a visible, slightly uneven edge.\n\nThe toppings are generously spread across the surface. The most prominent ingredients are:\n- **Black Olives:** These are scattered throughout the pizza, some whole and others sliced, adding a dark, glossy contrast to the other toppings.\n- **Mushrooms:** Sliced mushrooms are visible, their light brown color and irregular shapes adding texture.\n- **Sausage:** Pieces of sausage, likely a type of Italian sausage, are distributed across the pizza, their reddish-brown color and irregular shapes.\n- **Pepperoni:** A few slices of pepperoni are visible, with their characteristic red color and slightly curled edges.\n- **Cheese:** A layer of melted white cheese, possibly mozzarella, is visible, with some areas appearing slightly browned from the heat.\n\nA large, triangular slice has been cut from the pizza and is placed on the right side of the tray, slightly separated from the rest of the pizza. The rest of the pizza is still intact, with the toppings piled high.\n\nThe pizza is served on a dark, black metal tray with a textured surface. The tray has a pattern of small, circular indentations, which are likely designed to allow for even heat distribution and to prevent the pizza from sticking. The tray is placed on a black metal grid table, which is visible in the background.\n\nIn the background, there are a",
+    "model_metrics": {
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 1
+    },
+    "baseline_metrics": {
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 1
+    },
+    "f1_delta": -0.33333333333333337,
+    "precision_delta": -0.5,
+    "recall_delta": 0.0,
+    "model_mentioned_objects": [
+      "bottle",
+      "pizza"
+    ],
+    "baseline_mentioned_objects": [
+      "pizza"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "pizza"
+      ],
+      "model_missed_gt": [],
+      "model_hallucinated": [
+        "bottle"
+      ],
+      "baseline_hit_gt": [
+        "pizza"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [],
+      "model_only_hallucinations": [
+        "bottle"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 1.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": 0.0
+    },
+    "behavior_pattern": "hallucination_increased"
+  },
+  {
+    "image_id": 291490,
+    "file_name": "000000291490.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000291490.jpg",
+    "gt_objects": [
+      "bed",
+      "cat"
+    ],
+    "gt_captions": [
+      "A cat peeking it's head out of the blankets.",
+      "A kitten on a bad with its arm stretched out toward the camera",
+      "A cat laying on a bed in a room.",
+      "A cat laying down on a blue comforter with pink sheets.",
+      "A cat laying on a blanket on top of a pillow. "
+    ],
+    "model_caption": "This is a close-up, softly lit photograph of a cat resting on a bed. The image is characterized by a shallow depth of field, which keeps the cat in sharp focus while the background is blurred.\n\nThe central subject is a domestic cat with a white and orange tabby pattern. The cat is lying on its side, with its body nestled between a dark blue comforter and a red, textured pillow or blanket. Its head is turned slightly towards the viewer, and its large, dark eyes are wide open, giving it an alert and curious expression. The cat's ears are perked up, and its front paws are visible, with one paw resting on the red pillow.\n\nThe cat's fur is a mix of white and orange, with the orange markings on its head and ears being particularly prominent. The lighting is soft and warm, coming from the upper left, which illuminates the cat's face and the top of its body, while casting the rest of the scene into gentle shadow. The background is composed of a dark blue comforter that is rumpled and textured, and a red pillow or blanket with a subtle striped pattern, which is visible in the lower right portion of the frame.\n\nThe overall composition is intimate and cozy, capturing a quiet, peaceful moment of the cat in its resting place. The colors are rich and warm, with the contrast between the white and orange fur, the deep blue of the comforter, and the vibrant red of the pillow creating a visually appealing and warm scene.",
+    "baseline_caption": "This is a close-up, softly lit photograph of a cat resting on a bed. The image is characterized by a shallow depth of field, with the cat in sharp focus while the background and foreground are blurred, creating a cozy and intimate atmosphere.\n\nThe central subject is a domestic cat with a white and orange tabby pattern. The cat is lying on its side, with its body partially covered by a dark blue comforter. Its head is turned towards the camera, and its large, dark eyes are wide open, giving it an alert and curious expression. The cat's ears are perked up, and its front paw is extended forward, resting on a red, textured pillow or blanket. The fur on its face and body is a mix of white and orange, with the orange markings being more prominent on its head and ears.\n\nThe cat is positioned on a bed with a dark blue comforter that has a soft, wrinkled texture. The comforter is draped over the cat, and its folds and creases are visible. The cat is lying on a red pillow or blanket that has a subtle striped pattern. The red color of the pillow contrasts with the blue comforter, and the texture of the red fabric is visible. The lighting in the image is soft and warm, coming from the upper left, which highlights the cat's face and the texture of the comforter.\n\nIn the background, there is a dark blue wall or headboard, which is out of focus. The overall composition of the image is warm and inviting, with a focus on the cat's gentle expression and the cozy, comfortable setting. The image has a soft, natural feel, with a slight blur that adds to the sense of intimacy.",
+    "model_metrics": {
+      "f1": 0.5,
+      "precision": 0.5,
+      "recall": 0.5,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 2
+    },
+    "baseline_metrics": {
+      "f1": 0.8,
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "mentioned": 3,
+      "correct": 2,
+      "hallucinated": 1,
+      "gt_count": 2
+    },
+    "f1_delta": -0.30000000000000004,
+    "precision_delta": -0.16666666666666663,
+    "recall_delta": -0.5,
+    "model_mentioned_objects": [
+      "cat",
+      "orange"
+    ],
+    "baseline_mentioned_objects": [
+      "bed",
+      "cat",
+      "orange"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "cat"
+      ],
+      "model_missed_gt": [
+        "bed"
+      ],
+      "model_hallucinated": [
+        "orange"
+      ],
+      "baseline_hit_gt": [
+        "bed",
+        "cat"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [
+        "orange"
+      ],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "bed"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [
+        "orange"
+      ],
+      "gt_coverage_model": 0.5,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.5
+    },
+    "behavior_pattern": "silent_on_gt"
+  },
+  {
+    "image_id": 50896,
+    "file_name": "000000050896.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000050896.jpg",
+    "gt_objects": [
+      "bowl",
+      "dining table",
+      "orange"
+    ],
+    "gt_captions": [
+      "A bowl filled with lots of oranges on a counter.",
+      "This is a clear bowl that is filled with oranges. ",
+      "A bowl that has some oranges in it.",
+      "a big bowl of oranges that is on the floor",
+      "There is a big bowl of oranges on the counter."
+    ],
+    "model_caption": "This is a top-down, close-up photograph of a bowl filled with tangerines, set against a textured, silver-colored background. The image is well-lit, highlighting the vibrant colors and textures of the fruit.\n\nThe central object is a round, transparent glass bowl with a thick, brownish-brown rim. The bowl has a subtle, textured pattern on its surface, possibly a fine, concentric circle design, and it is filled to the brim with tangerines. The tangerines are arranged in a dense, circular cluster, with some overlapping. They are a bright, vibrant orange, with a slightly glossy surface that reflects the light. The skin of each tangerine is smooth and has a distinct, small, dark spot near the top, which is the stem scar. The tangerines vary slightly in size and shape, but they are all of a similar, round form.\n\nThe bowl is placed on a surface that has a shimmering, metallic texture, possibly a tablecloth or a placemat. The surface is a light gray or silver color, with a fine, crinkled or woven pattern that gives it a slightly reflective quality. The lighting in the image is soft and even, creating a gentle shadow around the bowl and the tangerines, which adds depth to the scene. The overall composition is centered and symmetrical, drawing the viewer's attention directly to the bowl of fruit. There is no text or other objects visible in the image.",
+    "baseline_caption": "This is a top-down photograph of a bowl filled with oranges, set against a textured, silver-colored background. The image is well-lit, with the light source appearing to be from above, creating a soft glow on the surface of the oranges and the bowl.\n\nThe central object is a round, transparent glass bowl with a thick, brownish-brown rim. The bowl has a subtle, textured pattern of concentric ridges on its surface, which are visible as faint, circular lines. The bowl is filled with a large quantity of small, round oranges. The oranges are a vibrant, bright orange color, with a slightly rough, bumpy skin texture. They are tightly packed, with some oranges overlapping others. The oranges are arranged in a dense cluster, with some positioned more towards the center and others slightly offset, creating a sense of depth.\n\nThe background is a metallic, silver-colored surface with a fine, woven or textured pattern. The surface has a slight sheen, reflecting the light and giving it a subtle, shimmering appearance. The lighting in the image is soft and diffused, with a gentle shadow cast by the bowl onto the background, which adds a sense of dimension.\n\nThere is no text or any other visible markings on the image. The focus is entirely on the oranges and the bowl. The overall composition is simple and centered, drawing the viewer's attention to the fruit.",
+    "model_metrics": {
+      "f1": 0.5,
+      "precision": 1.0,
+      "recall": 0.3333333333333333,
+      "mentioned": 1,
+      "correct": 1,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "baseline_metrics": {
+      "f1": 0.8,
+      "precision": 1.0,
+      "recall": 0.6666666666666666,
+      "mentioned": 2,
+      "correct": 2,
+      "hallucinated": 0,
+      "gt_count": 3
+    },
+    "f1_delta": -0.30000000000000004,
+    "precision_delta": 0.0,
+    "recall_delta": -0.3333333333333333,
+    "model_mentioned_objects": [
+      "bowl"
+    ],
+    "baseline_mentioned_objects": [
+      "bowl",
+      "orange"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "bowl"
+      ],
+      "model_missed_gt": [
+        "dining table",
+        "orange"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "bowl",
+        "orange"
+      ],
+      "baseline_missed_gt": [
+        "dining table"
+      ],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "orange"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.3333333333333333,
+      "gt_coverage_baseline": 0.6666666666666666,
+      "gt_coverage_delta": -0.3333333333333333
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
+  },
+  {
+    "image_id": 23023,
+    "file_name": "000000023023.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000023023.jpg",
+    "gt_objects": [
+      "handbag",
+      "suitcase"
+    ],
+    "gt_captions": [
+      "Three pieces of luggage sitting on a floor in front of a curtain.",
+      "A collection of suitcases lined up in front of hotel curtains.",
+      "A piece of luggage is beside bags, one in plastic.",
+      "Duffel bag, plastic travel bag, and suitcase sit on carpet in front of drapes.",
+      "A suitcase as well as other types of luggage are propped up on a carpeted floor indoors."
+    ],
+    "model_caption": "This is a black and white photograph of a collection of luggage and personal items arranged on a carpeted floor in what appears to be a hotel room. The image is taken from a slightly elevated angle, looking down at the items.\n\nThe scene is composed of several objects placed in a row, with a curtain in the background.\n\n- **The central object is a gray, hard-shell suitcase.** It is a standard-sized, rectangular suitcase with a top handle and a front zippered pocket. The suitcase has a vertical zipper on the front, and the main body is a light gray color. It is positioned in the center of the frame, slightly to the right of the center.\n\n- **To the left of the suitcase is a large, dark-colored bag.** This bag is made of a dark, possibly black, fabric and is covered with a transparent plastic bag. The plastic bag is crumpled and has a visible seam, and it is filled with a dark, possibly black, object. The bag is slightly larger than the suitcase and is positioned to the left of the suitcase.\n\n- **To the right of the suitcase is a black shoulder bag.** This bag is made of a dark fabric and has a simple, structured design. It is positioned to the right of the suitcase and is slightly larger than the suitcase.\n\n- **In the foreground, on the left side, there is a stack of items.** The top item is a white, rectangular object, possibly a book or a small box. Below it is a white, rectangular object, possibly a box or a small container. The stack is placed on the carpet.\n\n- **The background consists of a light-colored, possibly white or off-white, curtain.** The curtain has a vertical pleat pattern and is hanging from the ceiling, with a visible vertical seam in the middle.\n\n- **The floor is covered with a carpet.** The carpet",
+    "baseline_caption": "This is a black and white photograph of a collection of luggage and personal items arranged on a carpeted floor, likely in a hotel room or a similar setting. The image is taken from a slightly elevated angle, looking down at the items.\n\nThe scene is composed of three main objects, positioned in a row from left to right.\n\n- **Leftmost Object**: This is a large, dark-colored bag, possibly a trash bag or a laundry bag, that is sealed with a clear plastic wrap. It is filled with a dark, crumpled material, possibly clothes or other personal belongings. The bag is sitting on the floor, and a small, white, rectangular object, possibly a book or a small box, is placed in front of it.\n\n- **Center Object**: This is a medium-sized, hard-shell suitcase. It is a light gray or silver color, with a textured fabric surface. The suitcase has a prominent vertical zipper on the front, and a horizontal zipper on the top. It is positioned in the middle of the frame, slightly to the right of the center.\n\n- **Rightmost Object**: This is a dark-colored, soft-sided handbag or tote bag. It has a simple, structured design with a visible handle on top. It is placed on the floor to the right of the suitcase.\n\nThe background consists of a light-colored, possibly white or off-white, curtain with vertical folds. The floor is covered with a carpet that has a repeating, textured pattern, possibly a herringbone or a similar design. The overall lighting is soft and even, with no harsh shadows, giving the image a calm and slightly nostalgic feel. The photograph is in black and white, which emphasizes the textures and shapes of the objects.",
+    "model_metrics": {
+      "f1": 0.5,
+      "precision": 0.5,
+      "recall": 0.5,
+      "mentioned": 2,
+      "correct": 1,
+      "hallucinated": 1,
+      "gt_count": 2
+    },
+    "baseline_metrics": {
+      "f1": 0.8,
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "mentioned": 3,
+      "correct": 2,
+      "hallucinated": 1,
+      "gt_count": 2
+    },
+    "f1_delta": -0.30000000000000004,
+    "precision_delta": -0.16666666666666663,
+    "recall_delta": -0.5,
+    "model_mentioned_objects": [
+      "book",
+      "suitcase"
+    ],
+    "baseline_mentioned_objects": [
+      "book",
+      "handbag",
+      "suitcase"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "suitcase"
+      ],
+      "model_missed_gt": [
+        "handbag"
+      ],
+      "model_hallucinated": [
+        "book"
+      ],
+      "baseline_hit_gt": [
+        "handbag",
+        "suitcase"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [
+        "book"
+      ],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "handbag"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [
+        "book"
+      ],
+      "gt_coverage_model": 0.5,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.5
+    },
+    "behavior_pattern": "silent_on_gt"
+  },
+  {
+    "image_id": 83531,
+    "file_name": "000000083531.jpg",
+    "image_path": "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/000000083531.jpg",
+    "gt_objects": [
+      "bottle",
+      "cup",
+      "hot dog",
+      "person"
+    ],
+    "gt_captions": [
+      "A BBQ topped with lots of sausages sitting side by side.",
+      "There are many links of sausage on the grill.",
+      "Several rows of cooking hot dogs on a grill.",
+      "a number of hot dogs cooking on a grill",
+      "The many sausages are arranged on the portable grill."
+    ],
+    "model_caption": "This is a detailed, eye-level photograph of a barbecue grill in operation, likely at a festival or outdoor market. The image is taken from a slightly low angle, focusing on the grill and the sausages being cooked.\n\nThe central subject is a large, dark green metal grill with a grid of black metal grates. On the grill, a large quantity of sausages are being cooked. The sausages are a vibrant, glossy red, indicating they are well-cooked and likely have a spicy or savory flavor. They are arranged in a dense, somewhat scattered pattern, with some lying in a row and others piled on top of one another. The sausages vary in size, with some being longer and more slender, while others are shorter and thicker. The surface of the sausages is shiny, reflecting the ambient light, which suggests they are hot and freshly cooked.\n\nTo the right of the grill, a person's hand is visible, holding a pair of black gloves. The hand is positioned as if it is about to place or adjust something on the grill. The background is out of focus, but it reveals a red metal table or stand, and a black plastic container with a grid-like pattern. The overall scene is busy and suggests a lively, outdoor setting. The lighting is bright and natural, highlighting the colors and textures of the sausages and the grill.",
+    "baseline_caption": "This is a detailed, close-up photograph of a barbecue grill in operation, likely at a fair or festival. The image is taken from a slightly elevated angle, focusing on the grill and the sausages cooking on it.\n\nThe central subject is a large, dark green, rectangular grill with a metal grate. The grill is filled with numerous sausages of various sizes and shapes, all in the process of being cooked. The sausages are a vibrant, glossy red, indicating they are hot and sizzling. They are arranged in a dense, somewhat scattered pattern across the grill, with some overlapping. The sausages are of different lengths and thicknesses, suggesting they are from different types or brands.\n\nThe grill itself is a prominent feature, with its dark green color and metal grate. The sausages are the main focus, and their red color contrasts sharply with the green of the grill. The sausages are arranged in a way that suggests they are being cooked in batches, with some in the foreground and others further back.\n\nIn the background, the scene is slightly blurred, but several objects are visible. On the right side, there is a red table or counter, and on the left, a person is partially visible, wearing dark clothing. The background also includes a black plastic container with a grid-like pattern, possibly for holding the sausages. The overall scene suggests a busy, outdoor food event.\n\nThe image is rich in color and detail, with the red of the sausages, the green of the grill, and the red of the table creating a vibrant and dynamic scene. The focus is on the cooking process, with the sausages being the main subject. The image captures a moment of food preparation, with the sausages being the central focus.",
+    "model_metrics": {
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "mentioned": 2,
+      "correct": 0,
+      "hallucinated": 2,
+      "gt_count": 4
+    },
+    "baseline_metrics": {
+      "f1": 0.28571428571428575,
+      "precision": 0.3333333333333333,
+      "recall": 0.25,
+      "mentioned": 3,
+      "correct": 1,
+      "hallucinated": 2,
+      "gt_count": 4
+    },
+    "f1_delta": -0.28571428571428575,
+    "precision_delta": -0.3333333333333333,
+    "recall_delta": -0.25,
+    "model_mentioned_objects": [
+      "bowl",
+      "dining table"
+    ],
+    "baseline_mentioned_objects": [
+      "bowl",
+      "dining table",
+      "person"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [],
+      "model_missed_gt": [
+        "bottle",
+        "cup",
+        "hot dog",
+        "person"
+      ],
+      "model_hallucinated": [
+        "bowl",
+        "dining table"
+      ],
+      "baseline_hit_gt": [
+        "person"
+      ],
+      "baseline_missed_gt": [
+        "bottle",
+        "cup",
+        "hot dog"
+      ],
+      "baseline_hallucinated": [
+        "bowl",
+        "dining table"
+      ],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "person"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [
+        "bowl",
+        "dining table"
+      ],
+      "gt_coverage_model": 0.0,
+      "gt_coverage_baseline": 0.25,
+      "gt_coverage_delta": -0.25
+    },
+    "behavior_pattern": "silent_on_gt"
+  }
+]

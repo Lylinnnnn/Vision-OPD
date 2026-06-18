@@ -35,7 +35,34 @@
     },
     "f1_delta": -1.0,
     "precision_delta": -1.0,
-    "recall_delta": -1.0
+    "recall_delta": -1.0,
+    "model_mentioned_objects": [],
+    "baseline_mentioned_objects": [
+      "baseball glove"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [],
+      "model_missed_gt": [
+        "baseball glove"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "baseball glove"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "baseball glove"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -1.0
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 464689,
@@ -73,7 +100,34 @@
     },
     "f1_delta": -1.0,
     "precision_delta": -1.0,
-    "recall_delta": -1.0
+    "recall_delta": -1.0,
+    "model_mentioned_objects": [],
+    "baseline_mentioned_objects": [
+      "bottle"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [],
+      "model_missed_gt": [
+        "bottle"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "bottle"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "bottle"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -1.0
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 285349,
@@ -111,7 +165,43 @@
     },
     "f1_delta": -0.6666666666666666,
     "precision_delta": -0.5,
-    "recall_delta": -1.0
+    "recall_delta": -1.0,
+    "model_mentioned_objects": [
+      "bowl"
+    ],
+    "baseline_mentioned_objects": [
+      "bowl",
+      "vase"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [],
+      "model_missed_gt": [
+        "vase"
+      ],
+      "model_hallucinated": [
+        "bowl"
+      ],
+      "baseline_hit_gt": [
+        "vase"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [
+        "bowl"
+      ],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "vase"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [
+        "bowl"
+      ],
+      "gt_coverage_model": 0.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -1.0
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 573626,
@@ -149,7 +239,39 @@
     },
     "f1_delta": -0.6666666666666666,
     "precision_delta": -0.5,
-    "recall_delta": -1.0
+    "recall_delta": -1.0,
+    "model_mentioned_objects": [],
+    "baseline_mentioned_objects": [
+      "bear",
+      "cow"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [],
+      "model_missed_gt": [
+        "cow"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "cow"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [
+        "bear"
+      ],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "cow"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [
+        "bear"
+      ],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -1.0
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 475064,
@@ -188,7 +310,37 @@
     },
     "f1_delta": -0.6666666666666666,
     "precision_delta": -1.0,
-    "recall_delta": -0.5
+    "recall_delta": -0.5,
+    "model_mentioned_objects": [],
+    "baseline_mentioned_objects": [
+      "person"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [],
+      "model_missed_gt": [
+        "donut",
+        "person"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "person"
+      ],
+      "baseline_missed_gt": [
+        "donut"
+      ],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "person"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.0,
+      "gt_coverage_baseline": 0.5,
+      "gt_coverage_delta": -0.5
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 217753,
@@ -227,7 +379,46 @@
     },
     "f1_delta": -0.5,
     "precision_delta": -0.5,
-    "recall_delta": -0.5
+    "recall_delta": -0.5,
+    "model_mentioned_objects": [
+      "bowl"
+    ],
+    "baseline_mentioned_objects": [
+      "apple",
+      "bowl"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [],
+      "model_missed_gt": [
+        "apple",
+        "orange"
+      ],
+      "model_hallucinated": [
+        "bowl"
+      ],
+      "baseline_hit_gt": [
+        "apple"
+      ],
+      "baseline_missed_gt": [
+        "orange"
+      ],
+      "baseline_hallucinated": [
+        "bowl"
+      ],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "apple"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [
+        "bowl"
+      ],
+      "gt_coverage_model": 0.0,
+      "gt_coverage_baseline": 0.5,
+      "gt_coverage_delta": -0.5
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 127476,
@@ -265,7 +456,42 @@
     },
     "f1_delta": -0.5,
     "precision_delta": -0.6666666666666667,
-    "recall_delta": 0.0
+    "recall_delta": 0.0,
+    "model_mentioned_objects": [
+      "bottle",
+      "pizza",
+      "sandwich"
+    ],
+    "baseline_mentioned_objects": [
+      "pizza"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "pizza"
+      ],
+      "model_missed_gt": [],
+      "model_hallucinated": [
+        "bottle",
+        "sandwich"
+      ],
+      "baseline_hit_gt": [
+        "pizza"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [],
+      "model_only_hallucinations": [
+        "bottle",
+        "sandwich"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 1.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": 0.0
+    },
+    "behavior_pattern": "hallucination_increased"
   },
   {
     "image_id": 281179,
@@ -305,7 +531,52 @@
     },
     "f1_delta": -0.4571428571428571,
     "precision_delta": -0.25,
-    "recall_delta": -0.6666666666666667
+    "recall_delta": -0.6666666666666667,
+    "model_mentioned_objects": [
+      "orange",
+      "traffic light"
+    ],
+    "baseline_mentioned_objects": [
+      "bench",
+      "fire hydrant",
+      "orange",
+      "traffic light"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "traffic light"
+      ],
+      "model_missed_gt": [
+        "bench",
+        "fire hydrant"
+      ],
+      "model_hallucinated": [
+        "orange"
+      ],
+      "baseline_hit_gt": [
+        "bench",
+        "fire hydrant",
+        "traffic light"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [
+        "orange"
+      ],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "bench",
+        "fire hydrant"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [
+        "orange"
+      ],
+      "gt_coverage_model": 0.3333333333333333,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.6666666666666666
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 6723,
@@ -345,7 +616,52 @@
     },
     "f1_delta": -0.4,
     "precision_delta": -0.5,
-    "recall_delta": -0.3333333333333333
+    "recall_delta": -0.3333333333333333,
+    "model_mentioned_objects": [
+      "bicycle",
+      "traffic light"
+    ],
+    "baseline_mentioned_objects": [
+      "bicycle",
+      "car"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [],
+      "model_missed_gt": [
+        "bus",
+        "car",
+        "truck"
+      ],
+      "model_hallucinated": [
+        "bicycle",
+        "traffic light"
+      ],
+      "baseline_hit_gt": [
+        "car"
+      ],
+      "baseline_missed_gt": [
+        "bus",
+        "truck"
+      ],
+      "baseline_hallucinated": [
+        "bicycle"
+      ],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "car"
+      ],
+      "model_only_hallucinations": [
+        "traffic light"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [
+        "bicycle"
+      ],
+      "gt_coverage_model": 0.0,
+      "gt_coverage_baseline": 0.3333333333333333,
+      "gt_coverage_delta": -0.3333333333333333
+    },
+    "behavior_pattern": "mixed:hallucination_increased+object_substitution+silent_on_gt"
   },
   {
     "image_id": 39484,
@@ -388,7 +704,51 @@
     },
     "f1_delta": -0.38095238095238093,
     "precision_delta": 0.0,
-    "recall_delta": -0.33333333333333337
+    "recall_delta": -0.33333333333333337,
+    "model_mentioned_objects": [
+      "car"
+    ],
+    "baseline_mentioned_objects": [
+      "airplane",
+      "car",
+      "person"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "car"
+      ],
+      "model_missed_gt": [
+        "airplane",
+        "chair",
+        "dining table",
+        "person",
+        "traffic light"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "airplane",
+        "car",
+        "person"
+      ],
+      "baseline_missed_gt": [
+        "chair",
+        "dining table",
+        "traffic light"
+      ],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "airplane",
+        "person"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.16666666666666666,
+      "gt_coverage_baseline": 0.5,
+      "gt_coverage_delta": -0.3333333333333333
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 211120,
@@ -428,7 +788,56 @@
     },
     "f1_delta": -0.34999999999999987,
     "precision_delta": -0.09999999999999998,
-    "recall_delta": -0.6666666666666667
+    "recall_delta": -0.6666666666666667,
+    "model_mentioned_objects": [
+      "bear",
+      "teddy bear"
+    ],
+    "baseline_mentioned_objects": [
+      "bear",
+      "bowl",
+      "spoon",
+      "teddy bear",
+      "truck"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "teddy bear"
+      ],
+      "model_missed_gt": [
+        "bowl",
+        "truck"
+      ],
+      "model_hallucinated": [
+        "bear"
+      ],
+      "baseline_hit_gt": [
+        "bowl",
+        "teddy bear",
+        "truck"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [
+        "bear",
+        "spoon"
+      ],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "bowl",
+        "truck"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [
+        "spoon"
+      ],
+      "shared_hallucinations": [
+        "bear"
+      ],
+      "gt_coverage_model": 0.3333333333333333,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.6666666666666666
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 475191,
@@ -467,7 +876,40 @@
     },
     "f1_delta": -0.33333333333333337,
     "precision_delta": 0.0,
-    "recall_delta": -0.5
+    "recall_delta": -0.5,
+    "model_mentioned_objects": [
+      "person"
+    ],
+    "baseline_mentioned_objects": [
+      "person",
+      "tennis racket"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "person"
+      ],
+      "model_missed_gt": [
+        "tennis racket"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "person",
+        "tennis racket"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "tennis racket"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.5,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.5
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 107087,
@@ -507,7 +949,49 @@
     },
     "f1_delta": -0.33333333333333337,
     "precision_delta": -0.33333333333333337,
-    "recall_delta": -0.33333333333333337
+    "recall_delta": -0.33333333333333337,
+    "model_mentioned_objects": [
+      "cat",
+      "chair",
+      "person"
+    ],
+    "baseline_mentioned_objects": [
+      "car",
+      "cat",
+      "chair"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "cat",
+        "chair"
+      ],
+      "model_missed_gt": [
+        "car"
+      ],
+      "model_hallucinated": [
+        "person"
+      ],
+      "baseline_hit_gt": [
+        "car",
+        "cat",
+        "chair"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "car"
+      ],
+      "model_only_hallucinations": [
+        "person"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.6666666666666666,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.3333333333333333
+    },
+    "behavior_pattern": "mixed:hallucination_increased+object_substitution+silent_on_gt"
   },
   {
     "image_id": 366178,
@@ -546,7 +1030,40 @@
     },
     "f1_delta": -0.33333333333333337,
     "precision_delta": 0.0,
-    "recall_delta": -0.5
+    "recall_delta": -0.5,
+    "model_mentioned_objects": [
+      "fire hydrant"
+    ],
+    "baseline_mentioned_objects": [
+      "car",
+      "fire hydrant"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "fire hydrant"
+      ],
+      "model_missed_gt": [
+        "car"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "car",
+        "fire hydrant"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "car"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.5,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.5
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 273551,
@@ -584,7 +1101,39 @@
     },
     "f1_delta": -0.33333333333333337,
     "precision_delta": -0.5,
-    "recall_delta": 0.0
+    "recall_delta": 0.0,
+    "model_mentioned_objects": [
+      "bicycle",
+      "motorcycle"
+    ],
+    "baseline_mentioned_objects": [
+      "motorcycle"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "motorcycle"
+      ],
+      "model_missed_gt": [],
+      "model_hallucinated": [
+        "bicycle"
+      ],
+      "baseline_hit_gt": [
+        "motorcycle"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [],
+      "model_only_hallucinations": [
+        "bicycle"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 1.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": 0.0
+    },
+    "behavior_pattern": "hallucination_increased"
   },
   {
     "image_id": 34452,
@@ -623,7 +1172,40 @@
     },
     "f1_delta": -0.33333333333333337,
     "precision_delta": 0.0,
-    "recall_delta": -0.5
+    "recall_delta": -0.5,
+    "model_mentioned_objects": [
+      "person"
+    ],
+    "baseline_mentioned_objects": [
+      "frisbee",
+      "person"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "person"
+      ],
+      "model_missed_gt": [
+        "frisbee"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "frisbee",
+        "person"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "frisbee"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.5,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.5
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 398028,
@@ -662,7 +1244,40 @@
     },
     "f1_delta": -0.33333333333333337,
     "precision_delta": 0.0,
-    "recall_delta": -0.5
+    "recall_delta": -0.5,
+    "model_mentioned_objects": [
+      "person"
+    ],
+    "baseline_mentioned_objects": [
+      "baseball bat",
+      "person"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "person"
+      ],
+      "model_missed_gt": [
+        "baseball bat"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "baseball bat",
+        "person"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "baseball bat"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.5,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.5
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 209757,
@@ -701,7 +1316,40 @@
     },
     "f1_delta": -0.33333333333333337,
     "precision_delta": 0.0,
-    "recall_delta": -0.5
+    "recall_delta": -0.5,
+    "model_mentioned_objects": [
+      "person"
+    ],
+    "baseline_mentioned_objects": [
+      "person",
+      "skateboard"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "person"
+      ],
+      "model_missed_gt": [
+        "skateboard"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "person",
+        "skateboard"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "skateboard"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.5,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.5
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 381360,
@@ -740,7 +1388,40 @@
     },
     "f1_delta": -0.33333333333333337,
     "precision_delta": 0.0,
-    "recall_delta": -0.5
+    "recall_delta": -0.5,
+    "model_mentioned_objects": [
+      "person"
+    ],
+    "baseline_mentioned_objects": [
+      "person",
+      "surfboard"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "person"
+      ],
+      "model_missed_gt": [
+        "surfboard"
+      ],
+      "model_hallucinated": [],
+      "baseline_hit_gt": [
+        "person",
+        "surfboard"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [
+        "surfboard"
+      ],
+      "model_only_hallucinations": [],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 0.5,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": -0.5
+    },
+    "behavior_pattern": "mixed:over_suppressed+silent_on_gt"
   },
   {
     "image_id": 407518,
@@ -778,6 +1459,38 @@
     },
     "f1_delta": -0.33333333333333337,
     "precision_delta": -0.5,
-    "recall_delta": 0.0
+    "recall_delta": 0.0,
+    "model_mentioned_objects": [
+      "bird",
+      "orange"
+    ],
+    "baseline_mentioned_objects": [
+      "bird"
+    ],
+    "object_level_diff": {
+      "model_hit_gt": [
+        "bird"
+      ],
+      "model_missed_gt": [],
+      "model_hallucinated": [
+        "orange"
+      ],
+      "baseline_hit_gt": [
+        "bird"
+      ],
+      "baseline_missed_gt": [],
+      "baseline_hallucinated": [],
+      "model_gained_gt": [],
+      "model_lost_gt": [],
+      "model_only_hallucinations": [
+        "orange"
+      ],
+      "removed_hallucinations": [],
+      "shared_hallucinations": [],
+      "gt_coverage_model": 1.0,
+      "gt_coverage_baseline": 1.0,
+      "gt_coverage_delta": 0.0
+    },
+    "behavior_pattern": "hallucination_increased"
   }
 ]

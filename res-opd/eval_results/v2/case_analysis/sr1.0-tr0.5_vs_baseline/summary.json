@@ -1,13 +1,212 @@
 {
   "num_common_samples": 300,
   "top_n": 20,
-  "model_results": "res-opd/eval_results/latest/Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.5-a0.5-ema-e1_global_step_46/train1500_test300_original_sr1p0/eval_results.jsonl",
-  "baseline_results": "res-opd/eval_results/v2/Qwen3VL-2B-Instruct/train1500_test300_original_sr1p0/eval_results.jsonl",
-  "f1_delta_mean": -0.01880848345554228,
+  "model_results": "eval_results/latest/Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.5-a0.5-ema-e1_global_step_46/train1500_test300_original_sr1p0/eval_results.jsonl",
+  "baseline_results": "eval_results/v2/Qwen3VL-2B-Instruct/train1500_test300_original_sr1p0/eval_results.jsonl",
+  "f1_delta_mean": -0.018808483455542268,
   "f1_delta_median": 0.0,
   "f1_delta_min": -1.0,
   "f1_delta_max": 1.0,
   "num_worse": 87,
   "num_better": 60,
-  "num_equal": 153
+  "num_equal": 153,
+  "recall_delta_mean": -0.043140091390091395,
+  "precision_delta_mean": 0.00823015873015874,
+  "gt_coverage_model_overall": 0.6349942062572422,
+  "gt_coverage_baseline_overall": 0.6801853997682503,
+  "gt_coverage_delta_overall": -0.04519119351100811,
+  "gt_coverage_delta_mean": -0.043140091390091395,
+  "total_model_hallucinated_objects": 134,
+  "total_baseline_hallucinated_objects": 151,
+  "hallucination_delta_total": -17,
+  "behavior_pattern_distribution": {
+    "no_change": 144,
+    "hallucination_reduced": 31,
+    "silent_on_gt": 28,
+    "mixed:over_suppressed+silent_on_gt": 27,
+    "hallucination_increased": 22,
+    "gt_coverage_improved": 21,
+    "mixed:hallucination_increased+object_substitution+silent_on_gt": 8,
+    "minor_variation": 7,
+    "mixed:gt_coverage_improved+hallucination_increased": 4,
+    "mixed:gt_coverage_improved+hallucination_reduced": 3,
+    "mixed:hallucination_increased+object_substitution": 2,
+    "mixed:object_substitution+silent_on_gt": 1,
+    "object_substitution": 1,
+    "mixed:object_substitution+over_suppressed+silent_on_gt": 1
+  },
+  "behavior_pattern_f1_stats": {
+    "no_change": {
+      "count": 144,
+      "f1_delta_mean": 0.0,
+      "recall_delta_mean": 0.0,
+      "precision_delta_mean": 0.0
+    },
+    "hallucination_reduced": {
+      "count": 31,
+      "f1_delta_mean": 0.19780398812656874,
+      "recall_delta_mean": 0.0,
+      "precision_delta_mean": 0.33824884792626725
+    },
+    "silent_on_gt": {
+      "count": 28,
+      "f1_delta_mean": -0.1757379525236668,
+      "recall_delta_mean": -0.2687654607297465,
+      "precision_delta_mean": -0.026105442176870764
+    },
+    "mixed:over_suppressed+silent_on_gt": {
+      "count": 27,
+      "f1_delta_mean": -0.3479717813051144,
+      "recall_delta_mean": -0.5074074074074075,
+      "precision_delta_mean": -0.07530864197530864
+    },
+    "hallucination_increased": {
+      "count": 22,
+      "f1_delta_mean": -0.1584496311769039,
+      "recall_delta_mean": 0.0,
+      "precision_delta_mean": -0.29253246753246753
+    },
+    "gt_coverage_improved": {
+      "count": 21,
+      "f1_delta_mean": 0.34170597531942065,
+      "recall_delta_mean": 0.419428983714698,
+      "precision_delta_mean": 0.18333333333333335
+    },
+    "mixed:hallucination_increased+object_substitution+silent_on_gt": {
+      "count": 8,
+      "f1_delta_mean": -0.2697420634920635,
+      "recall_delta_mean": -0.2416666666666667,
+      "precision_delta_mean": -0.3125
+    },
+    "minor_variation": {
+      "count": 7,
+      "f1_delta_mean": 0.0,
+      "recall_delta_mean": 0.0,
+      "precision_delta_mean": 0.0
+    },
+    "mixed:gt_coverage_improved+hallucination_increased": {
+      "count": 4,
+      "f1_delta_mean": 0.11426351426351433,
+      "recall_delta_mean": 0.2569444444444445,
+      "precision_delta_mean": -0.225
+    },
+    "mixed:gt_coverage_improved+hallucination_reduced": {
+      "count": 3,
+      "f1_delta_mean": 0.32222222222222224,
+      "recall_delta_mean": 0.3194444444444444,
+      "precision_delta_mean": 0.3611111111111111
+    },
+    "mixed:hallucination_increased+object_substitution": {
+      "count": 2,
+      "f1_delta_mean": -0.05952380952380948,
+      "recall_delta_mean": -0.008928571428571425,
+      "precision_delta_mean": -0.18333333333333335
+    },
+    "mixed:object_substitution+silent_on_gt": {
+      "count": 1,
+      "f1_delta_mean": -0.1454545454545454,
+      "recall_delta_mean": -0.16666666666666669,
+      "precision_delta_mean": -0.09999999999999998
+    },
+    "object_substitution": {
+      "count": 1,
+      "f1_delta_mean": -0.12121212121212122,
+      "recall_delta_mean": -0.14285714285714285,
+      "precision_delta_mean": -0.050000000000000044
+    },
+    "mixed:object_substitution+over_suppressed+silent_on_gt": {
+      "count": 1,
+      "f1_delta_mean": -0.02857142857142847,
+      "recall_delta_mean": -0.25,
+      "precision_delta_mean": 0.16666666666666663
+    }
+  },
+  "top_lost_gt_objects": {
+    "car": 8,
+    "person": 6,
+    "baseball bat": 4,
+    "dining table": 4,
+    "handbag": 4,
+    "bottle": 3,
+    "apple": 3,
+    "bowl": 3,
+    "bicycle": 3,
+    "remote": 3,
+    "vase": 2,
+    "truck": 2,
+    "surfboard": 2,
+    "knife": 2,
+    "cup": 2,
+    "cell phone": 2,
+    "baseball glove": 1,
+    "cow": 1,
+    "bench": 1,
+    "fire hydrant": 1
+  },
+  "top_gained_gt_objects": {
+    "bowl": 3,
+    "chair": 3,
+    "sink": 3,
+    "knife": 3,
+    "bottle": 3,
+    "stop sign": 3,
+    "backpack": 2,
+    "person": 2,
+    "bicycle": 2,
+    "dining table": 2,
+    "potted plant": 1,
+    "boat": 1,
+    "sports ball": 1,
+    "mouse": 1,
+    "book": 1,
+    "couch": 1,
+    "truck": 1,
+    "snowboard": 1,
+    "baseball bat": 1,
+    "frisbee": 1
+  },
+  "top_new_hallucination_objects": {
+    "orange": 6,
+    "dining table": 4,
+    "traffic light": 3,
+    "person": 3,
+    "bed": 3,
+    "bottle": 2,
+    "bench": 2,
+    "cell phone": 2,
+    "spoon": 2,
+    "keyboard": 2,
+    "book": 2,
+    "bowl": 2,
+    "sandwich": 1,
+    "bicycle": 1,
+    "dog": 1,
+    "refrigerator": 1,
+    "frisbee": 1,
+    "chair": 1,
+    "microwave": 1,
+    "sheep": 1
+  },
+  "top_removed_hallucination_objects": {
+    "person": 8,
+    "bowl": 7,
+    "orange": 6,
+    "dining table": 6,
+    "keyboard": 3,
+    "chair": 3,
+    "bed": 3,
+    "vase": 2,
+    "cell phone": 2,
+    "car": 2,
+    "truck": 2,
+    "tie": 2,
+    "bear": 1,
+    "spoon": 1,
+    "apple": 1,
+    "cup": 1,
+    "skis": 1,
+    "book": 1,
+    "oven": 1,
+    "fire hydrant": 1
+  }
 }
