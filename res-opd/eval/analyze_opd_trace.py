@@ -26,6 +26,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -38,7 +39,49 @@ from robust_chair_analysis import (  # noqa: E402
     build_double_word_dict,
     caption_to_words,
     parse_official_synonyms,
+    try_singularize,
 )
+
+
+OBJECT_METRIC_KEYS = [
+    "student_selected_logprob_mean",
+    "teacher_selected_logprob_mean",
+    "teacher_minus_student_selected_logprob_mean",
+    "student_selected_logprob_sum",
+    "teacher_selected_logprob_sum",
+    "teacher_minus_student_selected_logprob_sum",
+    "student_entropy_mean",
+    "teacher_entropy_mean",
+    "teacher_minus_student_entropy_mean",
+    "student_topk_mass_mean",
+    "teacher_topk_mass_mean",
+    "student_top1_top2_margin_mean",
+    "teacher_top1_top2_margin_mean",
+    "topk_overlap_ratio_mean",
+    "topk_jaccard_mean",
+    "top1_match_frac",
+    "selected_token_rank_in_student_topk_mean",
+    "selected_token_rank_in_teacher_topk_mean",
+    "teacher_selected_logprob_lt_student_frac",
+]
+
+OBJECT_TOKEN_METRIC_KEYS = [
+    "student_selected_logprob",
+    "teacher_selected_logprob",
+    "_teacher_minus_student_selected_logprob",
+    "student_entropy",
+    "teacher_entropy",
+    "_teacher_minus_student_entropy",
+    "student_topk_mass",
+    "teacher_topk_mass",
+    "student_top1_top2_margin",
+    "teacher_top1_top2_margin",
+    "topk_overlap_ratio",
+    "topk_jaccard",
+    "top1_match",
+    "selected_token_rank_in_student_topk",
+    "selected_token_rank_in_teacher_topk",
+]
 
 
 def safe_mean(values):
@@ -48,6 +91,15 @@ def safe_mean(values):
 
 def safe_rate(numerator, denominator):
     return numerator / denominator if denominator else 0.0
+
+
+def step_sort_key(step):
+    if step is None:
+        return (-1, "")
+    try:
+        return (0, int(step))
+    except (TypeError, ValueError):
+        return (1, str(step))
 
 
 def get_oss_name(experiment_name):
@@ -186,6 +238,294 @@ def get_image_id(record):
         return None
 
 
+def canonicalize_object_name(obj, inverse_synonym_dict):
+    if obj is None:
+        return None
+    text = str(obj).strip().lower()
+    if not text:
+        return None
+    text = re.sub(r"\s+", " ", text)
+    if text in inverse_synonym_dict:
+        return inverse_synonym_dict[text]
+
+    words = [try_singularize(word) for word in text.split()]
+    singular = " ".join(words)
+    return inverse_synonym_dict.get(singular, singular)
+
+
+def coerce_object_list(value):
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    if isinstance(value, dict):
+        for key in ("objects", "gt_objects", "present_objects", "categories"):
+            if key in value:
+                return coerce_object_list(value.get(key))
+        return list(value.keys())
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        if stripped.startswith("[") and stripped.endswith("]"):
+            try:
+                parsed = json.loads(stripped)
+                return coerce_object_list(parsed)
+            except json.JSONDecodeError:
+                pass
+        if "," in stripped:
+            return [part.strip() for part in stripped.split(",") if part.strip()]
+        return [stripped]
+    return [value]
+
+
+def extract_gt_objects(record, case_groups, inverse_synonym_dict):
+    image_id = get_image_id(record)
+    metadata = record.get("metadata") or {}
+    candidates = []
+    extra_info = metadata.get("extra_info")
+    for container_name, container in (("metadata", metadata), ("metadata.extra_info", extra_info)):
+        if not isinstance(container, dict):
+            continue
+        for field in ("gt_objects", "objects", "present_objects", "coco_objects", "categories"):
+            if field in container:
+                candidates.append((f"{container_name}.{field}", container.get(field)))
+
+    case_info = case_groups.get(image_id, {}) if image_id is not None else {}
+    if case_info.get("gt_objects"):
+        candidates.append(("case_analysis.gt_objects", case_info.get("gt_objects")))
+
+    for source, value in candidates:
+        objects = {
+            canonicalize_object_name(obj, inverse_synonym_dict)
+            for obj in coerce_object_list(value)
+        }
+        objects = {obj for obj in objects if obj}
+        if objects:
+            return objects, source
+    return set(), "missing"
+
+
+def plural_variants(term):
+    words = term.split()
+    if not words:
+        return set()
+
+    last = words[-1]
+    variants = set()
+    if last.endswith("y") and len(last) > 1 and last[-2] not in "aeiou":
+        variants.add(" ".join(words[:-1] + [last[:-1] + "ies"]))
+    elif last.endswith(("s", "x", "z", "ch", "sh")):
+        variants.add(" ".join(words[:-1] + [last + "es"]))
+    elif not last.endswith("s"):
+        variants.add(" ".join(words[:-1] + [last + "s"]))
+
+    irregular_plurals = {
+        "person": "people",
+        "man": "men",
+        "woman": "women",
+        "child": "children",
+        "mouse": "mice",
+        "knife": "knives",
+    }
+    if last in irregular_plurals:
+        variants.add(" ".join(words[:-1] + [irregular_plurals[last]]))
+    return variants
+
+
+def build_canonical_synonym_map(inverse_synonym_dict):
+    canonical_to_terms = defaultdict(set)
+    for term, canonical in inverse_synonym_dict.items():
+        canonical_to_terms[canonical].add(term)
+        singular = " ".join(try_singularize(part) for part in term.split())
+        canonical_to_terms[canonical].add(singular)
+        canonical_to_terms[canonical].update(plural_variants(term))
+        canonical_to_terms[canonical].update(plural_variants(singular))
+    return {
+        canonical: sorted({term for term in terms if term}, key=lambda term: (-len(term), term))
+        for canonical, terms in canonical_to_terms.items()
+    }
+
+
+def build_token_char_spans(record):
+    token_records = record.get("token_records", []) or []
+    text_parts = []
+    spans = []
+    cursor = 0
+    for token in token_records:
+        token_text = token.get("token_text")
+        if token_text is None:
+            token_text = ""
+        token_text = str(token_text)
+        token_text = token_text.replace("▁", " ").replace("Ġ", " ").replace("Ċ", "\n")
+        start = cursor
+        text_parts.append(token_text)
+        cursor += len(token_text)
+        spans.append((start, cursor))
+    token_text = "".join(text_parts)
+    return token_text, spans
+
+
+def overlaps(span_a, span_b):
+    return span_a[0] < span_b[1] and span_b[0] < span_a[1]
+
+
+def token_indices_for_char_span(token_spans, char_start, char_end):
+    indices = []
+    for idx, (token_start, token_end) in enumerate(token_spans):
+        if token_start < char_end and char_start < token_end:
+            indices.append(idx)
+    return indices
+
+
+def bounded_context(text, start, end, window=80):
+    left = max(0, start - window)
+    right = min(len(text), end + window)
+    snippet = text[left:right].replace("\n", " ")
+    if left > 0:
+        snippet = "..." + snippet
+    if right < len(text):
+        snippet += "..."
+    return snippet
+
+
+def metric_values(tokens, key):
+    values = []
+    for token in tokens:
+        if key == "_teacher_minus_student_selected_logprob":
+            value = token_delta(token)
+        elif key == "_teacher_minus_student_entropy":
+            teacher = token.get("teacher_entropy")
+            student = token.get("student_entropy")
+            value = teacher - student if teacher is not None and student is not None else None
+        elif key == "top1_match":
+            raw = token.get("top1_match")
+            value = 1.0 if raw is True else 0.0 if raw is False else None
+        else:
+            value = token.get(key)
+        if value is not None:
+            values.append(float(value))
+    return values
+
+
+def summarize_mention_metrics(tokens):
+    student_logps = metric_values(tokens, "student_selected_logprob")
+    teacher_logps = metric_values(tokens, "teacher_selected_logprob")
+    logp_deltas = metric_values(tokens, "_teacher_minus_student_selected_logprob")
+    student_entropy = metric_values(tokens, "student_entropy")
+    teacher_entropy = metric_values(tokens, "teacher_entropy")
+    entropy_deltas = metric_values(tokens, "_teacher_minus_student_entropy")
+
+    result = {
+        "student_selected_logprob_mean": safe_mean(student_logps),
+        "teacher_selected_logprob_mean": safe_mean(teacher_logps),
+        "teacher_minus_student_selected_logprob_mean": safe_mean(logp_deltas),
+        "student_selected_logprob_sum": sum(student_logps) if student_logps else None,
+        "teacher_selected_logprob_sum": sum(teacher_logps) if teacher_logps else None,
+        "teacher_minus_student_selected_logprob_sum": sum(logp_deltas) if logp_deltas else None,
+        "student_entropy_mean": safe_mean(student_entropy),
+        "teacher_entropy_mean": safe_mean(teacher_entropy),
+        "teacher_minus_student_entropy_mean": safe_mean(entropy_deltas),
+        "student_topk_mass_mean": safe_mean(metric_values(tokens, "student_topk_mass")),
+        "teacher_topk_mass_mean": safe_mean(metric_values(tokens, "teacher_topk_mass")),
+        "student_top1_top2_margin_mean": safe_mean(metric_values(tokens, "student_top1_top2_margin")),
+        "teacher_top1_top2_margin_mean": safe_mean(metric_values(tokens, "teacher_top1_top2_margin")),
+        "topk_overlap_ratio_mean": safe_mean(metric_values(tokens, "topk_overlap_ratio")),
+        "topk_jaccard_mean": safe_mean(metric_values(tokens, "topk_jaccard")),
+        "top1_match_frac": safe_mean(metric_values(tokens, "top1_match")),
+        "selected_token_rank_in_student_topk_mean": safe_mean(
+            metric_values(tokens, "selected_token_rank_in_student_topk")
+        ),
+        "selected_token_rank_in_teacher_topk_mean": safe_mean(
+            metric_values(tokens, "selected_token_rank_in_teacher_topk")
+        ),
+    }
+    result["teacher_selected_logprob_lt_student_frac"] = safe_rate(
+        len([delta for delta in logp_deltas if delta < 0]),
+        len(logp_deltas),
+    )
+
+    token_metric_sums = {}
+    token_metric_counts = {}
+    for key in OBJECT_TOKEN_METRIC_KEYS:
+        values = metric_values(tokens, key)
+        token_metric_sums[key] = sum(values) if values else None
+        token_metric_counts[key] = len(values)
+    result["_token_metric_sums"] = token_metric_sums
+    result["_token_metric_counts"] = token_metric_counts
+    return result
+
+
+def find_object_mentions(record, canonical_synonym_map, gt_objects, gt_source, case_group):
+    token_text, token_spans = build_token_char_spans(record)
+    search_text = token_text or record.get("response_text", "")
+    if not search_text:
+        return []
+    lowered = search_text.lower()
+    token_records = record.get("token_records", []) or []
+    mentions = []
+    selected_spans_by_canonical = defaultdict(list)
+
+    candidates = []
+    for canonical, terms in canonical_synonym_map.items():
+        for term in terms:
+            if term:
+                candidates.append((canonical, term))
+    candidates.sort(key=lambda item: (-len(item[1]), item[0], item[1]))
+
+    for canonical, term in candidates:
+        escaped_term = re.escape(term).replace(r"\ ", r"\s+")
+        pattern = r"(?<![a-z0-9])" + escaped_term + r"(?![a-z0-9])"
+        for match in re.finditer(pattern, lowered):
+            char_span = (match.start(), match.end())
+            if any(overlaps(char_span, existing) for existing in selected_spans_by_canonical[canonical]):
+                continue
+            token_indices = token_indices_for_char_span(token_spans, match.start(), match.end())
+            if not token_indices:
+                continue
+            selected_spans_by_canonical[canonical].append(char_span)
+            tokens = [token_records[idx] for idx in token_indices if idx < len(token_records)]
+            if not tokens:
+                continue
+            if gt_objects:
+                object_type = "correct_object" if canonical in gt_objects else "hallucinated_object"
+            else:
+                object_type = "unknown_object"
+
+            metrics = summarize_mention_metrics(tokens)
+            mention = {
+                "image_id": get_image_id(record),
+                "global_step": record.get("global_step"),
+                "rank": record.get("rank"),
+                "sample_index_in_rank_batch": record.get("sample_index_in_rank_batch"),
+                "case_group": case_group,
+                "canonical_object": canonical,
+                "source_term": term,
+                "mention_text": search_text[match.start():match.end()],
+                "context": bounded_context(search_text, match.start(), match.end()),
+                "object_type": object_type,
+                "gt_source": gt_source,
+                "char_start": match.start(),
+                "char_end": match.end(),
+                "token_start": min(token_indices),
+                "token_end": max(token_indices) + 1,
+                "num_tokens": len(tokens),
+                "token_text": "".join(str(token.get("token_text", "")) for token in tokens),
+                "_trace_file": record.get("_trace_file"),
+            }
+            mention.update(metrics)
+            mentions.append(mention)
+
+    mentions.sort(
+        key=lambda item: (
+            item.get("char_start", 0),
+            -(item.get("char_end", 0) - item.get("char_start", 0)),
+            item.get("canonical_object", ""),
+        )
+    )
+    return mentions
+
+
 def token_delta(token_record):
     student = token_record.get("student_selected_logprob")
     teacher = token_record.get("teacher_selected_logprob")
@@ -313,6 +653,514 @@ def summarize_object_mentions(records, case_groups):
     }
 
 
+def clean_mention_for_output(mention):
+    keep_keys = [
+        "image_id",
+        "global_step",
+        "rank",
+        "sample_index_in_rank_batch",
+        "case_group",
+        "canonical_object",
+        "source_term",
+        "mention_text",
+        "context",
+        "object_type",
+        "gt_source",
+        "char_start",
+        "char_end",
+        "token_start",
+        "token_end",
+        "num_tokens",
+        "token_text",
+        "_trace_file",
+    ] + OBJECT_METRIC_KEYS
+    return {key: mention.get(key) for key in keep_keys if key in mention}
+
+
+def summarize_mention_rows(rows):
+    object_counter = Counter(row.get("canonical_object") for row in rows if row.get("canonical_object"))
+    source_term_counter = Counter(row.get("source_term") for row in rows if row.get("source_term"))
+    gt_source_counter = Counter(row.get("gt_source") for row in rows if row.get("gt_source"))
+    case_group_counter = Counter(row.get("case_group") for row in rows if row.get("case_group"))
+    trace_files = {row.get("_trace_file") for row in rows if row.get("_trace_file")}
+    image_ids = {row.get("image_id") for row in rows if row.get("image_id") is not None}
+    record_keys = {
+        (
+            row.get("image_id"),
+            row.get("global_step"),
+            row.get("rank"),
+            row.get("sample_index_in_rank_batch"),
+            row.get("_trace_file"),
+        )
+        for row in rows
+    }
+    valid_record_keys = {key for key in record_keys if any(value is not None for value in key)}
+
+    summary = {
+        "num_mentions": len(rows),
+        "num_mention_tokens": sum(row.get("num_tokens", 0) or 0 for row in rows),
+        "num_unique_images": len(image_ids),
+        "num_unique_records": len(valid_record_keys),
+        "num_unique_objects": len(object_counter),
+        "num_trace_files": len(trace_files),
+        "mean_tokens_per_mention": safe_mean(row.get("num_tokens") for row in rows),
+        "top_objects": dict(object_counter.most_common(30)),
+        "top_source_terms": dict(source_term_counter.most_common(30)),
+        "gt_source_counts": dict(gt_source_counter.most_common()),
+        "case_group_counts": dict(case_group_counter.most_common()),
+    }
+    for key in OBJECT_METRIC_KEYS:
+        summary[key] = safe_mean(row.get(key) for row in rows)
+
+    summary["teacher_penalized_mention_frac"] = safe_rate(
+        len(
+            [
+                row
+                for row in rows
+                if row.get("teacher_minus_student_selected_logprob_sum") is not None
+                and row.get("teacher_minus_student_selected_logprob_sum") < 0
+            ]
+        ),
+        len([row for row in rows if row.get("teacher_minus_student_selected_logprob_sum") is not None]),
+    )
+
+    token_weighted = {}
+    for token_key in OBJECT_TOKEN_METRIC_KEYS:
+        total = 0.0
+        count = 0
+        for row in rows:
+            sums = row.get("_token_metric_sums") or {}
+            counts = row.get("_token_metric_counts") or {}
+            value_sum = sums.get(token_key)
+            value_count = counts.get(token_key, 0) or 0
+            if value_sum is None or value_count <= 0:
+                continue
+            total += value_sum
+            count += value_count
+        if count:
+            out_key = token_key.strip("_").replace("_teacher_minus_student", "teacher_minus_student")
+            token_weighted[f"{out_key}_token_weighted_mean"] = total / count
+    summary["token_weighted_metrics"] = token_weighted
+    return summary
+
+
+def diff_summary(left, right, metric_keys):
+    if not left or not right:
+        return {}
+    diff = {}
+    for key in metric_keys:
+        left_value = left.get(key)
+        right_value = right.get(key)
+        diff[f"{key}_diff"] = (
+            left_value - right_value
+            if left_value is not None and right_value is not None
+            else None
+        )
+    return diff
+
+
+def top_mentions(rows, key, reverse=False, limit=30, object_type=None):
+    filtered = [
+        row for row in rows
+        if row.get(key) is not None and (object_type is None or row.get("object_type") == object_type)
+    ]
+    filtered.sort(key=lambda row: row.get(key), reverse=reverse)
+    return [clean_mention_for_output(row) for row in filtered[:limit]]
+
+
+def summarize_by_object(rows):
+    by_object_type = defaultdict(list)
+    for row in rows:
+        object_type = row.get("object_type", "unknown_object")
+        canonical = row.get("canonical_object", "unknown")
+        by_object_type[(object_type, canonical)].append(row)
+
+    object_summary = {}
+    for (object_type, canonical), obj_rows in sorted(by_object_type.items()):
+        object_summary.setdefault(object_type, {})[canonical] = summarize_mention_rows(obj_rows)
+    return object_summary
+
+
+def summarize_by_step(rows):
+    by_step_type = defaultdict(list)
+    for row in rows:
+        step = row.get("global_step")
+        object_type = row.get("object_type", "unknown_object")
+        by_step_type[(step, object_type)].append(row)
+
+    by_step = {}
+    for (step, object_type), step_rows in sorted(by_step_type.items(), key=lambda item: step_sort_key(item[0][0])):
+        step_key = str(step)
+        by_step.setdefault(step_key, {})[object_type] = summarize_mention_rows(step_rows)
+
+    contrast_keys = [
+        "teacher_minus_student_selected_logprob_mean",
+        "teacher_minus_student_selected_logprob_sum",
+        "teacher_selected_logprob_lt_student_frac",
+        "teacher_penalized_mention_frac",
+        "student_entropy_mean",
+        "teacher_entropy_mean",
+        "teacher_minus_student_entropy_mean",
+        "topk_overlap_ratio_mean",
+        "top1_match_frac",
+    ]
+    step_contrast = {}
+    for step_key, step_summary in by_step.items():
+        hallucinated = step_summary.get("hallucinated_object")
+        correct = step_summary.get("correct_object")
+        if hallucinated and correct:
+            step_contrast[step_key] = {
+                "hallucinated_minus_correct": diff_summary(hallucinated, correct, contrast_keys),
+                "hallucinated_num_mentions": hallucinated.get("num_mentions", 0),
+                "correct_num_mentions": correct.get("num_mentions", 0),
+            }
+    return by_step, step_contrast
+
+
+def build_selective_suppression_signal(type_summary):
+    hallucinated = type_summary.get("hallucinated_object")
+    correct = type_summary.get("correct_object")
+    if not hallucinated or not correct:
+        return {
+            "available": False,
+            "reason": "Need both hallucinated_object and correct_object mentions with GT labels.",
+        }
+
+    contrast_keys = [
+        "teacher_minus_student_selected_logprob_mean",
+        "teacher_minus_student_selected_logprob_sum",
+        "teacher_selected_logprob_lt_student_frac",
+        "teacher_penalized_mention_frac",
+        "student_entropy_mean",
+        "teacher_entropy_mean",
+        "teacher_minus_student_entropy_mean",
+        "topk_overlap_ratio_mean",
+        "top1_match_frac",
+    ]
+    contrast = diff_summary(hallucinated, correct, contrast_keys)
+    logp_gap = contrast.get("teacher_minus_student_selected_logprob_mean_diff")
+    penalized_gap = contrast.get("teacher_selected_logprob_lt_student_frac_diff")
+    mention_penalty_gap = contrast.get("teacher_penalized_mention_frac_diff")
+    return {
+        "available": True,
+        "interpretation": (
+            "Positive evidence means hallucinated objects have more negative teacher-student "
+            "logprob deltas, or a higher teacher<student penalty rate, than correct objects."
+        ),
+        "hallucinated_minus_correct": contrast,
+        "selective_logprob_suppression_signal": logp_gap is not None and logp_gap < 0,
+        "selective_teacher_lt_student_signal": penalized_gap is not None and penalized_gap > 0,
+        "selective_mention_penalty_signal": mention_penalty_gap is not None and mention_penalty_gap > 0,
+    }
+
+
+def summarize_object_trace(records, case_groups):
+    _, inverse_synonym_dict = parse_official_synonyms()
+    canonical_synonym_map = build_canonical_synonym_map(inverse_synonym_dict)
+
+    rows = []
+    gt_source_counts = Counter()
+    records_with_gt = 0
+    records_without_gt = 0
+    records_with_mentions = 0
+    records_without_mentions = 0
+    record_type_counts = Counter()
+
+    for record in records:
+        image_id = get_image_id(record)
+        case_info = case_groups.get(image_id, {}) if image_id is not None else {}
+        case_group = case_info.get("group", "unmatched_or_no_case")
+        gt_objects, gt_source = extract_gt_objects(record, case_groups, inverse_synonym_dict)
+        gt_source_counts[gt_source] += 1
+        if gt_objects:
+            records_with_gt += 1
+        else:
+            records_without_gt += 1
+
+        mentions = find_object_mentions(record, canonical_synonym_map, gt_objects, gt_source, case_group)
+        if mentions:
+            records_with_mentions += 1
+        else:
+            records_without_mentions += 1
+        for mention in mentions:
+            record_type_counts[mention.get("object_type", "unknown_object")] += 1
+        rows.extend(mentions)
+
+    by_type = defaultdict(list)
+    for row in rows:
+        by_type[row.get("object_type", "unknown_object")].append(row)
+    mention_type_summary = {
+        object_type: summarize_mention_rows(type_rows)
+        for object_type, type_rows in sorted(by_type.items())
+    }
+    by_step, step_contrast = summarize_by_step(rows)
+
+    correct_rows = [row for row in rows if row.get("object_type") == "correct_object"]
+    hallucinated_rows = [row for row in rows if row.get("object_type") == "hallucinated_object"]
+
+    return {
+        "num_object_mentions": len(rows),
+        "records_with_gt_count": records_with_gt,
+        "records_without_gt_count": records_without_gt,
+        "records_with_object_mentions_count": records_with_mentions,
+        "records_without_object_mentions_count": records_without_mentions,
+        "gt_source_counts": dict(gt_source_counts.most_common()),
+        "mention_counts_by_type": dict(record_type_counts.most_common()),
+        "mention_type_summary": mention_type_summary,
+        "correct_vs_hallucinated_signal": build_selective_suppression_signal(mention_type_summary),
+        "step_summary_by_type": by_step,
+        "step_contrast_hallucinated_minus_correct": step_contrast,
+        "object_summary_by_type": summarize_by_object(rows),
+        "top_teacher_suppressed_hallucination_mentions": top_mentions(
+            hallucinated_rows,
+            "teacher_minus_student_selected_logprob_sum",
+            reverse=False,
+            limit=30,
+        ),
+        "top_teacher_suppressed_correct_mentions": top_mentions(
+            correct_rows,
+            "teacher_minus_student_selected_logprob_sum",
+            reverse=False,
+            limit=30,
+        ),
+        "top_teacher_supported_correct_mentions": top_mentions(
+            correct_rows,
+            "teacher_minus_student_selected_logprob_sum",
+            reverse=True,
+            limit=30,
+        ),
+        "top_teacher_supported_hallucination_mentions": top_mentions(
+            hallucinated_rows,
+            "teacher_minus_student_selected_logprob_sum",
+            reverse=True,
+            limit=30,
+        ),
+    }
+
+
+def fmt_value(value, digits=4):
+    if value is None:
+        return "n/a"
+    if isinstance(value, float):
+        return f"{value:.{digits}f}"
+    return str(value)
+
+
+def markdown_table(headers, rows):
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+    for row in rows:
+        clean_row = [str(value).replace("\n", " ").replace("|", "\\|") for value in row]
+        lines.append("| " + " | ".join(clean_row) + " |")
+    return "\n".join(lines)
+
+
+def mention_summary_table_rows(type_summary):
+    rows = []
+    for object_type in ("correct_object", "hallucinated_object", "unknown_object"):
+        stats = type_summary.get(object_type)
+        if not stats:
+            continue
+        rows.append(
+            [
+                object_type,
+                stats.get("num_mentions", 0),
+                stats.get("num_unique_images", 0),
+                fmt_value(stats.get("teacher_minus_student_selected_logprob_mean")),
+                fmt_value(stats.get("teacher_minus_student_selected_logprob_sum")),
+                fmt_value(stats.get("teacher_selected_logprob_lt_student_frac")),
+                fmt_value(stats.get("teacher_penalized_mention_frac")),
+                fmt_value(stats.get("student_entropy_mean")),
+                fmt_value(stats.get("teacher_entropy_mean")),
+                fmt_value(stats.get("topk_overlap_ratio_mean")),
+                fmt_value(stats.get("top1_match_frac")),
+            ]
+        )
+    return rows
+
+
+def step_contrast_table_rows(step_contrast):
+    rows = []
+    for step, stats in sorted(step_contrast.items(), key=lambda item: step_sort_key(item[0])):
+        diff = stats.get("hallucinated_minus_correct", {})
+        rows.append(
+            [
+                step,
+                stats.get("hallucinated_num_mentions", 0),
+                stats.get("correct_num_mentions", 0),
+                fmt_value(diff.get("teacher_minus_student_selected_logprob_mean_diff")),
+                fmt_value(diff.get("teacher_minus_student_selected_logprob_sum_diff")),
+                fmt_value(diff.get("teacher_selected_logprob_lt_student_frac_diff")),
+                fmt_value(diff.get("teacher_penalized_mention_frac_diff")),
+                fmt_value(diff.get("teacher_minus_student_entropy_mean_diff")),
+                fmt_value(diff.get("topk_overlap_ratio_mean_diff")),
+                fmt_value(diff.get("top1_match_frac_diff")),
+            ]
+        )
+    return rows
+
+
+def mention_example_table_rows(mentions, limit=20):
+    rows = []
+    for mention in mentions[:limit]:
+        rows.append(
+            [
+                mention.get("global_step"),
+                mention.get("image_id"),
+                mention.get("canonical_object"),
+                mention.get("mention_text"),
+                fmt_value(mention.get("teacher_minus_student_selected_logprob_sum")),
+                fmt_value(mention.get("teacher_minus_student_selected_logprob_mean")),
+                fmt_value(mention.get("student_entropy_mean")),
+                fmt_value(mention.get("teacher_entropy_mean")),
+                mention.get("context", "")[:180],
+            ]
+        )
+    return rows
+
+
+def write_markdown_summary(output, output_md):
+    object_trace = output.get("object_trace_summary", {})
+    type_summary = object_trace.get("mention_type_summary", {})
+    signal = object_trace.get("correct_vs_hallucinated_signal", {})
+    lines = [
+        "# OPD Object-Level Trace Summary",
+        "",
+        "## Inputs",
+        "",
+        f"- trace_dir: `{output.get('trace_dir')}`",
+        f"- experiment_name: `{output.get('experiment_name')}`",
+        f"- case_analysis: `{output.get('case_analysis')}`",
+        f"- records: {output.get('num_records')}  tokens: {output.get('num_tokens')}  "
+        f"unique_images: {output.get('num_unique_images')}",
+        "",
+        "## GT Coverage",
+        "",
+        f"- records_with_gt: {object_trace.get('records_with_gt_count')}",
+        f"- records_without_gt: {object_trace.get('records_without_gt_count')}",
+        f"- records_with_object_mentions: {object_trace.get('records_with_object_mentions_count')}",
+        f"- records_without_object_mentions: {object_trace.get('records_without_object_mentions_count')}",
+        f"- gt_source_counts: `{json.dumps(object_trace.get('gt_source_counts', {}), ensure_ascii=False)}`",
+        "",
+        "## Correct vs Hallucinated Mentions",
+        "",
+        markdown_table(
+            [
+                "type",
+                "mentions",
+                "images",
+                "mean teacher-student logp",
+                "mean mention-sum teacher-student logp",
+                "teacher<student frac",
+                "penalized mention frac",
+                "student entropy",
+                "teacher entropy",
+                "topk overlap",
+                "top1 match",
+            ],
+            mention_summary_table_rows(type_summary),
+        ),
+        "",
+        "## Selective Suppression Signal",
+        "",
+    ]
+
+    if signal.get("available"):
+        contrast = signal.get("hallucinated_minus_correct", {})
+        lines.extend(
+            [
+                "- selective_logprob_suppression_signal: "
+                f"{signal.get('selective_logprob_suppression_signal')}",
+                "- selective_teacher_lt_student_signal: "
+                f"{signal.get('selective_teacher_lt_student_signal')}",
+                "- selective_mention_penalty_signal: "
+                f"{signal.get('selective_mention_penalty_signal')}",
+                "- hallucinated_minus_correct teacher-student logp mean diff: "
+                f"{fmt_value(contrast.get('teacher_minus_student_selected_logprob_mean_diff'))}",
+                "- hallucinated_minus_correct teacher<student frac diff: "
+                f"{fmt_value(contrast.get('teacher_selected_logprob_lt_student_frac_diff'))}",
+                "- hallucinated_minus_correct entropy diff: "
+                f"{fmt_value(contrast.get('teacher_minus_student_entropy_mean_diff'))}",
+            ]
+        )
+    else:
+        lines.append(f"- unavailable: {signal.get('reason')}")
+
+    step_rows = step_contrast_table_rows(object_trace.get("step_contrast_hallucinated_minus_correct", {}))
+    if step_rows:
+        lines.extend(
+            [
+                "",
+                "## Step Trend: Hallucinated Minus Correct",
+                "",
+                markdown_table(
+                    [
+                        "step",
+                        "halluc mentions",
+                        "correct mentions",
+                        "mean logp gap",
+                        "mean mention-sum logp gap",
+                        "teacher<student gap",
+                        "penalized mention gap",
+                        "entropy gap",
+                        "topk overlap gap",
+                        "top1 match gap",
+                    ],
+                    step_rows,
+                ),
+            ]
+        )
+
+    examples = [
+        (
+            "Top Teacher-Suppressed Hallucination Mentions",
+            object_trace.get("top_teacher_suppressed_hallucination_mentions", []),
+        ),
+        (
+            "Top Teacher-Suppressed Correct Mentions",
+            object_trace.get("top_teacher_suppressed_correct_mentions", []),
+        ),
+        (
+            "Top Teacher-Supported Correct Mentions",
+            object_trace.get("top_teacher_supported_correct_mentions", []),
+        ),
+        (
+            "Top Teacher-Supported Hallucination Mentions",
+            object_trace.get("top_teacher_supported_hallucination_mentions", []),
+        ),
+    ]
+    for title, mentions in examples:
+        if not mentions:
+            continue
+        lines.extend(
+            [
+                "",
+                f"## {title}",
+                "",
+                markdown_table(
+                    [
+                        "step",
+                        "image_id",
+                        "object",
+                        "mention",
+                        "sum logp delta",
+                        "mean logp delta",
+                        "student entropy",
+                        "teacher entropy",
+                        "context",
+                    ],
+                    mention_example_table_rows(mentions),
+                ),
+            ]
+        )
+
+    os.makedirs(os.path.dirname(os.path.abspath(output_md)), exist_ok=True)
+    with open(output_md, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def summarize_trace_coverage(records):
     by_step = defaultdict(list)
     by_rank = Counter()
@@ -325,14 +1173,6 @@ def summarize_trace_coverage(records):
         trace_file = record.get("_trace_file")
         if trace_file:
             by_file[trace_file] += 1
-
-    def step_sort_key(step):
-        if step is None:
-            return (-1, "")
-        try:
-            return (0, int(step))
-        except (TypeError, ValueError):
-            return (1, str(step))
 
     step_summary = {}
     for step, step_records in sorted(by_step.items(), key=lambda item: step_sort_key(item[0])):
@@ -422,6 +1262,7 @@ def main():
     )
     parser.add_argument("--case-analysis", help="Optional all_cases_sorted.json for outcome grouping")
     parser.add_argument("--output-json", required=True, help="Where to save summary JSON")
+    parser.add_argument("--output-md", help="Optional Markdown report path")
     parser.add_argument("--max-records", type=int, default=0, help="Debug cap; 0 = all")
     args = parser.parse_args()
 
@@ -460,6 +1301,7 @@ def main():
         raise SystemExit(f"No trace records found under {trace_dir}.{hint}")
     case_groups = load_case_groups(args.case_analysis)
     tokens = flatten_token_records(records, case_groups)
+    object_trace_summary = summarize_object_trace(records, case_groups)
 
     image_ids = [get_image_id(record) for record in records]
     matched_records = sum(1 for image_id in image_ids if image_id in case_groups)
@@ -484,11 +1326,14 @@ def main():
         "record_group_summary": summarize_records(records, case_groups),
         "token_group_summary": summarize_tokens(tokens),
         "object_mention_summary": summarize_object_mentions(records, case_groups),
+        "object_trace_summary": object_trace_summary,
     }
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output_json)), exist_ok=True)
     with open(args.output_json, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
+    if args.output_md:
+        write_markdown_summary(output, args.output_md)
 
     print(f"Loaded trace records: {len(records)}")
     print(f"Loaded tokens: {len(tokens)}")
@@ -502,6 +1347,35 @@ def main():
     if skipped_non_trace_records:
         print(f"Skipped non-trace JSON records: {skipped_non_trace_records}")
     print(f"Matched records to case analysis: {matched_records}/{len(records)}")
+    print(
+        "Object-level GT coverage: "
+        f"with_gt={object_trace_summary['records_with_gt_count']} "
+        f"without_gt={object_trace_summary['records_without_gt_count']} "
+        f"gt_sources={object_trace_summary['gt_source_counts']}"
+    )
+    object_type_summary = object_trace_summary.get("mention_type_summary", {})
+    for object_type in ("correct_object", "hallucinated_object", "unknown_object"):
+        stats = object_type_summary.get(object_type)
+        if not stats:
+            continue
+        print(
+            f"{object_type}: mentions={stats['num_mentions']} "
+            f"teacher-student logp mean={fmt_value(stats.get('teacher_minus_student_selected_logprob_mean'))} "
+            f"teacher<student={fmt_value(stats.get('teacher_selected_logprob_lt_student_frac'))} "
+            f"student_entropy={fmt_value(stats.get('student_entropy_mean'))} "
+            f"teacher_entropy={fmt_value(stats.get('teacher_entropy_mean'))}"
+        )
+    signal = object_trace_summary.get("correct_vs_hallucinated_signal", {})
+    if signal.get("available"):
+        contrast = signal.get("hallucinated_minus_correct", {})
+        print(
+            "Hallucinated-correct contrast: "
+            f"logp_gap={fmt_value(contrast.get('teacher_minus_student_selected_logprob_mean_diff'))} "
+            f"teacher<student_gap={fmt_value(contrast.get('teacher_selected_logprob_lt_student_frac_diff'))} "
+            f"entropy_gap={fmt_value(contrast.get('teacher_minus_student_entropy_mean_diff'))}"
+        )
+    else:
+        print(f"Hallucinated-correct contrast unavailable: {signal.get('reason')}")
     for group, stats in output["token_group_summary"].items():
         delta = stats["teacher_minus_student_selected_logprob_mean"]
         lower = stats["teacher_selected_logprob_lt_student_frac"]
@@ -512,6 +1386,8 @@ def main():
             f"teacher<student={lower:.3f} overlap={overlap if overlap is not None else 'n/a'}"
         )
     print(f"Saved summary to: {args.output_json}")
+    if args.output_md:
+        print(f"Saved Markdown report to: {args.output_md}")
 
 
 if __name__ == "__main__":
