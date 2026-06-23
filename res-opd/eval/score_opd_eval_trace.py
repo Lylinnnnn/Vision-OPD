@@ -1,14 +1,15 @@
 """
-Offline OPD scorer for eval/test captions.
+Offline OPD scorer for eval/test or mini-eval captions.
 
 This script does not generate captions. It reads fixed captions from
-eval_chair.py outputs and runs two forced forwards with the same checkpoint:
+eval_chair.py outputs or verl validation generation dumps, then runs two
+forced forwards with the same checkpoint:
 
   - student view: eval-time student image degradation
   - teacher view: low-resolution teacher image degradation
 
 The output JSONL is compatible with analyze_opd_trace.py and can be joined with
-case_analysis by image_id because it is computed on the eval/test split.
+case_analysis by image_id when the scored split matches the case-analysis split.
 """
 
 import argparse
@@ -32,14 +33,34 @@ DEFAULT_COCO_VAL_ROOT = "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Forced-score eval captions with OPD student/teacher views")
+    parser = argparse.ArgumentParser(description="Forced-score eval/mini-eval captions with OPD student/teacher views")
     parser.add_argument("--model-path", required=True, help="Merged HF checkpoint path")
-    parser.add_argument("--eval-results", required=True, help="eval_chair.py eval_results.jsonl")
+    parser.add_argument(
+        "--eval-results",
+        required=True,
+        help="eval_chair.py eval_results.jsonl or verl validation_data_dir/<step>.jsonl",
+    )
     parser.add_argument("--output-jsonl", required=True, help="Where to write OPD eval trace JSONL")
     parser.add_argument("--test-json", help="Optional test.json for image_path/GT fallback")
     parser.add_argument("--case-analysis", help="Optional all_cases_sorted.json; used for baseline captions/groups")
     parser.add_argument("--image-root", default=DEFAULT_COCO_VAL_ROOT, help="Fallback COCO val image root")
     parser.add_argument("--prompt", default=PROMPT_TEXT, help="Prompt used for forced scoring")
+    parser.add_argument(
+        "--trace-scope",
+        default="eval",
+        help="Scope label written to output records, e.g. eval, test, or mini_eval",
+    )
+    parser.add_argument(
+        "--checkpoint-step",
+        type=int,
+        default=None,
+        help="Global/checkpoint step for output records. Defaults to model path, then eval-results file name.",
+    )
+    parser.add_argument(
+        "--caption-field",
+        default="auto",
+        help="Caption field to score. auto tries generated_caption, output, response_text, caption.",
+    )
     parser.add_argument("--degradation-mode", choices=["square", "original"], default="square")
     parser.add_argument("--student-px", type=int, default=0)
     parser.add_argument("--teacher-px", type=int, default=0)
@@ -70,7 +91,116 @@ def parse_checkpoint_step(path):
         match = re.match(r"global_step_(\d+)$", part)
         if match:
             return int(match.group(1))
-    return 0
+    basename = os.path.basename(path)
+    match = re.match(r"(\d+)(?:\.[^.]+)?$", basename)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def as_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_metadata(record):
+    metadata = record.get("metadata")
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def get_extra_info(record):
+    metadata = get_metadata(record)
+    for value in (record.get("extra_info"), metadata.get("extra_info")):
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def first_nonempty(*values):
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and not value:
+            continue
+        if isinstance(value, (list, tuple, dict, set)) and not value:
+            continue
+        return value
+    return None
+
+
+def record_value(record, *names):
+    metadata = get_metadata(record)
+    extra_info = get_extra_info(record)
+    for name in names:
+        value = first_nonempty(record.get(name), metadata.get(name), extra_info.get(name))
+        if value is not None:
+            return value
+    return None
+
+
+def infer_caption(record, caption_field):
+    if caption_field != "auto":
+        return record.get(caption_field)
+    for field in ("generated_caption", "output", "response_text", "caption"):
+        value = record.get(field)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def normalize_generation_record(record, test_index, caption_field):
+    metadata = get_metadata(record)
+    extra_info = get_extra_info(record)
+    image_id = as_int(record_value(record, "image_id"))
+    indexed = test_index.get(image_id, {}) if image_id is not None else {}
+    file_name = first_nonempty(
+        record_value(record, "file_name"),
+        indexed.get("file_name"),
+    )
+    image_path = first_nonempty(
+        record_value(record, "image_path"),
+        indexed.get("image_path"),
+    )
+    gt_objects = first_nonempty(
+        record_value(record, "gt_objects", "objects", "present_objects", "coco_objects", "categories"),
+        indexed.get("gt_objects"),
+        indexed.get("objects"),
+    ) or []
+    gt_captions = first_nonempty(
+        record_value(record, "gt_captions", "captions"),
+        indexed.get("gt_captions"),
+        indexed.get("captions"),
+    ) or []
+    data_source = first_nonempty(
+        record_value(record, "data_source"),
+        indexed.get("data_source"),
+        "coco_res_opd_eval",
+    )
+    generation_step = first_nonempty(record.get("global_step"), record.get("step"), metadata.get("global_step"))
+    generation_step = as_int(generation_step)
+    uid = first_nonempty(record_value(record, "uid"), f"{data_source}:{image_id}:{generation_step}")
+    caption_source = first_nonempty(record.get("caption_source"), metadata.get("caption_source"), "model_caption")
+
+    normalized = dict(record)
+    normalized.update(
+        {
+            "uid": uid,
+            "data_source": data_source,
+            "image_id": image_id,
+            "file_name": file_name,
+            "image_path": image_path,
+            "gt_objects": gt_objects,
+            "gt_captions": gt_captions,
+            "generated_caption": infer_caption(record, caption_field),
+            "caption_source": caption_source,
+            "generation_step": generation_step,
+            "metadata": metadata,
+            "extra_info": extra_info,
+        }
+    )
+    return normalized
 
 
 def make_square_degraded_image(image_path, px, target_px):
@@ -125,7 +255,16 @@ def load_test_index(test_json):
         return {}
     with open(test_json, "r", encoding="utf-8") as f:
         samples = json.load(f)
-    return {int(sample["image_id"]): sample for sample in samples if sample.get("image_id") is not None}
+    if isinstance(samples, dict):
+        samples = samples.get("samples") or samples.get("data") or list(samples.values())
+    index = {}
+    for sample in samples:
+        if not isinstance(sample, dict):
+            continue
+        image_id = as_int(sample.get("image_id"))
+        if image_id is not None:
+            index[image_id] = sample
+    return index
 
 
 def load_case_index(case_analysis):
@@ -137,20 +276,18 @@ def load_case_index(case_analysis):
 
 
 def resolve_image_path(record, test_index, image_root):
-    image_path = record.get("image_path")
+    image_path = record_value(record, "image_path")
     if image_path and os.path.exists(image_path):
         return image_path
-    image_id = record.get("image_id")
-    try:
-        image_id = int(image_id)
-    except (TypeError, ValueError):
-        image_id = None
+    image_id = as_int(record.get("image_id"))
     if image_id is not None:
         sample = test_index.get(image_id, {})
         image_path = sample.get("image_path")
         if image_path and os.path.exists(image_path):
             return image_path
-    file_name = record.get("file_name") or (test_index.get(image_id, {}) if image_id is not None else {}).get("file_name")
+    file_name = record_value(record, "file_name") or (
+        test_index.get(image_id, {}) if image_id is not None else {}
+    ).get("file_name")
     if file_name:
         candidate = os.path.join(image_root, os.path.basename(str(file_name)))
         if os.path.exists(candidate):
@@ -400,7 +537,8 @@ def existing_trace_keys(path):
     for record in load_jsonl(path):
         image_id = record.get("metadata", {}).get("image_id") or record.get("image_id")
         caption_source = record.get("caption_source") or record.get("metadata", {}).get("caption_source")
-        keys.add((image_id, caption_source))
+        step = record.get("checkpoint_step") or record.get("global_step")
+        keys.add((as_int(step), as_int(image_id), caption_source))
     return keys
 
 
@@ -411,12 +549,9 @@ def iter_caption_jobs(eval_records, case_index, max_samples, score_baseline):
             break
         caption = record.get("generated_caption", "")
         if caption and not str(caption).startswith("[ERROR]"):
-            yield record, "model_caption", caption
+            yield record, record.get("caption_source") or "model_caption", caption
         image_id = record.get("image_id")
-        try:
-            image_id = int(image_id)
-        except (TypeError, ValueError):
-            image_id = None
+        image_id = as_int(image_id)
         case = case_index.get(image_id, {}) if image_id is not None else {}
         baseline_caption = case.get("baseline_caption")
         if score_baseline and baseline_caption:
@@ -429,11 +564,18 @@ def main():
     if args.overwrite and os.path.exists(args.output_jsonl):
         os.remove(args.output_jsonl)
 
-    eval_records = load_jsonl(args.eval_results)
     test_index = load_test_index(args.test_json)
+    eval_records = [
+        normalize_generation_record(record, test_index, args.caption_field)
+        for record in load_jsonl(args.eval_results)
+    ]
     case_index = load_case_index(args.case_analysis)
     done_keys = existing_trace_keys(args.output_jsonl)
-    checkpoint_step = parse_checkpoint_step(args.model_path)
+    checkpoint_step_default = (
+        args.checkpoint_step
+        if args.checkpoint_step is not None
+        else parse_checkpoint_step(args.model_path) or parse_checkpoint_step(args.eval_results) or 0
+    )
     model, processor, device = load_model_and_processor(args.model_path, args.torch_dtype)
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output_jsonl)), exist_ok=True)
@@ -450,7 +592,11 @@ def main():
             args.score_baseline_caption,
         ):
             image_id = record.get("image_id")
-            key = (image_id, caption_source)
+            record_step = record.get("generation_step")
+            checkpoint_step = args.checkpoint_step if args.checkpoint_step is not None else checkpoint_step_default
+            if checkpoint_step == 0 and record_step is not None:
+                checkpoint_step = record_step
+            key = (as_int(checkpoint_step), as_int(image_id), caption_source)
             if key in done_keys:
                 skipped += 1
                 continue
@@ -460,7 +606,8 @@ def main():
                 failures += 1
                 continue
 
-            case = case_index.get(int(image_id), {}) if image_id is not None and str(image_id).isdigit() else {}
+            image_id_int = as_int(image_id)
+            case = case_index.get(image_id_int, {}) if image_id_int is not None else {}
             try:
                 student_image = load_view_image(
                     image_path,
@@ -507,9 +654,9 @@ def main():
                 continue
 
             metadata = {
-                "uid": f"eval:{image_id}:{caption_source}",
+                "uid": record.get("uid") or f"{args.trace_scope}:{image_id}:{caption_source}:step{checkpoint_step}",
                 "index": record.get("index"),
-                "data_source": "coco_res_opd_eval",
+                "data_source": record.get("data_source") or "coco_res_opd_eval",
                 "image_id": image_id,
                 "file_name": record.get("file_name"),
                 "caption_source": caption_source,
@@ -523,10 +670,11 @@ def main():
                     "objects": record.get("gt_objects", []) or case.get("gt_objects", []),
                     "captions": record.get("gt_captions", []),
                     "caption_source": caption_source,
+                    "generation_step": record.get("generation_step"),
                 },
             }
             out = {
-                "trace_scope": "eval",
+                "trace_scope": args.trace_scope,
                 "global_step": checkpoint_step,
                 "checkpoint_step": checkpoint_step,
                 "rank": 0,

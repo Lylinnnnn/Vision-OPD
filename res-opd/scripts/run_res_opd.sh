@@ -163,6 +163,7 @@ esac
 # --- Data paths ---
 DATA_DIR="${RES_OPD_ROOT}/data"
 TASK_TRAIN_FILE="${DATA_DIR}/train.parquet"
+TASK_VAL_FILE="${DATA_DIR}/val.parquet"
 CUSTOM_DATASET_PATH="${RES_OPD_ROOT}/res_opd_dataset.py"
 
 # --- Experiment naming ---
@@ -182,6 +183,10 @@ PROJECT_NAME="Res-OPD"
 TRAINER_DEFAULT_LOCAL_DIR="${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
 TRAINER_ROLLOUT_DATA_DIR="${RES_OPD_ROOT}/rollouts/${EXPERIMENT_NAME}"
 OPD_TRACE_DIR="${OPD_TRACE_DIR:-${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}}"
+OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-False}"
+OPD_MINI_EVAL_GENERATION_DIR="${OPD_MINI_EVAL_GENERATION_DIR:-${RES_OPD_ROOT}/mini_eval_generations/${EXPERIMENT_NAME}}"
+OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-50}"
+OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-5}"
 export EXPERIMENT="$EXPERIMENT_NAME"
 WATCHER_SCRIPT="${RES_OPD_ROOT}/scripts/ckpt_upload_watcher.sh"
 WATCHER_PID_FILE="${TRAINER_DEFAULT_LOCAL_DIR}/.watcher.pid"
@@ -196,6 +201,16 @@ is_truthy() {
             ;;
     esac
 }
+
+if is_truthy "$OPD_MINI_EVAL_TRACE"; then
+    TRAINER_VALIDATION_DATA_DIR="$OPD_MINI_EVAL_GENERATION_DIR"
+    TRAINER_TEST_FREQ="${TEST_FREQ:-$OPD_MINI_EVAL_TEST_FREQ}"
+    DATA_VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:-$OPD_MINI_EVAL_MAX_SAMPLES}"
+else
+    TRAINER_VALIDATION_DATA_DIR="${TRAINER_VALIDATION_DATA_DIR:-null}"
+    TRAINER_TEST_FREQ="${TEST_FREQ:-20}"
+    DATA_VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:--1}"
+fi
 
 delete_experiment_dir() {
     local label="$1"
@@ -353,10 +368,15 @@ sync_training_artifacts_to_oss() {
         echo "checkpoint_dir=${TRAINER_DEFAULT_LOCAL_DIR}"
         echo "rollout_dir=${TRAINER_ROLLOUT_DATA_DIR}"
         echo "trace_dir=${OPD_TRACE_DIR}"
+        echo "mini_eval_generation_dir=${OPD_MINI_EVAL_GENERATION_DIR}"
+        echo "mini_eval_trace_enabled=${OPD_MINI_EVAL_TRACE}"
     } > "$manifest_path"
 
     upload_file_to_oss "manifest" "$manifest_path" "${oss_artifact_path}/manifest.txt"
     upload_dir_to_oss "rollouts" "$TRAINER_ROLLOUT_DATA_DIR" "${oss_artifact_path}/rollouts"
+    upload_dir_to_oss "mini-eval generations" \
+        "$OPD_MINI_EVAL_GENERATION_DIR" \
+        "${oss_artifact_path}/mini_eval_generations"
     upload_file_to_oss "trainer latest checkpoint marker" \
         "${TRAINER_DEFAULT_LOCAL_DIR}/latest_checkpointed_iteration.txt" \
         "${oss_artifact_path}/checkpoint_metadata/latest_checkpointed_iteration.txt"
@@ -386,6 +406,14 @@ sync_training_artifacts_to_oss() {
         stop_experiment_watcher
         delete_experiment_dir "checkpoint dir" "$TRAINER_DEFAULT_LOCAL_DIR" "${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
         delete_experiment_dir "rollout dir" "$TRAINER_ROLLOUT_DATA_DIR" "${RES_OPD_ROOT}/rollouts/${EXPERIMENT_NAME}"
+        if [[ "$OPD_MINI_EVAL_GENERATION_DIR" == "${RES_OPD_ROOT}/mini_eval_generations/${EXPERIMENT_NAME}" ]]; then
+            delete_experiment_dir \
+                "mini-eval generation dir" \
+                "$OPD_MINI_EVAL_GENERATION_DIR" \
+                "${RES_OPD_ROOT}/mini_eval_generations/${EXPERIMENT_NAME}"
+        else
+            echo "Skipping custom mini-eval generation dir cleanup: $OPD_MINI_EVAL_GENERATION_DIR"
+        fi
         if is_truthy "$POST_TRAIN_CLEAN_LOGS"; then
             rm -f -- "${RES_OPD_ROOT}/logs/${EXPERIMENT_NAME}.log"
             rm -f -- "${RES_OPD_ROOT}/logs/ckpt_watcher_${EXPERIMENT_NAME}.log"
@@ -407,9 +435,22 @@ if is_truthy "$FORCE_FRESH_START"; then
     fi
     delete_experiment_dir "checkpoint dir" "$TRAINER_DEFAULT_LOCAL_DIR" "${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
     delete_experiment_dir "rollout dir" "$TRAINER_ROLLOUT_DATA_DIR" "${RES_OPD_ROOT}/rollouts/${EXPERIMENT_NAME}"
+    if is_truthy "$OPD_MINI_EVAL_TRACE"; then
+        if [[ "$OPD_MINI_EVAL_GENERATION_DIR" == "${RES_OPD_ROOT}/mini_eval_generations/${EXPERIMENT_NAME}" ]]; then
+            delete_experiment_dir \
+                "mini-eval generation dir" \
+                "$OPD_MINI_EVAL_GENERATION_DIR" \
+                "${RES_OPD_ROOT}/mini_eval_generations/${EXPERIMENT_NAME}"
+        else
+            echo "  Skipping custom mini-eval generation dir cleanup: $OPD_MINI_EVAL_GENERATION_DIR"
+        fi
+    fi
 fi
 
 mkdir -p "$TRAINER_ROLLOUT_DATA_DIR"
+if is_truthy "$OPD_MINI_EVAL_TRACE"; then
+    mkdir -p "$OPD_MINI_EVAL_GENERATION_DIR"
+fi
 
 EXTRA_ARGS=("$@")
 
@@ -456,6 +497,11 @@ if [[ ! -f "$TASK_TRAIN_FILE" ]]; then
     echo "Run: python res-opd/scripts/prepare_data.py --data-dir $DATA_DIR" >&2
     exit 1
 fi
+if [[ ! -f "$TASK_VAL_FILE" ]]; then
+    echo "Error: Validation data not found at $TASK_VAL_FILE" >&2
+    echo "Run: python res-opd/scripts/prepare_data.py --data-dir $DATA_DIR" >&2
+    exit 1
+fi
 if [[ ! -f "$CUSTOM_DATASET_PATH" ]]; then
     echo "Error: Custom dataset not found at $CUSTOM_DATASET_PATH" >&2
     exit 1
@@ -479,6 +525,8 @@ echo "Batch size:       $TRAIN_BATCH_SIZE"
 echo "OPD metrics:      $OPD_TRAIN_METRICS (entropy curve=$OPD_METRICS_ENTROPY)"
 echo "OPD token trace:  $OPD_TRACE_TOKEN (every ${OPD_TRACE_EVERY_N_STEPS} steps, max ${OPD_TRACE_MAX_SAMPLES}/rank, topk=${OPD_TRACE_TOPK})"
 echo "Trace dir:        $OPD_TRACE_DIR"
+echo "Mini-eval trace:  $OPD_MINI_EVAL_TRACE (test_freq=$TRAINER_TEST_FREQ, max_samples=$DATA_VAL_MAX_SAMPLES)"
+echo "Mini-eval gen:    $TRAINER_VALIDATION_DATA_DIR"
 echo "Resume mode:      $TRAINER_RESUME_MODE (force fresh=$FORCE_FRESH_START)"
 echo "OSS base:         $OSS_BASE"
 echo "Post-train OSS:   sync=$POST_TRAIN_SYNC_TO_OSS clean_local=$POST_TRAIN_CLEAN_LOCAL"
@@ -495,8 +543,10 @@ PYTHON_BIN="/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3"
 set +e
 "$PYTHON_BIN" -m verl.trainer.main_ppo --config-name "$CONFIG_NAME" \
     data.train_files="[\"$TASK_TRAIN_FILE\"]" \
-    data.val_files="[\"${RES_OPD_ROOT}/data/val.parquet\"]" \
+    data.val_files="[\"$TASK_VAL_FILE\"]" \
     data.val_batch_size=50 \
+    data.val_max_samples=$DATA_VAL_MAX_SAMPLES \
+    data.validation_shuffle=False \
     data.filter_overlong_prompts=False \
     data.max_prompt_length=$MAX_PROMPT_LENGTH \
     data.max_response_length=$MAX_RESPONSE_LENGTH \
@@ -580,7 +630,8 @@ set +e
     trainer.n_gpus_per_node=$TRAINER_N_GPUS_PER_NODE \
     trainer.nnodes=$TRAINER_NNODES \
     trainer.save_freq=$TRAINER_SAVE_FREQ \
-    trainer.test_freq="${TEST_FREQ:-20}" \
+    trainer.test_freq="$TRAINER_TEST_FREQ" \
+    trainer.validation_data_dir="$TRAINER_VALIDATION_DATA_DIR" \
     trainer.resume_mode=$TRAINER_RESUME_MODE \
     +trainer.save_at_epoch_end="${SAVE_AT_EPOCH_END:-True}" \
     +trainer.test_at_epoch_end="${TEST_AT_EPOCH_END:-False}" \

@@ -52,6 +52,144 @@ Important files:
 `compact_summary` is regenerated at the end of every run. If one benchmark
 fails, completed outputs from earlier benchmarks are kept and summarized.
 
+## OPD Student/Teacher Distribution Trace
+
+There are two related but different trace workflows.
+
+### Post-Merge Test/Eval Trace
+
+Use this when a checkpoint has already been merged and `eval_chair.py` has
+produced `eval_results.jsonl` on the test split. The scorer does not run vLLM
+generation again. It reads fixed captions and runs forced HF forwards with the
+student image view and the teacher image view, then writes token-level
+student/teacher logprob, top-k, and optional entropy records.
+
+One-command path through `eval_after_merge.sh`:
+
+```bash
+EVAL_MODE=chair \
+EVAL_OPD_TRACE=True \
+EVAL_OPD_TRACE_TOPK=100 \
+EVAL_OPD_TRACE_ENTROPY=True \
+EVAL_OPD_TRACE_CASE_ANALYSIS=res-opd/eval_results/v2/case_analysis/sr1.0-tr0.25_vs_baseline/all_cases_sorted.json \
+bash res-opd/scripts/eval_after_merge.sh <merged_checkpoint_path> 0 v2 chair
+```
+
+If `eval_results.jsonl` already exists and you only want the student/teacher
+distribution trace, run the scorer directly:
+
+```bash
+python res-opd/eval/score_opd_eval_trace.py \
+  --model-path <merged_checkpoint_path> \
+  --eval-results <eval_results.jsonl> \
+  --output-jsonl <output_dir>/opd_eval_trace.jsonl \
+  --case-analysis res-opd/eval_results/v2/case_analysis/sr1.0-tr0.25_vs_baseline/all_cases_sorted.json \
+  --degradation-mode original \
+  --student-ratio 1.0 \
+  --teacher-ratio 0.25 \
+  --topk 100 \
+  --entropy \
+  --trace-scope eval
+
+python res-opd/eval/analyze_opd_trace.py \
+  --trace-dir <output_dir>/opd_eval_trace.jsonl \
+  --case-analysis res-opd/eval_results/v2/case_analysis/sr1.0-tr0.25_vs_baseline/all_cases_sorted.json \
+  --output-json <output_dir>/opd_eval_trace_summary.json \
+  --output-md <output_dir>/opd_eval_trace_summary.md
+```
+
+For a quick smoke test, use `--topk 20 --max-samples 100` first. For the three
+original-ratio teacher settings, change both `--teacher-ratio` and the
+case-analysis directory:
+
+```text
+tr0.25 -> --teacher-ratio 0.25 -> case_analysis/sr1.0-tr0.25_vs_baseline/
+tr0.5  -> --teacher-ratio 0.5  -> case_analysis/sr1.0-tr0.5_vs_baseline/
+tr0.75 -> --teacher-ratio 0.75 -> case_analysis/sr1.0-tr0.75_vs_baseline/
+```
+
+The most important summary fields for selective hallucination suppression are:
+
+- `object_trace_summary.mention_type_summary.correct_object`
+- `object_trace_summary.mention_type_summary.hallucinated_object`
+- `object_trace_summary.correct_vs_hallucinated_signal`
+- `object_trace_summary.step_contrast_hallucinated_minus_correct`
+
+Positive evidence means hallucinated-object mentions have a more negative
+`teacher_minus_student_selected_logprob_mean`, or a higher
+`teacher_selected_logprob_lt_student_frac`, than correct-object mentions.
+
+### Training Mini-Eval Generations
+
+Use this when you want step-by-step changes during training. The training loop
+uses the fixed `res-opd/data/val.parquet` split, not the current train batch.
+At every validation step it writes raw mini-eval generations to:
+
+```text
+res-opd/mini_eval_generations/<experiment_name>/<global_step>.jsonl
+```
+
+These files are light text dumps with captions and metadata. They are not the
+large token-level forced-scoring traces yet. After a checkpoint is merged, feed
+the corresponding mini-eval generation file to `score_opd_eval_trace.py` with
+`--trace-scope mini_eval`.
+
+Recommended training knobs for a 2-epoch run:
+
+```bash
+TOTAL_EPOCHS=2 \
+OPD_MINI_EVAL_TRACE=True \
+OPD_MINI_EVAL_TEST_FREQ=10 \
+OPD_MINI_EVAL_MAX_SAMPLES=50 \
+VAL_N=3 \
+bash res-opd/scripts/run_res_opd.sh
+```
+
+For a 1-epoch sanity run, use `OPD_MINI_EVAL_TEST_FREQ=5` to get enough points.
+For 2 epochs, `OPD_MINI_EVAL_TEST_FREQ=10` is usually enough. The raw generation
+files remain small; the expensive part is the later forced scoring.
+
+Example forced scoring for one mini-eval step:
+
+```bash
+python res-opd/eval/score_opd_eval_trace.py \
+  --model-path <merged_checkpoint_path>/global_step_50 \
+  --eval-results res-opd/mini_eval_generations/<experiment_name>/50.jsonl \
+  --output-jsonl res-opd/eval_results/<version>/<experiment_name>_mini_eval/opd_trace_steps.jsonl \
+  --checkpoint-step 50 \
+  --trace-scope mini_eval \
+  --degradation-mode original \
+  --student-ratio 1.0 \
+  --teacher-ratio 0.5 \
+  --topk 100 \
+  --entropy
+```
+
+Append several scored steps into the same JSONL, then analyze the combined file:
+
+```bash
+python res-opd/eval/analyze_opd_trace.py \
+  --trace-dir res-opd/eval_results/<version>/<experiment_name>_mini_eval/opd_trace_steps.jsonl \
+  --output-json res-opd/eval_results/<version>/<experiment_name>_mini_eval/opd_trace_summary.json \
+  --output-md res-opd/eval_results/<version>/<experiment_name>_mini_eval/opd_trace_summary.md
+```
+
+`analyze_opd_trace.py` will report `global_steps`, `trace_coverage.step_summary`,
+and object-level step trends when GT objects are present in the trace metadata.
+
+### OSS Notes
+
+When `POST_TRAIN_SYNC_TO_OSS=True`, `run_res_opd.sh` uploads mini-eval
+generation dumps with the other training artifacts:
+
+```text
+<oss_exp_path>/training_artifacts/mini_eval_generations/
+```
+
+If `POST_TRAIN_CLEAN_LOCAL=True`, the local mini-eval generation directory is
+removed after upload, the same way rollout artifacts are cleaned. Pull the files
+back from OSS before offline analysis if needed.
+
 ## Final Hallucination Benchmarks
 
 Run these after training on selected merged checkpoints.

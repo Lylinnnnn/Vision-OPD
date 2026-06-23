@@ -489,7 +489,65 @@ class RayPPOTrainer:
         except Exception as e:
             print(f"Warning: Could not set total_training_steps in config. Structure missing? Error: {e}")
 
-    def _dump_generations(self, inputs, outputs, gts, scores, reward_extra_infos_dict, dump_path):
+    @staticmethod
+    def _json_safe(value):
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, np.generic):
+            return value.item()
+        if isinstance(value, np.ndarray):
+            return RayPPOTrainer._json_safe(value.tolist())
+        if torch.is_tensor(value):
+            return RayPPOTrainer._json_safe(value.detach().cpu().tolist())
+        if isinstance(value, dict):
+            return {str(k): RayPPOTrainer._json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [RayPPOTrainer._json_safe(v) for v in value]
+        return str(value)
+
+    @staticmethod
+    def _sample_value(values, idx: int):
+        if values is None:
+            return None
+        try:
+            return values[idx]
+        except Exception:
+            return None
+
+    def _build_generation_metadata(self, batch: DataProto):
+        metadata = []
+        non_tensor_batch = batch.non_tensor_batch
+        for idx in range(len(batch)):
+            extra_info = self._json_safe(self._sample_value(non_tensor_batch.get("extra_info"), idx))
+            reward_model = self._json_safe(self._sample_value(non_tensor_batch.get("reward_model"), idx))
+            item = {
+                "uid": self._json_safe(self._sample_value(non_tensor_batch.get("uid"), idx)),
+                "index": self._json_safe(self._sample_value(non_tensor_batch.get("index"), idx)),
+                "data_source": self._json_safe(self._sample_value(non_tensor_batch.get("data_source"), idx)),
+                "extra_info": extra_info,
+            }
+            if reward_model is not None:
+                item["reward_model"] = reward_model
+            if isinstance(extra_info, dict):
+                item["image_id"] = extra_info.get("image_id")
+                item["file_name"] = extra_info.get("file_name")
+                item["gt_objects"] = extra_info.get("objects")
+                item["gt_captions"] = extra_info.get("captions")
+            metadata.append(item)
+        return metadata
+
+    def _dump_generations(
+        self,
+        inputs,
+        outputs,
+        gts,
+        scores,
+        reward_extra_infos_dict,
+        dump_path,
+        metadata=None,
+        trace_scope="rollout_generation",
+        caption_source="model_caption",
+    ):
         """Dump rollout/validation samples as JSONL."""
         os.makedirs(dump_path, exist_ok=True)
         filename = os.path.join(dump_path, f"{self.global_steps}.jsonl")
@@ -498,10 +556,16 @@ class RayPPOTrainer:
         base_data = {
             "input": inputs,
             "output": outputs,
+            "generated_caption": outputs,
             "gts": gts,
             "score": scores,
             "step": [self.global_steps] * n,
+            "global_step": [self.global_steps] * n,
+            "trace_scope": [trace_scope] * n,
+            "caption_source": [caption_source] * n,
         }
+        if metadata is not None and len(metadata) == n:
+            base_data["metadata"] = metadata
 
         for k, v in reward_extra_infos_dict.items():
             if len(v) == n:
@@ -510,7 +574,7 @@ class RayPPOTrainer:
         lines = []
         for i in range(n):
             entry = {k: v[i] for k, v in base_data.items()}
-            lines.append(json.dumps(entry, ensure_ascii=False))
+            lines.append(json.dumps(entry, ensure_ascii=False, default=str))
 
         with open(filename, "w") as f:
             f.write("\n".join(lines) + "\n")
@@ -548,6 +612,9 @@ class RayPPOTrainer:
                 scores=scores,
                 reward_extra_infos_dict=reward_extra_infos_to_dump,
                 dump_path=rollout_data_dir,
+                metadata=self._build_generation_metadata(batch),
+                trace_scope="train_rollout_generation",
+                caption_source="model_caption",
             )
 
     def _maybe_log_val_generations(self, inputs, outputs, scores):
@@ -1541,6 +1608,7 @@ class RayPPOTrainer:
         sample_scores = []
         sample_turns = []
         sample_uids = []
+        sample_metadata = []
 
         for test_data in self.val_dataloader:
             test_batch = DataProto.from_single_dict(test_data)
@@ -1606,6 +1674,7 @@ class RayPPOTrainer:
             input_texts = [self.tokenizer.decode(ids, skip_special_tokens=True) for ids in input_ids]
             sample_inputs.extend(input_texts)
             sample_uids.extend(test_batch.non_tensor_batch["uid"])
+            sample_metadata.extend(self._build_generation_metadata(test_batch))
 
             # evaluate using reward_function
             result = self._compute_or_extract_reward(test_batch, reward_fn=self.val_reward_fn, return_dict=True)
@@ -1641,6 +1710,9 @@ class RayPPOTrainer:
                 scores=sample_scores,
                 reward_extra_infos_dict=reward_extra_infos_dict,
                 dump_path=val_data_dir,
+                metadata=sample_metadata,
+                trace_scope="mini_eval_generation",
+                caption_source="model_caption",
             )
 
         for key_info, lst in reward_extra_infos_dict.items():
