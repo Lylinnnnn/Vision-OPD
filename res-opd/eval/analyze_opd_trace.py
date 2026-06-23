@@ -1540,8 +1540,16 @@ def main():
         help="Do not auto-fetch from OSS when local trace files are missing.",
     )
     parser.add_argument("--case-analysis", help="Optional all_cases_sorted.json for outcome grouping")
-    parser.add_argument("--output-json", required=True, help="Where to save summary JSON")
-    parser.add_argument("--output-md", help="Optional Markdown report path")
+    parser.add_argument(
+        "--output-json",
+        default=None,
+        help="Where to save summary JSON. Defaults to <trace-dir>/opd_trace_summary.json",
+    )
+    parser.add_argument(
+        "--output-md",
+        default=None,
+        help="Optional Markdown report path. Defaults to <trace-dir>/opd_trace_summary.md",
+    )
     parser.add_argument("--max-records", type=int, default=0, help="Debug cap; 0 = all")
     args = parser.parse_args()
 
@@ -1550,6 +1558,22 @@ def main():
         trace_dir = os.path.join(RES_OPD_ROOT, "traces", args.experiment_name)
     if not trace_dir:
         parser.error("--trace-dir is required unless --experiment-name is provided")
+
+    # Derive default output paths from trace_dir when not specified
+    if args.output_json is None:
+        if os.path.isfile(trace_dir):
+            base_dir = os.path.dirname(os.path.abspath(trace_dir))
+        else:
+            base_dir = os.path.abspath(trace_dir)
+        args.output_json = os.path.join(base_dir, "opd_trace_summary.json")
+        print(f"[Default] --output-json not specified, using: {args.output_json}")
+    if args.output_md is None:
+        if os.path.isfile(trace_dir):
+            base_dir = os.path.dirname(os.path.abspath(trace_dir))
+        else:
+            base_dir = os.path.abspath(trace_dir)
+        args.output_md = os.path.join(base_dir, "opd_trace_summary.md")
+        print(f"[Default] --output-md not specified, using: {args.output_md}")
 
     oss_name = args.oss_name
     if not oss_name and args.experiment_name:

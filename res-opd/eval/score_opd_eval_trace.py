@@ -40,7 +40,11 @@ def parse_args():
         required=True,
         help="eval_chair.py eval_results.jsonl or verl validation_data_dir/<step>.jsonl",
     )
-    parser.add_argument("--output-jsonl", required=True, help="Where to write OPD eval trace JSONL")
+    parser.add_argument(
+        "--output-jsonl",
+        default=None,
+        help="Where to write OPD eval trace JSONL. Defaults to <eval-results dir>/opd_eval_trace.jsonl",
+    )
     parser.add_argument("--test-json", help="Optional test.json for image_path/GT fallback")
     parser.add_argument("--case-analysis", help="Optional all_cases_sorted.json; used for baseline captions/groups")
     parser.add_argument("--image-root", default=DEFAULT_COCO_VAL_ROOT, help="Fallback COCO val image root")
@@ -74,7 +78,65 @@ def parse_args():
     parser.add_argument("--max-model-len", type=int, default=9728)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--torch-dtype", choices=["bfloat16", "float16", "float32"], default="bfloat16")
+    parser.add_argument(
+        "--oss-checkpoint",
+        default=None,
+        help="OSS path to download checkpoint from before scoring (e.g. oss://bucket/path/to/global_step_46). "
+             "Will be downloaded to --model-path, then cleaned up after scoring if --cleanup-after is set.",
+    )
+    parser.add_argument(
+        "--cleanup-after",
+        action="store_true",
+        help="Remove the local checkpoint directory (--model-path) after scoring completes.",
+    )
     return parser.parse_args()
+
+
+def _checkpoint_has_weights(local_path):
+    """Check if local checkpoint directory contains model weight files."""
+    if not os.path.isdir(local_path):
+        return False
+    for name in os.listdir(local_path):
+        if name.endswith((".safetensors", ".bin", ".pt", ".pth")):
+            return True
+    return False
+
+
+def fetch_checkpoint_from_oss(oss_path, local_path):
+    """Download checkpoint from OSS to local path using ossutil.
+
+    Skips download if local_path already contains model weight files.
+    """
+    import subprocess
+
+    if _checkpoint_has_weights(local_path):
+        print(f"[OSS] Checkpoint already exists at {local_path}, skipping download.")
+        return
+
+    print(f"[OSS] Downloading checkpoint from {oss_path} to {local_path} ...")
+    os.makedirs(local_path, exist_ok=True)
+    result = subprocess.run(
+        ["ossutil", "cp", "-r", f"{oss_path}/", f"{local_path}/", "-f"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ossutil cp failed (exit {result.returncode}):\n{result.stderr}"
+        )
+    print(f"[OSS] Download complete: {local_path}")
+
+
+def cleanup_local_checkpoint(local_path):
+    """Remove local checkpoint directory to free disk space."""
+    import shutil
+
+    if os.path.isdir(local_path):
+        print(f"[Cleanup] Removing local checkpoint: {local_path}")
+        shutil.rmtree(local_path)
+        print(f"[Cleanup] Done.")
+    else:
+        print(f"[Cleanup] Path not found, skipping: {local_path}")
 
 
 def bool_finite(value):
@@ -559,10 +621,23 @@ def iter_caption_jobs(eval_records, case_index, max_samples, score_baseline):
         count += 1
 
 
+def _default_output_jsonl(eval_results_path):
+    """Derive default output path: same directory as eval_results.jsonl."""
+    eval_dir = os.path.dirname(os.path.abspath(eval_results_path))
+    return os.path.join(eval_dir, "opd_eval_trace.jsonl")
+
+
 def main():
     args = parse_args()
+    if args.output_jsonl is None:
+        args.output_jsonl = _default_output_jsonl(args.eval_results)
+        print(f"[Default] --output-jsonl not specified, using: {args.output_jsonl}")
     if args.overwrite and os.path.exists(args.output_jsonl):
         os.remove(args.output_jsonl)
+
+    # Fetch checkpoint from OSS if specified
+    if args.oss_checkpoint:
+        fetch_checkpoint_from_oss(args.oss_checkpoint, args.model_path)
 
     test_index = load_test_index(args.test_json)
     eval_records = [
@@ -703,13 +778,19 @@ def main():
             if written % 10 == 0:
                 elapsed = time.time() - started
                 print(f"Scored {written} traces ({elapsed:.0f}s, failures={failures}, skipped={skipped})")
-
     print(
         "OPD eval trace complete: "
         f"written={written} skipped={skipped} failures={failures} sources={dict(source_counter)}"
     )
     print(f"Saved trace to: {args.output_jsonl}")
 
+    # Cleanup local checkpoint after scoring if requested
+    if args.cleanup_after:
+        # Release model from GPU memory before deleting files
+        del model, processor
+        import torch
+        torch.cuda.empty_cache()
+        cleanup_local_checkpoint(args.model_path)
 
 if __name__ == "__main__":
     main()

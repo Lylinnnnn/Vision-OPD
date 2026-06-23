@@ -918,14 +918,27 @@ def main():
         help="Refresh v3 diagnostics from an existing all_cases_sorted.json"
     )
     parser.add_argument(
-        "--output-dir", required=True,
-        help="Directory to save analysis results"
+        "--output-dir",
+        default=None,
+        help="Directory to save analysis results. Defaults to <model-results dir>/case_analysis/",
     )
     parser.add_argument(
         "--top-n", type=int, default=20,
         help="Number of badcases and goodcases to extract (default: 20)"
     )
     args = parser.parse_args()
+
+    # Derive default output-dir from --model-results when not specified
+    if args.output_dir is None:
+        if args.model_results:
+            model_dir = os.path.dirname(os.path.abspath(args.model_results))
+            args.output_dir = os.path.join(model_dir, "case_analysis")
+        elif args.from_all_cases:
+            cases_dir = os.path.dirname(os.path.abspath(args.from_all_cases))
+            args.output_dir = cases_dir
+        else:
+            parser.error("--output-dir is required when neither --model-results nor --from-all-cases is provided")
+        print(f"[Default] --output-dir not specified, using: {args.output_dir}")
 
     os.makedirs(args.output_dir, exist_ok=True)
 

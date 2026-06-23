@@ -1,6 +1,11 @@
 # Outputs & results
 outputs/
 res-opd/data/
+res-opd/eval_results/
+res-opd/logs/
+res-opd/traces/
+res-opd/rollouts/
+res-opd/mini_eval_generations/
 
 # Checkpoints
 *.ckpt
