@@ -22,6 +22,7 @@ __all__ = ["register_adv_est", "get_adv_estimator_fn", "AdvantageEstimator"]
 
 from collections import defaultdict
 from enum import Enum
+import math
 from typing import Any, Callable, Optional
 import numpy as np
 import torch
@@ -1168,6 +1169,89 @@ def compute_self_distillation_loss(
         log_ratio = student_log_probs - teacher_log_probs
         raw_per_token_loss = log_ratio.detach() * student_log_probs
 
+    selective_veto_loss_scale = None
+    selective_veto_enabled = self_distillation_config.get("selective_veto_enabled", False)
+    token_mask_pct = self_distillation_config.get("token_mask_pct", 0.0)
+    if selective_veto_enabled:
+        token_mask_pct = 0.0
+        with torch.no_grad():
+            selective_veto_top_p = float(self_distillation_config.get("selective_veto_top_p", 0.10))
+            selective_veto_min_score = float(self_distillation_config.get("selective_veto_min_score", 0.0))
+            selective_veto_min_tokens = int(self_distillation_config.get("selective_veto_min_tokens", 1))
+            normalize_by_selected = bool(
+                self_distillation_config.get("selective_veto_normalize_by_selected", True)
+            )
+            if not 0.0 < selective_veto_top_p <= 1.0:
+                raise ValueError(
+                    "self_distillation.selective_veto_top_p must be in (0,1], "
+                    f"got {selective_veto_top_p}"
+                )
+            if selective_veto_min_tokens < 0:
+                raise ValueError(
+                    "self_distillation.selective_veto_min_tokens must be non-negative, "
+                    f"got {selective_veto_min_tokens}"
+                )
+
+            pre_select_loss_mask = loss_mask
+            valid_mask = pre_select_loss_mask > 0
+            valid_count = int(valid_mask.sum().item())
+            veto_scores = (student_log_probs - teacher_log_probs).detach()
+            candidate_mask = valid_mask & torch.isfinite(veto_scores) & (veto_scores > selective_veto_min_score)
+            candidate_count = int(candidate_mask.sum().item())
+            selected_token_mask = torch.zeros_like(pre_select_loss_mask)
+            score_threshold = None
+
+            if valid_count > 0 and candidate_count > 0:
+                max_selected = math.ceil(valid_count * selective_veto_top_p)
+                if selective_veto_min_tokens > 0:
+                    max_selected = max(max_selected, selective_veto_min_tokens)
+                selected_count_target = min(candidate_count, max_selected)
+                flat_candidate_indices = torch.nonzero(candidate_mask.flatten(), as_tuple=False).flatten()
+                flat_candidate_scores = veto_scores.flatten()[flat_candidate_indices].float()
+                top_values, top_relative_indices = torch.topk(
+                    flat_candidate_scores,
+                    k=selected_count_target,
+                    largest=True,
+                    sorted=False,
+                )
+                flat_selected_indices = flat_candidate_indices[top_relative_indices]
+                selected_token_mask_flat = torch.zeros_like(pre_select_loss_mask.flatten())
+                selected_token_mask_flat[flat_selected_indices] = 1.0
+                selected_token_mask = selected_token_mask_flat.view_as(pre_select_loss_mask)
+                score_threshold = top_values.min()
+
+            selected_count_tensor = selected_token_mask.sum()
+            selected_count = float(selected_count_tensor.item())
+            if normalize_by_selected and selected_count > 0.0:
+                selective_veto_loss_scale = pre_select_loss_mask.sum().detach() / selected_count_tensor.clamp(min=1.0)
+            loss_mask = pre_select_loss_mask * selected_token_mask
+
+            metrics["self_distillation/selective_veto_enabled"] = 1.0
+            metrics["self_distillation/selective_veto_top_p"] = selective_veto_top_p
+            metrics["self_distillation/selective_veto_min_score"] = selective_veto_min_score
+            metrics["self_distillation/selective_veto_candidate_frac"] = (
+                candidate_count / valid_count if valid_count > 0 else 0.0
+            )
+            metrics["self_distillation/selective_veto_selected_frac"] = (
+                selected_count / valid_count if valid_count > 0 else 0.0
+            )
+            metrics["self_distillation/selective_veto_selected_tokens"] = selected_count
+            metrics["self_distillation/selective_veto_empty"] = selected_count == 0.0
+            metrics["self_distillation/selective_veto_normalize_by_selected"] = float(normalize_by_selected)
+            metrics["self_distillation/selective_veto_loss_scale"] = (
+                selective_veto_loss_scale.detach().item() if selective_veto_loss_scale is not None else 1.0
+            )
+            metrics["self_distillation/selective_veto_score_threshold"] = (
+                score_threshold.detach().item() if score_threshold is not None else 0.0
+            )
+            if selected_count > 0.0:
+                selected_score_sum = verl_F.masked_sum(veto_scores.float(), selected_token_mask)
+                metrics["self_distillation/selective_veto_score_mean_selected"] = (
+                    selected_score_sum / selected_count_tensor.clamp(min=1.0)
+                ).detach().item()
+            else:
+                metrics["self_distillation/selective_veto_score_mean_selected"] = 0.0
+
     # ----------------------------------------------------------------
     # Token-level divergence masking: drop highest-divergence tokens
     # ----------------------------------------------------------------
@@ -1178,7 +1262,6 @@ def compute_self_distillation_loss(
     # These are fully decoupled from the loss type (JSD/RKL/FKL) and
     # from the sample-level self_distillation_mask.
     # ----------------------------------------------------------------
-    token_mask_pct = self_distillation_config.get("token_mask_pct", 0.0)
     if token_mask_pct > 0.0:
         with torch.no_grad():
             token_mask_metric = self_distillation_config.get("token_mask_metric", "loss")
@@ -1224,6 +1307,8 @@ def compute_self_distillation_loss(
     # Apply rollout correction weights if provided
     if rollout_is_weights is not None:
         weighted_per_token_loss = weighted_per_token_loss * rollout_is_weights
+    if selective_veto_loss_scale is not None:
+        weighted_per_token_loss = weighted_per_token_loss * selective_veto_loss_scale
 
     valid_token_count = loss_mask.sum().clamp(min=1.0)
     if batch_num_tokens is None:

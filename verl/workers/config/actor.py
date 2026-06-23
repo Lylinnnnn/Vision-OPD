@@ -78,6 +78,11 @@ class SelfDistillationConfig(BaseConfig):
         trace_topk (Optional[int]): Number of top-k tokens to keep in traces; if unset, distillation_topk or 100 is used.
         trace_entropy (bool): Whether to include full-vocab entropy in low-frequency traces.
         trace_only_first_ppo_epoch (bool): Avoid duplicate traces when ppo_epochs > 1.
+        selective_veto_enabled (bool): Keep only high-confidence low-res veto tokens for distillation.
+        selective_veto_top_p (float): Maximum fraction of valid tokens selected by veto score per micro batch.
+        selective_veto_min_score (float): Minimum student_logprob - teacher_logprob gap required for a token to be selected.
+        selective_veto_min_tokens (int): Minimum selected tokens per non-empty micro batch when candidates exist.
+        selective_veto_normalize_by_selected (bool): Rescale selected-token loss to preserve the original token-mean scale.
     """
 
     full_logit_distillation: bool = True
@@ -130,6 +135,11 @@ class SelfDistillationConfig(BaseConfig):
     trace_topk: Optional[int] = None
     trace_entropy: bool = True
     trace_only_first_ppo_epoch: bool = True
+    selective_veto_enabled: bool = False
+    selective_veto_top_p: float = 0.10
+    selective_veto_min_score: float = 0.0
+    selective_veto_min_tokens: int = 1
+    selective_veto_normalize_by_selected: bool = True
 
     def __post_init__(self):
         if not 0.0 <= self.alpha <= 1.0:
@@ -164,6 +174,17 @@ class SelfDistillationConfig(BaseConfig):
             raise ValueError(f"self_distillation.trace_topk must be a positive integer, got {self.trace_topk}")
         if self.is_clip is not None and self.is_clip <= 0:
             raise ValueError(f"self_distillation.is_clip must be positive, got {self.is_clip}")
+        if self.selective_veto_enabled:
+            if not 0.0 < self.selective_veto_top_p <= 1.0:
+                raise ValueError(
+                    "self_distillation.selective_veto_top_p must be in (0,1] when "
+                    f"selective_veto_enabled=True, got {self.selective_veto_top_p}"
+                )
+            if self.selective_veto_min_tokens < 0:
+                raise ValueError(
+                    "self_distillation.selective_veto_min_tokens must be non-negative, "
+                    f"got {self.selective_veto_min_tokens}"
+                )
         if self.teacher_prompt_mode is not None and self.teacher_prompt_mode != "answer_hint":
             raise ValueError(
                 f"self_distillation.teacher_prompt_mode must be None or 'answer_hint', got {self.teacher_prompt_mode}"

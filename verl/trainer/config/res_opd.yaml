@@ -40,6 +40,11 @@ actor_rollout_ref:
       teacher_update_rate: 0.05
       train_metrics_enabled: True
       trace_enabled: False
+      selective_veto_enabled: False
+      selective_veto_top_p: 0.10
+      selective_veto_min_score: 0.0
+      selective_veto_min_tokens: 1
+      selective_veto_normalize_by_selected: True
     optim:
       lr: 2e-6
   rollout:

@@ -173,6 +173,14 @@ self_distillation:
   trace_entropy: True
   trace_only_first_ppo_epoch: True
 
+  # Selective low-res veto distillation. When enabled, only tokens with the
+  # largest positive student_logprob - teacher_logprob gaps are distilled.
+  selective_veto_enabled: False
+  selective_veto_top_p: 0.10
+  selective_veto_min_score: 0.0
+  selective_veto_min_tokens: 1
+  selective_veto_normalize_by_selected: True
+
   # IS clip for loss; null disables IS weighting
   is_clip: 2
 

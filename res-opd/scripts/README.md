@@ -62,6 +62,27 @@ tmux new-session -d -s opd_train \
 
 `run_res_opd.sh` is the underlying script that accepts all configuration via environment variables. See the script header for the full parameter reference. `run_res_opd_default.sh` simply sets optimized defaults and calls it.
 
+Selective low-res veto is off by default. Enable it only for targeted OPD
+experiments:
+
+```bash
+DEGRADATION_MODE=original \
+STUDENT_RATIO=1.0 \
+TEACHER_RATIO=0.75 \
+TEACHER_MODE=frozen \
+ALPHA=1.0 \
+OPD_SELECTIVE_VETO=True \
+OPD_SELECTIVE_VETO_TOP_P=0.10 \
+bash res-opd/scripts/run_res_opd.sh
+```
+
+`OPD_SELECTIVE_VETO_TOP_P` is a per-microbatch percentile over valid response
+tokens. The implementation keeps only positive veto gaps
+`student_logprob - teacher_logprob > OPD_SELECTIVE_VETO_MIN_SCORE` and selects
+the largest top-p fraction. The default `0.10` is intentionally not too strict.
+`OPD_SELECTIVE_VETO_NORMALIZE=True` keeps the selected-token loss on a comparable
+scale to normal token-mean RKL/JSD.
+
 ---
 
 ## Eval Trace Scoring

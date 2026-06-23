@@ -235,6 +235,20 @@ VAL_N=3 \
 bash res-opd/scripts/run_res_opd.sh
 ```
 
+For a targeted frozen-RKL selective-veto run, add:
+
+```bash
+TEACHER_MODE=frozen \
+ALPHA=1.0 \
+OPD_SELECTIVE_VETO=True \
+OPD_SELECTIVE_VETO_TOP_P=0.10 \
+bash res-opd/scripts/run_res_opd.sh
+```
+
+The selective-veto loss keeps only the largest positive
+`student_logprob - teacher_logprob` gaps among valid response tokens. Start with
+`0.10`; smaller values are cleaner but may leave too little training signal.
+
 For a 1-epoch sanity run, use `OPD_MINI_EVAL_TEST_FREQ=5` to get enough points.
 For 2 epochs, `OPD_MINI_EVAL_TEST_FREQ=10` is usually enough. The raw generation
 files remain small; the expensive part is the later forced scoring.

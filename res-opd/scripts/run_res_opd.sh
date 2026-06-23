@@ -26,6 +26,7 @@ set -eo pipefail
 #   - TEACHER_MODE:        ema / frozen / coevolving
 #   - ALPHA:               loss interpolation (0.5=JSD, 1.0=RKL, 0.0=FKL)
 #   - ROLLOUT_N:           number of rollouts per sample (1=pure KD, 8=GRPO+KD)
+#   - OPD_SELECTIVE_VETO:  keep only top-p low-res veto tokens for distillation
 #
 # Examples:
 #   # Default: student=224, teacher=EMA, loss=JSD
@@ -45,6 +46,11 @@ set -eo pipefail
 #
 #   # Original-size degradation: teacher sees 50% down/up sampled original image
 #   DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.5 bash res-opd/scripts/run_res_opd.sh
+#
+#   # Frozen RKL with selective low-res veto over the top 10% positive gaps
+#   DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.75 \
+#     TEACHER_MODE=frozen ALPHA=1.0 OPD_SELECTIVE_VETO=True \
+#     OPD_SELECTIVE_VETO_TOP_P=0.10 bash res-opd/scripts/run_res_opd.sh
 # =============================================================================
 
 # =============================================================================
@@ -105,6 +111,11 @@ esac
 ALPHA="${ALPHA:-0.5}"                 # 0.5=JSD, 1.0=RKL, 0.0=FKL
 LOSS_MODE="vopd"
 DISTILLATION_TOPK="${DISTILLATION_TOPK:-100}"
+OPD_SELECTIVE_VETO="${OPD_SELECTIVE_VETO:-False}"
+OPD_SELECTIVE_VETO_TOP_P="${OPD_SELECTIVE_VETO_TOP_P:-0.10}"
+OPD_SELECTIVE_VETO_MIN_SCORE="${OPD_SELECTIVE_VETO_MIN_SCORE:-0.0}"
+OPD_SELECTIVE_VETO_MIN_TOKENS="${OPD_SELECTIVE_VETO_MIN_TOKENS:-1}"
+OPD_SELECTIVE_VETO_NORMALIZE="${OPD_SELECTIVE_VETO_NORMALIZE:-True}"
 OPD_TRAIN_METRICS="${OPD_TRAIN_METRICS:-True}"
 OPD_METRICS_ENTROPY="${OPD_METRICS_ENTROPY:-False}"
 OPD_TRACE_TOKEN="${OPD_TRACE_TOKEN:-False}"
@@ -519,6 +530,7 @@ echo "Student ratio:    $STUDENT_RATIO (original mode)"
 echo "Teacher ratio:    $TEACHER_RATIO (original mode)"
 echo "Teacher mode:     $TEACHER_MODE (src=$TEACHER_MODEL_SOURCE, reg=$TEACHER_REGULARIZATION, rate=$TEACHER_UPDATE_RATE)"
 echo "Alpha (loss):     $ALPHA (0.5=JSD, 1.0=RKL, 0.0=FKL)"
+echo "Selective veto:   $OPD_SELECTIVE_VETO (top_p=$OPD_SELECTIVE_VETO_TOP_P, min_score=$OPD_SELECTIVE_VETO_MIN_SCORE, normalize=$OPD_SELECTIVE_VETO_NORMALIZE)"
 echo "Rollout N:        $ROLLOUT_N (1=pure KD, >1=GRPO+KD)"
 echo "Learning rate:    $LR"
 echo "Batch size:       $TRAIN_BATCH_SIZE"
@@ -591,6 +603,11 @@ set +e
     actor_rollout_ref.actor.self_distillation.teacher_image_key=hires_images \
     actor_rollout_ref.actor.self_distillation.dont_reprompt_on_self_success=$DONT_REPROMPT_ON_SELF_SUCCESS \
     actor_rollout_ref.actor.self_distillation.alpha=$ALPHA \
+    actor_rollout_ref.actor.self_distillation.selective_veto_enabled=$OPD_SELECTIVE_VETO \
+    actor_rollout_ref.actor.self_distillation.selective_veto_top_p=$OPD_SELECTIVE_VETO_TOP_P \
+    actor_rollout_ref.actor.self_distillation.selective_veto_min_score=$OPD_SELECTIVE_VETO_MIN_SCORE \
+    actor_rollout_ref.actor.self_distillation.selective_veto_min_tokens=$OPD_SELECTIVE_VETO_MIN_TOKENS \
+    actor_rollout_ref.actor.self_distillation.selective_veto_normalize_by_selected=$OPD_SELECTIVE_VETO_NORMALIZE \
     actor_rollout_ref.actor.self_distillation.include_environment_feedback=False \
     actor_rollout_ref.actor.self_distillation.train_metrics_enabled=$OPD_TRAIN_METRICS \
     actor_rollout_ref.actor.self_distillation.trace_enabled=$OPD_TRACE_TOKEN \
