@@ -20,6 +20,12 @@ Examples:
         --trace-dir res-opd/traces/Res-OPD-... \
         --case-analysis res-opd/eval_results/v2/case_analysis/sr1.0-tr0.75_vs_baseline/all_cases_sorted.json \
         --output-json /tmp/opd_trace_summary.with_cases.json
+
+Note:
+    --case-analysis is only meaningful when the trace records and case-analysis
+    records cover the same image split. Training rollout traces usually do not
+    overlap with eval/test case-analysis outputs; the script reports overlap
+    diagnostics instead of silently treating that as a parser failure.
 """
 
 import argparse
@@ -216,6 +222,7 @@ def load_case_groups(case_analysis_path):
             group = case.get("distill_recommendation") or case.get("behavior_pattern") or "case_other"
         groups[int(image_id)] = {
             "group": group,
+            "file_name": case.get("file_name", ""),
             "behavior_pattern": case.get("behavior_pattern"),
             "distill_recommendation": case.get("distill_recommendation"),
             "gt_objects": case.get("gt_objects", []),
@@ -236,6 +243,86 @@ def get_image_id(record):
         return int(image_id)
     except (TypeError, ValueError):
         return None
+
+
+def get_file_name(record):
+    metadata = record.get("metadata") or {}
+    file_name = metadata.get("file_name")
+    if not file_name:
+        extra = metadata.get("extra_info")
+        if isinstance(extra, dict):
+            file_name = extra.get("file_name")
+    if not file_name:
+        return None
+    return os.path.basename(str(file_name))
+
+
+def sample_values(values, limit=20):
+    clean_values = [value for value in values if value is not None]
+    try:
+        return sorted(clean_values)[:limit]
+    except TypeError:
+        return sorted(str(value) for value in clean_values)[:limit]
+
+
+def summarize_case_overlap(records, case_groups):
+    trace_image_ids = [get_image_id(record) for record in records]
+    trace_image_id_set = {image_id for image_id in trace_image_ids if image_id is not None}
+    case_image_id_set = set(case_groups.keys())
+    image_id_overlap = trace_image_id_set & case_image_id_set
+
+    trace_file_names = [get_file_name(record) for record in records]
+    trace_file_name_set = {file_name for file_name in trace_file_names if file_name}
+    case_file_name_set = {
+        os.path.basename(str(info.get("file_name")))
+        for info in case_groups.values()
+        if info.get("file_name")
+    }
+    file_name_overlap = trace_file_name_set & case_file_name_set
+
+    data_source_counter = Counter()
+    for record in records:
+        metadata = record.get("metadata") or {}
+        data_source = metadata.get("data_source")
+        if not data_source:
+            extra = metadata.get("extra_info")
+            if isinstance(extra, dict):
+                data_source = extra.get("data_source")
+        if data_source:
+            data_source_counter[str(data_source)] += 1
+
+    matched_records_by_image_id = sum(1 for image_id in trace_image_ids if image_id in case_image_id_set)
+    matched_records_by_file_name = sum(
+        1 for file_name in trace_file_names if file_name and file_name in case_file_name_set
+    )
+    disjoint = bool(case_groups) and not image_id_overlap and not file_name_overlap
+    return {
+        "case_analysis_loaded": bool(case_groups),
+        "trace_num_unique_image_ids": len(trace_image_id_set),
+        "case_num_unique_image_ids": len(case_image_id_set),
+        "image_id_overlap_count": len(image_id_overlap),
+        "image_id_overlap_samples": sample_values(image_id_overlap),
+        "trace_image_id_samples": sample_values(trace_image_id_set),
+        "case_image_id_samples": sample_values(case_image_id_set),
+        "matched_records_by_image_id": matched_records_by_image_id,
+        "matched_record_rate_by_image_id": safe_rate(matched_records_by_image_id, len(records)),
+        "trace_num_unique_file_names": len(trace_file_name_set),
+        "case_num_unique_file_names": len(case_file_name_set),
+        "file_name_overlap_count": len(file_name_overlap),
+        "file_name_overlap_samples": sample_values(file_name_overlap),
+        "trace_file_name_samples": sample_values(trace_file_name_set),
+        "case_file_name_samples": sample_values(case_file_name_set),
+        "matched_records_by_file_name": matched_records_by_file_name,
+        "matched_record_rate_by_file_name": safe_rate(matched_records_by_file_name, len(records)),
+        "trace_data_sources": dict(data_source_counter.most_common()),
+        "is_disjoint_from_case_analysis": disjoint,
+        "likely_reason": (
+            "trace records and case analysis appear to come from different splits; "
+            "training rollout traces cannot be grouped by eval/test case outcomes"
+            if disjoint
+            else None
+        ),
+    }
 
 
 def canonicalize_object_name(obj, inverse_synonym_dict):
@@ -1023,6 +1110,7 @@ def mention_example_table_rows(mentions, limit=20):
 
 def write_markdown_summary(output, output_md):
     object_trace = output.get("object_trace_summary", {})
+    case_overlap = output.get("case_overlap_summary", {})
     type_summary = object_trace.get("mention_type_summary", {})
     signal = object_trace.get("correct_vs_hallucinated_signal", {})
     lines = [
@@ -1035,6 +1123,20 @@ def write_markdown_summary(output, output_md):
         f"- case_analysis: `{output.get('case_analysis')}`",
         f"- records: {output.get('num_records')}  tokens: {output.get('num_tokens')}  "
         f"unique_images: {output.get('num_unique_images')}",
+        "",
+        "## Case Analysis Overlap",
+        "",
+        f"- case_analysis_loaded: {case_overlap.get('case_analysis_loaded')}",
+        f"- matched_records_by_image_id: {case_overlap.get('matched_records_by_image_id')} / "
+        f"{output.get('num_records')}",
+        f"- image_id_overlap_count: {case_overlap.get('image_id_overlap_count')}",
+        f"- matched_records_by_file_name: {case_overlap.get('matched_records_by_file_name')} / "
+        f"{output.get('num_records')}",
+        f"- file_name_overlap_count: {case_overlap.get('file_name_overlap_count')}",
+        f"- trace_data_sources: `{json.dumps(case_overlap.get('trace_data_sources', {}), ensure_ascii=False)}`",
+        f"- trace_image_id_samples: `{case_overlap.get('trace_image_id_samples')}`",
+        f"- case_image_id_samples: `{case_overlap.get('case_image_id_samples')}`",
+        f"- likely_reason: {case_overlap.get('likely_reason')}",
         "",
         "## GT Coverage",
         "",
@@ -1300,11 +1402,12 @@ def main():
             )
         raise SystemExit(f"No trace records found under {trace_dir}.{hint}")
     case_groups = load_case_groups(args.case_analysis)
+    case_overlap_summary = summarize_case_overlap(records, case_groups)
     tokens = flatten_token_records(records, case_groups)
     object_trace_summary = summarize_object_trace(records, case_groups)
 
     image_ids = [get_image_id(record) for record in records]
-    matched_records = sum(1 for image_id in image_ids if image_id in case_groups)
+    matched_records = case_overlap_summary["matched_records_by_image_id"]
     trace_coverage = summarize_trace_coverage(records)
     output = {
         "trace_dir": trace_dir,
@@ -1321,6 +1424,7 @@ def main():
         "num_unique_images": len({image_id for image_id in image_ids if image_id is not None}),
         "case_matched_records": matched_records,
         "case_matched_record_rate": safe_rate(matched_records, len(records)),
+        "case_overlap_summary": case_overlap_summary,
         "trace_coverage": trace_coverage,
         "global_steps": trace_coverage["global_steps"],
         "record_group_summary": summarize_records(records, case_groups),
@@ -1346,7 +1450,20 @@ def main():
         print(f"Fetched traces from OSS: {output['oss_trace_path']}/")
     if skipped_non_trace_records:
         print(f"Skipped non-trace JSON records: {skipped_non_trace_records}")
-    print(f"Matched records to case analysis: {matched_records}/{len(records)}")
+    print(f"Matched records to case analysis by image_id: {matched_records}/{len(records)}")
+    if args.case_analysis:
+        print(
+            "Case-analysis overlap: "
+            f"image_ids={case_overlap_summary['image_id_overlap_count']} "
+            f"file_names={case_overlap_summary['file_name_overlap_count']} "
+            f"trace_data_sources={case_overlap_summary['trace_data_sources']}"
+        )
+        if case_overlap_summary["is_disjoint_from_case_analysis"]:
+            print(
+                "WARNING: trace records and case analysis are disjoint. "
+                "This usually means training rollout traces are being compared with eval/test case analysis; "
+                "case-group summaries will stay under unmatched_or_no_case."
+            )
     print(
         "Object-level GT coverage: "
         f"with_gt={object_trace_summary['records_with_gt_count']} "
