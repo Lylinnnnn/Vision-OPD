@@ -94,11 +94,49 @@ OSS_CHECKPOINT="${EXP_OSS_PATH[$EXP_KEY]}"
 STUDENT_RATIO="${EXP_STUDENT_RATIO[$EXP_KEY]}"
 TEACHER_RATIO="${EXP_TEACHER_RATIO[$EXP_KEY]}"
 CASE_ANALYSIS_SUBDIR="${EXP_CASE_ANALYSIS[$EXP_KEY]:-}"
+DATASET_TAG="${DATASET_TAG:-train1500_test300_original_sr1p0}"
 
 # Derive paths
 CHECKPOINT_STEP="global_step_46"
 MODEL_PATH="${RES_OPD_ROOT}/checkpoints/${MODEL_NAME}/${CHECKPOINT_STEP}"
-EVAL_RESULTS_DIR="${RES_OPD_ROOT}/eval_results/latest/${MODEL_NAME}_${CHECKPOINT_STEP}/train1500_test300_original_sr1p0"
+
+find_eval_results_dir() {
+    local candidate
+    local latest_root="${RES_OPD_ROOT}/eval_results/latest"
+
+    # Current layout:
+    #   eval_results/latest/{model_name}/{dataset}/eval_results.jsonl
+    candidate="${latest_root}/${MODEL_NAME}/${DATASET_TAG}"
+    if [[ -f "${candidate}/eval_results.jsonl" ]]; then
+        echo "$candidate"
+        return 0
+    fi
+
+    # Older layout:
+    #   eval_results/latest/{model_name}_{step}/{dataset}/eval_results.jsonl
+    candidate="${latest_root}/${MODEL_NAME}_${CHECKPOINT_STEP}/${DATASET_TAG}"
+    if [[ -f "${candidate}/eval_results.jsonl" ]]; then
+        echo "$candidate"
+        return 0
+    fi
+
+    if [[ -d "$latest_root" ]]; then
+        local found
+        found="$(find "$latest_root" -mindepth 3 -maxdepth 3 -type f \
+            -path "*/${DATASET_TAG}/eval_results.jsonl" \
+            -path "*/${MODEL_NAME}/*" \
+            | sort | head -n 1 || true)"
+        if [[ -n "$found" ]]; then
+            dirname "$found"
+            return 0
+        fi
+    fi
+    return 1
+}
+
+if ! EVAL_RESULTS_DIR="$(find_eval_results_dir)"; then
+    EVAL_RESULTS_DIR="${RES_OPD_ROOT}/eval_results/latest/${MODEL_NAME}/${DATASET_TAG}"
+fi
 EVAL_RESULTS_JSONL="${EVAL_RESULTS_DIR}/eval_results.jsonl"
 
 # Case analysis path (optional)

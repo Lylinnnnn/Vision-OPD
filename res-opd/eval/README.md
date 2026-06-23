@@ -113,11 +113,21 @@ The most important summary fields for selective hallucination suppression are:
 - `object_trace_summary.mention_type_summary.correct_object`
 - `object_trace_summary.mention_type_summary.hallucinated_object`
 - `object_trace_summary.correct_vs_hallucinated_signal`
+- `object_trace_summary.entropy_bin_summary`
+- `object_trace_summary.logp_delta_distribution`
+- `object_trace_summary.gate_sweep`
 - `object_trace_summary.step_contrast_hallucinated_minus_correct`
 
 Positive evidence means hallucinated-object mentions have a more negative
 `teacher_minus_student_selected_logprob_mean`, or a higher
 `teacher_selected_logprob_lt_student_frac`, than correct-object mentions.
+`entropy_bin_summary` reports the hallucinated-vs-correct contrast inside
+student-entropy bins such as `[0,0.5)`, `[0.5,1)`, `[1,1.5)`, and `[1.5,inf)`.
+`logp_delta_distribution` reports P10/P25/P50/P75/P90 and fractions below
+thresholds such as `-0.1`. `gate_sweep` evaluates selective distillation-style
+rules of the form `student_entropy > e` and
+`teacher_minus_student_logp < -m`, reporting hallucination precision/recall and
+correct-object false-positive rate.
 
 ### Training Mini-Eval Generations
 

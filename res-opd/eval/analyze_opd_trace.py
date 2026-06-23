@@ -31,6 +31,7 @@ Note:
 import argparse
 import glob
 import json
+import math
 import os
 import re
 import shutil
@@ -89,6 +90,16 @@ OBJECT_TOKEN_METRIC_KEYS = [
     "selected_token_rank_in_teacher_topk",
 ]
 
+DEFAULT_ENTROPY_BIN_EDGES = [0.0, 0.5, 1.0, 1.5, float("inf")]
+DEFAULT_GATE_ENTROPY_THRESHOLDS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+DEFAULT_GATE_LOGP_MARGINS = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2]
+DELTA_DISTRIBUTION_FIELDS = [
+    "teacher_minus_student_selected_logprob_mean",
+    "teacher_minus_student_selected_logprob_sum",
+]
+DELTA_RATE_THRESHOLDS = [-0.2, -0.1, -0.05, -0.01, 0.0]
+DELTA_PERCENTILES = [10, 25, 50, 75, 90]
+
 
 def safe_mean(values):
     values = [v for v in values if v is not None]
@@ -97,6 +108,95 @@ def safe_mean(values):
 
 def safe_rate(numerator, denominator):
     return numerator / denominator if denominator else 0.0
+
+
+def is_finite_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+
+
+def finite_values(rows, key):
+    return [float(row.get(key)) for row in rows if is_finite_number(row.get(key))]
+
+
+def quantile(values, percentile):
+    values = sorted(float(value) for value in values if is_finite_number(value))
+    if not values:
+        return None
+    if len(values) == 1:
+        return values[0]
+    position = (len(values) - 1) * (percentile / 100.0)
+    lower = int(math.floor(position))
+    upper = int(math.ceil(position))
+    if lower == upper:
+        return values[lower]
+    weight = position - lower
+    return values[lower] * (1.0 - weight) + values[upper] * weight
+
+
+def summarize_value_distribution(rows, key, rate_thresholds=None):
+    values = finite_values(rows, key)
+    summary = {
+        "count": len(values),
+        "mean": safe_mean(values),
+        "min": min(values) if values else None,
+        "max": max(values) if values else None,
+    }
+    for percentile in DELTA_PERCENTILES:
+        summary[f"p{percentile}"] = quantile(values, percentile)
+    for threshold in rate_thresholds or []:
+        label = str(threshold).replace("-", "neg").replace(".", "p")
+        summary[f"frac_lt_{label}"] = safe_rate(
+            len([value for value in values if value < threshold]),
+            len(values),
+        )
+    return summary
+
+
+def parse_float_sequence(raw, default):
+    if raw is None or str(raw).strip() == "":
+        return list(default)
+    values = []
+    for part in str(raw).split(","):
+        text = part.strip().lower()
+        if not text:
+            continue
+        if text in {"inf", "+inf", "infinity", "+infinity"}:
+            values.append(float("inf"))
+        else:
+            values.append(float(text))
+    return values or list(default)
+
+
+def build_entropy_bins(edges):
+    clean_edges = []
+    for edge in edges:
+        if edge == float("inf"):
+            clean_edges.append(edge)
+        elif is_finite_number(edge):
+            clean_edges.append(float(edge))
+    if len(clean_edges) < 2:
+        clean_edges = list(DEFAULT_ENTROPY_BIN_EDGES)
+    bins = []
+    for lower, upper in zip(clean_edges[:-1], clean_edges[1:]):
+        upper_value = None if upper == float("inf") else upper
+        if upper_value is None:
+            label = f"[{lower:g},inf)"
+        else:
+            label = f"[{lower:g},{upper_value:g})"
+        bins.append({"lower": lower, "upper": upper_value, "label": label})
+    return bins
+
+
+def entropy_bin_for_value(value, bins):
+    if not is_finite_number(value):
+        return "missing"
+    value = float(value)
+    for bin_info in bins:
+        lower = bin_info["lower"]
+        upper = bin_info["upper"]
+        if value >= lower and (upper is None or value < upper):
+            return bin_info["label"]
+    return "out_of_range"
 
 
 def step_sort_key(step):
@@ -990,6 +1090,171 @@ def summarize_by_step(rows):
     return by_step, step_contrast
 
 
+def summarize_entropy_bins(rows, entropy_bins):
+    by_bin_type = defaultdict(list)
+    for row in rows:
+        object_type = row.get("object_type", "unknown_object")
+        bin_label = entropy_bin_for_value(row.get("student_entropy_mean"), entropy_bins)
+        by_bin_type[(bin_label, object_type)].append(row)
+
+    bin_labels = [bin_info["label"] for bin_info in entropy_bins] + ["missing", "out_of_range"]
+    by_bin = {}
+    for bin_label in bin_labels:
+        type_summary = {}
+        for object_type in ("correct_object", "hallucinated_object", "unknown_object"):
+            type_rows = by_bin_type.get((bin_label, object_type), [])
+            if type_rows:
+                type_summary[object_type] = summarize_mention_rows(type_rows)
+        if type_summary:
+            by_bin[bin_label] = type_summary
+
+    contrast_keys = [
+        "teacher_minus_student_selected_logprob_mean",
+        "teacher_minus_student_selected_logprob_sum",
+        "teacher_selected_logprob_lt_student_frac",
+        "teacher_penalized_mention_frac",
+        "student_entropy_mean",
+        "teacher_entropy_mean",
+        "teacher_minus_student_entropy_mean",
+        "topk_overlap_ratio_mean",
+        "top1_match_frac",
+    ]
+    contrast = {}
+    for bin_label, type_summary in by_bin.items():
+        hallucinated = type_summary.get("hallucinated_object")
+        correct = type_summary.get("correct_object")
+        if hallucinated and correct:
+            contrast[bin_label] = {
+                "hallucinated_minus_correct": diff_summary(hallucinated, correct, contrast_keys),
+                "hallucinated_num_mentions": hallucinated.get("num_mentions", 0),
+                "correct_num_mentions": correct.get("num_mentions", 0),
+            }
+
+    return {
+        "bin_edges": [
+            ("inf" if edge == float("inf") else edge)
+            for edge in [entropy_bins[0]["lower"]] + [
+                (bin_info["upper"] if bin_info["upper"] is not None else float("inf"))
+                for bin_info in entropy_bins
+            ]
+        ] if entropy_bins else [],
+        "by_bin": by_bin,
+        "hallucinated_minus_correct_by_bin": contrast,
+    }
+
+
+def summarize_delta_distributions(rows):
+    by_type = defaultdict(list)
+    for row in rows:
+        by_type[row.get("object_type", "unknown_object")].append(row)
+
+    output = {}
+    for field in DELTA_DISTRIBUTION_FIELDS:
+        field_summary = {}
+        for object_type in ("correct_object", "hallucinated_object", "unknown_object"):
+            type_rows = by_type.get(object_type, [])
+            if type_rows:
+                field_summary[object_type] = summarize_value_distribution(
+                    type_rows,
+                    field,
+                    rate_thresholds=DELTA_RATE_THRESHOLDS,
+                )
+
+        correct = field_summary.get("correct_object")
+        hallucinated = field_summary.get("hallucinated_object")
+        if correct and hallucinated:
+            diff = {}
+            for key in ["mean", "min", "max"] + [f"p{p}" for p in DELTA_PERCENTILES]:
+                left = hallucinated.get(key)
+                right = correct.get(key)
+                diff[f"{key}_diff"] = left - right if left is not None and right is not None else None
+            for threshold in DELTA_RATE_THRESHOLDS:
+                label = str(threshold).replace("-", "neg").replace(".", "p")
+                key = f"frac_lt_{label}"
+                left = hallucinated.get(key)
+                right = correct.get(key)
+                diff[f"{key}_diff"] = left - right if left is not None and right is not None else None
+            field_summary["hallucinated_minus_correct"] = diff
+        output[field] = field_summary
+    return output
+
+
+def summarize_gate_sweep(rows, entropy_thresholds, logp_margins):
+    labeled_rows = [
+        row for row in rows
+        if row.get("object_type") in {"correct_object", "hallucinated_object"}
+        and is_finite_number(row.get("student_entropy_mean"))
+        and is_finite_number(row.get("teacher_minus_student_selected_logprob_mean"))
+    ]
+    total_hallucinated = len([row for row in labeled_rows if row.get("object_type") == "hallucinated_object"])
+    total_correct = len([row for row in labeled_rows if row.get("object_type") == "correct_object"])
+    total_labeled = total_hallucinated + total_correct
+    base_precision = safe_rate(total_hallucinated, total_labeled)
+
+    gates = []
+    for entropy_threshold in entropy_thresholds:
+        for logp_margin in logp_margins:
+            selected = [
+                row for row in labeled_rows
+                if row.get("student_entropy_mean") > entropy_threshold
+                and row.get("teacher_minus_student_selected_logprob_mean") < -logp_margin
+            ]
+            selected_hallucinated = len(
+                [row for row in selected if row.get("object_type") == "hallucinated_object"]
+            )
+            selected_correct = len([row for row in selected if row.get("object_type") == "correct_object"])
+            selected_total = selected_hallucinated + selected_correct
+            precision = safe_rate(selected_hallucinated, selected_total)
+            recall = safe_rate(selected_hallucinated, total_hallucinated)
+            correct_false_positive_rate = safe_rate(selected_correct, total_correct)
+            f1 = safe_rate(2 * precision * recall, precision + recall)
+            gates.append(
+                {
+                    "student_entropy_gt": entropy_threshold,
+                    "teacher_minus_student_logp_lt": -logp_margin,
+                    "selected_total": selected_total,
+                    "selected_hallucinated": selected_hallucinated,
+                    "selected_correct": selected_correct,
+                    "hallucination_precision": precision,
+                    "hallucination_recall": recall,
+                    "correct_false_positive_rate": correct_false_positive_rate,
+                    "f1": f1,
+                    "precision_lift_vs_base": precision / base_precision if base_precision > 0 else None,
+                }
+            )
+
+    def gate_rank(gate):
+        return (
+            gate.get("f1") or 0.0,
+            gate.get("hallucination_precision") or 0.0,
+            gate.get("hallucination_recall") or 0.0,
+            -(gate.get("correct_false_positive_rate") or 0.0),
+        )
+
+    def precision_rank(gate):
+        return (
+            gate.get("hallucination_precision") or 0.0,
+            gate.get("hallucination_recall") or 0.0,
+            -(gate.get("correct_false_positive_rate") or 0.0),
+        )
+
+    return {
+        "num_labeled_mentions": total_labeled,
+        "num_hallucinated_mentions": total_hallucinated,
+        "num_correct_mentions": total_correct,
+        "base_hallucination_rate": base_precision,
+        "entropy_thresholds": entropy_thresholds,
+        "logp_margins": logp_margins,
+        "all_gates": gates,
+        "top_by_f1": sorted(gates, key=gate_rank, reverse=True)[:30],
+        "top_precision_recall_ge_0p1": sorted(
+            [gate for gate in gates if gate.get("hallucination_recall", 0.0) >= 0.1],
+            key=precision_rank,
+            reverse=True,
+        )[:30],
+    }
+
+
 def build_selective_suppression_signal(type_summary):
     hallucinated = type_summary.get("hallucinated_object")
     correct = type_summary.get("correct_object")
@@ -1027,7 +1292,7 @@ def build_selective_suppression_signal(type_summary):
     }
 
 
-def summarize_object_trace(records, case_groups):
+def summarize_object_trace(records, case_groups, entropy_bins, gate_entropy_thresholds, gate_logp_margins):
     _, inverse_synonym_dict = parse_official_synonyms()
     canonical_synonym_map = build_canonical_synonym_map(inverse_synonym_dict)
 
@@ -1089,6 +1354,9 @@ def summarize_object_trace(records, case_groups):
         "mention_role_summary": summarize_by_field(rows, "object_role"),
         "mention_caption_source_summary": summarize_by_field(rows, "caption_source"),
         "correct_vs_hallucinated_signal": build_selective_suppression_signal(mention_type_summary),
+        "entropy_bin_summary": summarize_entropy_bins(rows, entropy_bins),
+        "logp_delta_distribution": summarize_delta_distributions(rows),
+        "gate_sweep": summarize_gate_sweep(rows, gate_entropy_thresholds, gate_logp_margins),
         "step_summary_by_type": by_step,
         "step_contrast_hallucinated_minus_correct": step_contrast,
         "object_summary_by_type": summarize_by_object(rows),
@@ -1219,6 +1487,89 @@ def step_contrast_table_rows(step_contrast):
                 fmt_value(diff.get("teacher_minus_student_entropy_mean_diff")),
                 fmt_value(diff.get("topk_overlap_ratio_mean_diff")),
                 fmt_value(diff.get("top1_match_frac_diff")),
+            ]
+        )
+    return rows
+
+
+def entropy_bin_table_rows(entropy_bin_summary):
+    rows = []
+    contrast_by_bin = entropy_bin_summary.get("hallucinated_minus_correct_by_bin", {})
+    for bin_label, stats in contrast_by_bin.items():
+        diff = stats.get("hallucinated_minus_correct", {})
+        rows.append(
+            [
+                bin_label,
+                stats.get("hallucinated_num_mentions", 0),
+                stats.get("correct_num_mentions", 0),
+                fmt_value(diff.get("teacher_minus_student_selected_logprob_mean_diff")),
+                fmt_value(diff.get("teacher_minus_student_selected_logprob_sum_diff")),
+                fmt_value(diff.get("teacher_selected_logprob_lt_student_frac_diff")),
+                fmt_value(diff.get("teacher_penalized_mention_frac_diff")),
+                fmt_value(diff.get("topk_overlap_ratio_mean_diff")),
+                fmt_value(diff.get("top1_match_frac_diff")),
+            ]
+        )
+    return rows
+
+
+def delta_distribution_table_rows(distribution_summary, field):
+    rows = []
+    field_summary = distribution_summary.get(field, {})
+    for object_type in ("correct_object", "hallucinated_object", "unknown_object"):
+        stats = field_summary.get(object_type)
+        if not stats:
+            continue
+        rows.append(
+            [
+                object_type,
+                stats.get("count", 0),
+                fmt_value(stats.get("mean")),
+                fmt_value(stats.get("p10")),
+                fmt_value(stats.get("p25")),
+                fmt_value(stats.get("p50")),
+                fmt_value(stats.get("p75")),
+                fmt_value(stats.get("p90")),
+                fmt_value(stats.get("frac_lt_neg0p1")),
+                fmt_value(stats.get("frac_lt_neg0p05")),
+                fmt_value(stats.get("frac_lt_0p0")),
+            ]
+        )
+    contrast = field_summary.get("hallucinated_minus_correct")
+    if contrast:
+        rows.append(
+            [
+                "hallucinated_minus_correct",
+                "",
+                fmt_value(contrast.get("mean_diff")),
+                fmt_value(contrast.get("p10_diff")),
+                fmt_value(contrast.get("p25_diff")),
+                fmt_value(contrast.get("p50_diff")),
+                fmt_value(contrast.get("p75_diff")),
+                fmt_value(contrast.get("p90_diff")),
+                fmt_value(contrast.get("frac_lt_neg0p1_diff")),
+                fmt_value(contrast.get("frac_lt_neg0p05_diff")),
+                fmt_value(contrast.get("frac_lt_0p0_diff")),
+            ]
+        )
+    return rows
+
+
+def gate_sweep_table_rows(gates, limit=20):
+    rows = []
+    for gate in gates[:limit]:
+        rows.append(
+            [
+                fmt_value(gate.get("student_entropy_gt")),
+                fmt_value(gate.get("teacher_minus_student_logp_lt")),
+                gate.get("selected_total", 0),
+                gate.get("selected_hallucinated", 0),
+                gate.get("selected_correct", 0),
+                fmt_value(gate.get("hallucination_precision")),
+                fmt_value(gate.get("hallucination_recall")),
+                fmt_value(gate.get("correct_false_positive_rate")),
+                fmt_value(gate.get("f1")),
+                fmt_value(gate.get("precision_lift_vs_base")),
             ]
         )
     return rows
@@ -1356,6 +1707,142 @@ def write_markdown_summary(output, output_md):
         )
     else:
         lines.append(f"- unavailable: {signal.get('reason')}")
+
+    entropy_rows = entropy_bin_table_rows(object_trace.get("entropy_bin_summary", {}))
+    if entropy_rows:
+        lines.extend(
+            [
+                "",
+                "## Student Entropy Bins: Hallucinated Minus Correct",
+                "",
+                markdown_table(
+                    [
+                        "student entropy bin",
+                        "halluc mentions",
+                        "correct mentions",
+                        "mean logp gap",
+                        "mention-sum logp gap",
+                        "teacher<student gap",
+                        "penalized mention gap",
+                        "topk overlap gap",
+                        "top1 match gap",
+                    ],
+                    entropy_rows,
+                ),
+            ]
+        )
+
+    delta_distribution = object_trace.get("logp_delta_distribution", {})
+    delta_mean_rows = delta_distribution_table_rows(
+        delta_distribution,
+        "teacher_minus_student_selected_logprob_mean",
+    )
+    if delta_mean_rows:
+        lines.extend(
+            [
+                "",
+                "## Logprob Delta Distribution: Mention Mean",
+                "",
+                markdown_table(
+                    [
+                        "type",
+                        "n",
+                        "mean",
+                        "p10",
+                        "p25",
+                        "p50",
+                        "p75",
+                        "p90",
+                        "frac < -0.1",
+                        "frac < -0.05",
+                        "frac < 0",
+                    ],
+                    delta_mean_rows,
+                ),
+            ]
+        )
+
+    delta_sum_rows = delta_distribution_table_rows(
+        delta_distribution,
+        "teacher_minus_student_selected_logprob_sum",
+    )
+    if delta_sum_rows:
+        lines.extend(
+            [
+                "",
+                "## Logprob Delta Distribution: Mention Sum",
+                "",
+                markdown_table(
+                    [
+                        "type",
+                        "n",
+                        "mean",
+                        "p10",
+                        "p25",
+                        "p50",
+                        "p75",
+                        "p90",
+                        "frac < -0.1",
+                        "frac < -0.05",
+                        "frac < 0",
+                    ],
+                    delta_sum_rows,
+                ),
+            ]
+        )
+
+    gate_sweep = object_trace.get("gate_sweep", {})
+    top_gates = gate_sweep.get("top_by_f1", [])
+    if top_gates:
+        lines.extend(
+            [
+                "",
+                "## Selective Gate Sweep: Top By F1",
+                "",
+                f"- base_hallucination_rate: {fmt_value(gate_sweep.get('base_hallucination_rate'))}",
+                "",
+                markdown_table(
+                    [
+                        "student entropy >",
+                        "teacher-student logp <",
+                        "selected",
+                        "halluc selected",
+                        "correct selected",
+                        "halluc precision",
+                        "halluc recall",
+                        "correct FPR",
+                        "F1",
+                        "precision lift",
+                    ],
+                    gate_sweep_table_rows(top_gates),
+                ),
+            ]
+        )
+
+    precision_gates = gate_sweep.get("top_precision_recall_ge_0p1", [])
+    if precision_gates:
+        lines.extend(
+            [
+                "",
+                "## Selective Gate Sweep: Top Precision With Recall >= 0.1",
+                "",
+                markdown_table(
+                    [
+                        "student entropy >",
+                        "teacher-student logp <",
+                        "selected",
+                        "halluc selected",
+                        "correct selected",
+                        "halluc precision",
+                        "halluc recall",
+                        "correct FPR",
+                        "F1",
+                        "precision lift",
+                    ],
+                    gate_sweep_table_rows(precision_gates),
+                ),
+            ]
+        )
 
     step_rows = step_contrast_table_rows(object_trace.get("step_contrast_hallucinated_minus_correct", {}))
     if step_rows:
@@ -1541,6 +2028,24 @@ def main():
     )
     parser.add_argument("--case-analysis", help="Optional all_cases_sorted.json for outcome grouping")
     parser.add_argument(
+        "--entropy-bin-edges",
+        default="0,0.5,1,1.5,inf",
+        help="Comma-separated student entropy bin edges for object-mention summaries.",
+    )
+    parser.add_argument(
+        "--gate-entropy-thresholds",
+        default="0.5,0.75,1,1.25,1.5,2",
+        help="Comma-separated student-entropy thresholds for selective gate sweep.",
+    )
+    parser.add_argument(
+        "--gate-logp-margins",
+        default="0,0.01,0.02,0.05,0.1,0.2",
+        help=(
+            "Comma-separated positive margins m for gate condition "
+            "teacher_minus_student_logp < -m."
+        ),
+    )
+    parser.add_argument(
         "--output-json",
         default=None,
         help="Where to save summary JSON. Defaults to <trace-dir>/opd_trace_summary.json",
@@ -1605,7 +2110,19 @@ def main():
     case_groups = load_case_groups(args.case_analysis)
     case_overlap_summary = summarize_case_overlap(records, case_groups)
     tokens = flatten_token_records(records, case_groups)
-    object_trace_summary = summarize_object_trace(records, case_groups)
+    entropy_bins = build_entropy_bins(parse_float_sequence(args.entropy_bin_edges, DEFAULT_ENTROPY_BIN_EDGES))
+    gate_entropy_thresholds = parse_float_sequence(
+        args.gate_entropy_thresholds,
+        DEFAULT_GATE_ENTROPY_THRESHOLDS,
+    )
+    gate_logp_margins = parse_float_sequence(args.gate_logp_margins, DEFAULT_GATE_LOGP_MARGINS)
+    object_trace_summary = summarize_object_trace(
+        records,
+        case_groups,
+        entropy_bins,
+        gate_entropy_thresholds,
+        gate_logp_margins,
+    )
 
     image_ids = [get_image_id(record) for record in records]
     trace_scope_counts = Counter(record.get("trace_scope", "train") for record in records)
@@ -1696,6 +2213,18 @@ def main():
         )
     else:
         print(f"Hallucinated-correct contrast unavailable: {signal.get('reason')}")
+    gate_sweep = object_trace_summary.get("gate_sweep", {})
+    best_gate = (gate_sweep.get("top_by_f1") or [None])[0]
+    if best_gate:
+        print(
+            "Best selective gate by F1: "
+            f"student_entropy>{fmt_value(best_gate.get('student_entropy_gt'))} "
+            f"teacher-student_logp<{fmt_value(best_gate.get('teacher_minus_student_logp_lt'))} "
+            f"precision={fmt_value(best_gate.get('hallucination_precision'))} "
+            f"recall={fmt_value(best_gate.get('hallucination_recall'))} "
+            f"correct_fpr={fmt_value(best_gate.get('correct_false_positive_rate'))} "
+            f"f1={fmt_value(best_gate.get('f1'))}"
+        )
     for group, stats in output["token_group_summary"].items():
         delta = stats["teacher_minus_student_selected_logprob_mean"]
         lower = stats["teacher_selected_logprob_lt_student_frac"]

@@ -118,6 +118,9 @@ python res-opd/eval/analyze_opd_trace.py \
 ```
 
 Output files (`opd_trace_summary.json`, `opd_trace_summary.md`) are saved in the same directory as the trace file by default.
+The analysis includes object-level correct vs hallucinated summaries, student
+entropy bins, logprob-delta quantiles, and a gate sweep for rules like
+`student_entropy > e && teacher_minus_student_logp < -m`.
 
 ---
 
@@ -126,7 +129,7 @@ Output files (`opd_trace_summary.json`, `opd_trace_summary.md`) are saved in the
 Each experiment's artifacts are organized under `eval_results/latest/`:
 
 ```
-eval_results/latest/{model_name}_{step}/{dataset}/
+eval_results/latest/{model_name}/{dataset}/
 ├── eval_results.jsonl              # Raw inference results
 ├── chair_metrics.json              # CHAIR hallucination metrics
 ├── case_analysis/                  # Badcase/goodcase analysis
@@ -136,8 +139,14 @@ eval_results/latest/{model_name}_{step}/{dataset}/
 │   └── summary.json
 ├── opd_eval_trace.jsonl            # Forced scoring trace
 ├── opd_trace_summary.json          # Trace analysis (JSON)
-└── opd_trace_summary.md            # Trace analysis (Markdown)
+├── opd_trace_summary.md            # Trace analysis (Markdown)
+├── trace_analysis.json             # Training trace analysis
+└── trace_analysis_with_cases.json  # Training trace + case-overlap analysis
 ```
+
+Older directories named `{model_name}_{step}/{dataset}/` are still accepted as
+a fallback by `run_score_eval_trace.sh`, but the current preferred layout is
+`{model_name}/{dataset}/`.
 
 ---
 
