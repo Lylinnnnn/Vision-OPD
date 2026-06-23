@@ -78,6 +78,12 @@ CHAIR_PARALLEL_WORKERS="${CHAIR_PARALLEL_WORKERS:-8}"
 CHAIR_MAX_SAMPLES="${CHAIR_MAX_SAMPLES:-0}"
 CHAIR_SAVE_LOGPROBS="${CHAIR_SAVE_LOGPROBS:-False}"
 CHAIR_TOP_LOGPROBS="${CHAIR_TOP_LOGPROBS:-5}"
+EVAL_OPD_TRACE="${EVAL_OPD_TRACE:-False}"
+EVAL_OPD_TRACE_TOPK="${EVAL_OPD_TRACE_TOPK:-50}"
+EVAL_OPD_TRACE_ENTROPY="${EVAL_OPD_TRACE_ENTROPY:-True}"
+EVAL_OPD_TRACE_SCORE_BASELINE="${EVAL_OPD_TRACE_SCORE_BASELINE:-False}"
+EVAL_OPD_TRACE_CASE_ANALYSIS="${EVAL_OPD_TRACE_CASE_ANALYSIS:-}"
+EVAL_OPD_TRACE_MAX_SAMPLES="${EVAL_OPD_TRACE_MAX_SAMPLES:-0}"
 VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar}"
 VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
@@ -127,18 +133,27 @@ infer_eval_spec() {
     local exp_name="$1"
     local inferred_mode="square"
     local inferred_student_px="0"
+    local inferred_teacher_px="$TARGET_PX"
     local inferred_student_ratio="1.0"
-    if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr ]]; then
+    local inferred_teacher_ratio="1.0"
+    if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr([0-9.]+) ]]; then
         inferred_mode="original"
         inferred_student_px="0"
         inferred_student_ratio="${BASH_REMATCH[1]}"
+        inferred_teacher_ratio="${BASH_REMATCH[2]}"
+    elif [[ "$exp_name" =~ -s([0-9]+)-t([0-9]+) ]]; then
+        inferred_mode="square"
+        inferred_student_px="${BASH_REMATCH[1]}"
+        inferred_teacher_px="${BASH_REMATCH[2]}"
     elif [[ "$exp_name" =~ -s([0-9]+)(-|_) ]]; then
         inferred_mode="square"
         inferred_student_px="${BASH_REMATCH[1]}"
     fi
     DEGRADATION_MODE="${DEGRADATION_MODE:-$inferred_mode}"
     STUDENT_PX="${STUDENT_PX:-$inferred_student_px}"
+    TEACHER_PX="${TEACHER_PX:-$inferred_teacher_px}"
     STUDENT_RATIO="${STUDENT_RATIO:-$inferred_student_ratio}"
+    TEACHER_RATIO="${TEACHER_RATIO:-$inferred_teacher_ratio}"
 }
 
 infer_eval_spec "$EXPERIMENT_NAME"
@@ -181,12 +196,15 @@ echo "============================================================"
 echo "Model:       $MODEL_PATH"
 echo "Deg mode:    $DEGRADATION_MODE"
 echo "Student px:  $STUDENT_PX (0 = original image)"
+echo "Teacher px:  $TEACHER_PX (square-mode offline OPD trace)"
 echo "Target px:   $TARGET_PX"
 echo "Student ratio: $STUDENT_RATIO (original mode)"
+echo "Teacher ratio: $TEACHER_RATIO (original-mode offline OPD trace)"
 echo "Eval mode:   $EVAL_MODE"
 if has_eval_task "$EVAL_MODE" "chair"; then
     echo "CHAIR data:  $TEST_JSON"
     echo "CHAIR logprobs: ${CHAIR_SAVE_LOGPROBS} (top=${CHAIR_TOP_LOGPROBS})"
+    echo "OPD eval trace: ${EVAL_OPD_TRACE} (topk=${EVAL_OPD_TRACE_TOPK}, entropy=${EVAL_OPD_TRACE_ENTROPY})"
 fi
 if has_eval_task "$EVAL_MODE" "pope"; then
     echo "POPE:        $POPE_BENCHMARK"
@@ -342,11 +360,56 @@ fi
 "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/collect_benchmark_summary.py" \
     --output-dir "$OUTPUT_DIR" || true
 
-# --- Step 3: Cleanup ---
+# --- Step 3: Release vLLM before optional offline OPD scoring ---
 echo ""
 echo "[3/3] Shutting down vLLM server ..."
 cleanup
 trap - EXIT
+
+if has_eval_task "$EVAL_MODE" "chair" && [[ "$EVAL_OPD_TRACE" == "True" || "$EVAL_OPD_TRACE" == "true" || "$EVAL_OPD_TRACE" == "1" ]]; then
+    echo ""
+    echo "[OPD trace] Forced-scoring eval captions ..."
+    OPD_TRACE_JSONL="${OUTPUT_DIR}/opd_eval_trace.jsonl"
+    OPD_TRACE_SUMMARY_JSON="${OUTPUT_DIR}/opd_eval_trace_summary.json"
+    OPD_TRACE_SUMMARY_MD="${OUTPUT_DIR}/opd_eval_trace_summary.md"
+    scorer_args=(
+        --model-path "$MODEL_PATH"
+        --eval-results "${OUTPUT_DIR}/eval_results.jsonl"
+        --test-json "$TEST_JSON"
+        --output-jsonl "$OPD_TRACE_JSONL"
+        --degradation-mode "$DEGRADATION_MODE"
+        --student-px "$STUDENT_PX"
+        --teacher-px "$TEACHER_PX"
+        --target-px "$TARGET_PX"
+        --student-ratio "$STUDENT_RATIO"
+        --teacher-ratio "$TEACHER_RATIO"
+        --topk "$EVAL_OPD_TRACE_TOPK"
+        --max-samples "$EVAL_OPD_TRACE_MAX_SAMPLES"
+    )
+    if [[ "$EVAL_OPD_TRACE_ENTROPY" == "True" || "$EVAL_OPD_TRACE_ENTROPY" == "true" || "$EVAL_OPD_TRACE_ENTROPY" == "1" ]]; then
+        scorer_args+=(--entropy)
+    fi
+    if [[ "$EVAL_OPD_TRACE_SCORE_BASELINE" == "True" || "$EVAL_OPD_TRACE_SCORE_BASELINE" == "true" || "$EVAL_OPD_TRACE_SCORE_BASELINE" == "1" ]]; then
+        scorer_args+=(--score-baseline-caption)
+    fi
+    if [[ -n "$EVAL_OPD_TRACE_CASE_ANALYSIS" ]]; then
+        scorer_args+=(--case-analysis "$EVAL_OPD_TRACE_CASE_ANALYSIS")
+    fi
+    if ! "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/score_opd_eval_trace.py" "${scorer_args[@]}"; then
+        echo "  WARNING: OPD eval trace scorer failed; keeping eval outputs." >&2
+        EVAL_FAILURES=$((EVAL_FAILURES + 1))
+    else
+        analyze_args=(
+            --trace-dir "$OPD_TRACE_JSONL"
+            --output-json "$OPD_TRACE_SUMMARY_JSON"
+            --output-md "$OPD_TRACE_SUMMARY_MD"
+        )
+        if [[ -n "$EVAL_OPD_TRACE_CASE_ANALYSIS" ]]; then
+            analyze_args+=(--case-analysis "$EVAL_OPD_TRACE_CASE_ANALYSIS")
+        fi
+        "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/analyze_opd_trace.py" "${analyze_args[@]}"
+    fi
+fi
 
 echo ""
 echo "Evaluation complete. Results saved to: $OUTPUT_DIR"

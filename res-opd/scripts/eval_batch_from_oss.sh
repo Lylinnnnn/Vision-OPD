@@ -57,9 +57,11 @@ HF_FILES=(
 # Defaults
 STEP="global_step_92"
 STUDENT_PX="${STUDENT_PX:-}"
+TEACHER_PX="${TEACHER_PX:-}"
 TARGET_PX="${TARGET_PX:-448}"
 DEGRADATION_MODE="${DEGRADATION_MODE:-}"
 STUDENT_RATIO="${STUDENT_RATIO:-}"
+TEACHER_RATIO="${TEACHER_RATIO:-}"
 VERSION_TAG="latest"
 EVAL_MODE="chair"
 CHAIR_MAX_NEW_TOKENS="${CHAIR_MAX_NEW_TOKENS:-384}"
@@ -67,6 +69,12 @@ CHAIR_PARALLEL_WORKERS="${CHAIR_PARALLEL_WORKERS:-8}"
 CHAIR_MAX_SAMPLES="${CHAIR_MAX_SAMPLES:-0}"
 CHAIR_SAVE_LOGPROBS="${CHAIR_SAVE_LOGPROBS:-False}"
 CHAIR_TOP_LOGPROBS="${CHAIR_TOP_LOGPROBS:-5}"
+EVAL_OPD_TRACE="${EVAL_OPD_TRACE:-False}"
+EVAL_OPD_TRACE_TOPK="${EVAL_OPD_TRACE_TOPK:-50}"
+EVAL_OPD_TRACE_ENTROPY="${EVAL_OPD_TRACE_ENTROPY:-True}"
+EVAL_OPD_TRACE_SCORE_BASELINE="${EVAL_OPD_TRACE_SCORE_BASELINE:-False}"
+EVAL_OPD_TRACE_CASE_ANALYSIS="${EVAL_OPD_TRACE_CASE_ANALYSIS:-}"
+EVAL_OPD_TRACE_MAX_SAMPLES="${EVAL_OPD_TRACE_MAX_SAMPLES:-0}"
 OSS_NAMES=()
 LOCAL_NAMES=()
 STUDENT_RATIOS=()
@@ -97,9 +105,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --step)       STEP="$2"; shift 2 ;;
         --student-px) STUDENT_PX="$2"; shift 2 ;;
+        --teacher-px) TEACHER_PX="$2"; shift 2 ;;
         --target-px) TARGET_PX="$2"; shift 2 ;;
         --degradation-mode) DEGRADATION_MODE="$2"; shift 2 ;;
         --student-ratio) STUDENT_RATIO="$2"; shift 2 ;;
+        --teacher-ratio) TEACHER_RATIO="$2"; shift 2 ;;
         --version-tag) VERSION_TAG="$2"; shift 2 ;;
         --eval-mode)  EVAL_MODE="$2"; shift 2 ;;
         --chair-max-new-tokens) CHAIR_MAX_NEW_TOKENS="$2"; shift 2 ;;
@@ -107,6 +117,12 @@ while [[ $# -gt 0 ]]; do
         --chair-max-samples) CHAIR_MAX_SAMPLES="$2"; shift 2 ;;
         --chair-save-logprobs) CHAIR_SAVE_LOGPROBS="$2"; shift 2 ;;
         --chair-top-logprobs) CHAIR_TOP_LOGPROBS="$2"; shift 2 ;;
+        --eval-opd-trace) EVAL_OPD_TRACE="$2"; shift 2 ;;
+        --eval-opd-trace-topk) EVAL_OPD_TRACE_TOPK="$2"; shift 2 ;;
+        --eval-opd-trace-entropy) EVAL_OPD_TRACE_ENTROPY="$2"; shift 2 ;;
+        --eval-opd-trace-score-baseline) EVAL_OPD_TRACE_SCORE_BASELINE="$2"; shift 2 ;;
+        --eval-opd-trace-case-analysis) EVAL_OPD_TRACE_CASE_ANALYSIS="$2"; shift 2 ;;
+        --eval-opd-trace-max-samples) EVAL_OPD_TRACE_MAX_SAMPLES="$2"; shift 2 ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
@@ -179,19 +195,27 @@ infer_eval_spec() {
     local exp_name="$1"
     local inferred_mode="square"
     local inferred_student_px="448"
+    local inferred_teacher_px="$TARGET_PX"
     local inferred_student_ratio="1.0"
+    local inferred_teacher_ratio="1.0"
 
-    if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr ]]; then
+    if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr([0-9.]+) ]]; then
         inferred_mode="original"
         inferred_student_px="0"
         inferred_student_ratio="${BASH_REMATCH[1]}"
+        inferred_teacher_ratio="${BASH_REMATCH[2]}"
+    elif [[ "$exp_name" =~ -s([0-9]+)-t([0-9]+) ]]; then
+        inferred_mode="square"
+        inferred_student_px="${BASH_REMATCH[1]}"
+        inferred_teacher_px="${BASH_REMATCH[2]}"
+        inferred_student_ratio="1.0"
     elif [[ "$exp_name" =~ -s([0-9]+)(-|_) ]]; then
         inferred_mode="square"
         inferred_student_px="${BASH_REMATCH[1]}"
         inferred_student_ratio="1.0"
     fi
 
-    echo "${DEGRADATION_MODE:-$inferred_mode}|${STUDENT_PX:-$inferred_student_px}|${TARGET_PX}|${STUDENT_RATIO:-$inferred_student_ratio}"
+    echo "${DEGRADATION_MODE:-$inferred_mode}|${STUDENT_PX:-$inferred_student_px}|${TEACHER_PX:-$inferred_teacher_px}|${TARGET_PX}|${STUDENT_RATIO:-$inferred_student_ratio}|${TEACHER_RATIO:-$inferred_teacher_ratio}"
 }
 
 eval_results_exist() {
@@ -200,6 +224,11 @@ eval_results_exist() {
     if has_eval_task "$EVAL_MODE" "chair"; then
         if ! ls "${result_dir}/"*/chair_metrics.json 2>/dev/null | grep -q .; then
             ok=1
+        fi
+        if [[ "$EVAL_OPD_TRACE" == "True" || "$EVAL_OPD_TRACE" == "true" || "$EVAL_OPD_TRACE" == "1" ]]; then
+            if ! ls "${result_dir}/"*/opd_eval_trace_summary.json 2>/dev/null | grep -q .; then
+                ok=1
+            fi
         fi
     fi
     if has_eval_task "$EVAL_MODE" "pope"; then
@@ -224,6 +253,7 @@ echo " Target PX: ${TARGET_PX}"
 echo " Version tag: ${VERSION_TAG}"
 echo " Eval mode: ${EVAL_MODE}"
 echo " CHAIR logprobs: ${CHAIR_SAVE_LOGPROBS} (top=${CHAIR_TOP_LOGPROBS})"
+echo " OPD eval trace: ${EVAL_OPD_TRACE} (topk=${EVAL_OPD_TRACE_TOPK}, entropy=${EVAL_OPD_TRACE_ENTROPY})"
 echo " Experiments: ${#OSS_NAMES[@]}"
 echo " Started at: $(date)"
 echo "=========================================="
@@ -265,7 +295,7 @@ for idx in "${!OSS_NAMES[@]}"; do
 
     oss_path="${OSS_BASE}/${oss_name}/${STEP}"
     local_ckpt_dir="${CKPT_BASE}/${local_exp_name}/${STEP}"
-    IFS='|' read -r effective_degradation_mode effective_student_px effective_target_px effective_student_ratio < <(
+    IFS='|' read -r effective_degradation_mode effective_student_px effective_teacher_px effective_target_px effective_student_ratio effective_teacher_ratio < <(
         infer_eval_spec "$local_exp_name"
     )
 
@@ -275,6 +305,7 @@ for idx in "${!OSS_NAMES[@]}"; do
     echo " Local exp: ${local_exp_name}"
     echo " OSS: ${oss_path}"
     echo " Student: mode=${effective_degradation_mode} px=${effective_student_px} target=${effective_target_px} ratio=${effective_student_ratio}"
+    echo " Teacher: px=${effective_teacher_px} ratio=${effective_teacher_ratio}"
     echo "=========================================="
 
     # Check if eval results already exist
@@ -293,12 +324,20 @@ for idx in "${!OSS_NAMES[@]}"; do
     echo "[2/4] Running evaluation ..."
     DEGRADATION_MODE="$effective_degradation_mode" \
     STUDENT_RATIO="$effective_student_ratio" \
+    TEACHER_RATIO="$effective_teacher_ratio" \
+    TEACHER_PX="$effective_teacher_px" \
     TARGET_PX="$effective_target_px" \
     CHAIR_MAX_NEW_TOKENS="$CHAIR_MAX_NEW_TOKENS" \
     CHAIR_PARALLEL_WORKERS="$CHAIR_PARALLEL_WORKERS" \
     CHAIR_MAX_SAMPLES="$CHAIR_MAX_SAMPLES" \
     CHAIR_SAVE_LOGPROBS="$CHAIR_SAVE_LOGPROBS" \
     CHAIR_TOP_LOGPROBS="$CHAIR_TOP_LOGPROBS" \
+    EVAL_OPD_TRACE="$EVAL_OPD_TRACE" \
+    EVAL_OPD_TRACE_TOPK="$EVAL_OPD_TRACE_TOPK" \
+    EVAL_OPD_TRACE_ENTROPY="$EVAL_OPD_TRACE_ENTROPY" \
+    EVAL_OPD_TRACE_SCORE_BASELINE="$EVAL_OPD_TRACE_SCORE_BASELINE" \
+    EVAL_OPD_TRACE_CASE_ANALYSIS="$EVAL_OPD_TRACE_CASE_ANALYSIS" \
+    EVAL_OPD_TRACE_MAX_SAMPLES="$EVAL_OPD_TRACE_MAX_SAMPLES" \
         bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "$EVAL_MODE"
     echo "  ✅ Evaluation complete"
 

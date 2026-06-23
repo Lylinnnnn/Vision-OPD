@@ -228,13 +228,17 @@ def load_case_groups(case_analysis_path):
             "gt_objects": case.get("gt_objects", []),
             "model_mentioned_objects": case.get("model_mentioned_objects", []),
             "baseline_mentioned_objects": case.get("baseline_mentioned_objects", []),
+            "model_caption": case.get("model_caption"),
+            "baseline_caption": case.get("baseline_caption"),
+            "object_level_diff": case.get("object_level_diff", {}),
+            "case_diagnostics": case.get("case_diagnostics", {}),
         }
     return groups
 
 
 def get_image_id(record):
     metadata = record.get("metadata") or {}
-    image_id = metadata.get("image_id")
+    image_id = record.get("image_id") or metadata.get("image_id")
     if image_id is None:
         extra = metadata.get("extra_info")
         if isinstance(extra, dict):
@@ -247,7 +251,7 @@ def get_image_id(record):
 
 def get_file_name(record):
     metadata = record.get("metadata") or {}
-    file_name = metadata.get("file_name")
+    file_name = record.get("file_name") or metadata.get("file_name")
     if not file_name:
         extra = metadata.get("extra_info")
         if isinstance(extra, dict):
@@ -255,6 +259,16 @@ def get_file_name(record):
     if not file_name:
         return None
     return os.path.basename(str(file_name))
+
+
+def get_caption_source(record):
+    metadata = record.get("metadata") or {}
+    caption_source = record.get("caption_source") or metadata.get("caption_source")
+    if not caption_source:
+        extra = metadata.get("extra_info")
+        if isinstance(extra, dict):
+            caption_source = extra.get("caption_source")
+    return caption_source or "train_rollout"
 
 
 def sample_values(values, limit=20):
@@ -476,6 +490,43 @@ def bounded_context(text, start, end, window=80):
     return snippet
 
 
+def classify_object_role(canonical, object_type, caption_source, case_info):
+    object_diff = case_info.get("object_level_diff") or {}
+    if not object_diff:
+        return object_type
+
+    def has(field):
+        return canonical in set(object_diff.get(field, []) or [])
+
+    if caption_source == "model_caption":
+        if has("model_only_hallucinations"):
+            return "model_only_hallucination"
+        if has("shared_hallucinations"):
+            return "persistent_hallucination"
+        if has("model_gained_gt"):
+            return "model_gained_gt"
+        if has("model_hit_gt"):
+            return "model_correct_object"
+        if has("model_hallucinated"):
+            return "model_hallucinated_object"
+        return object_type
+
+    if caption_source == "baseline_caption":
+        if has("removed_hallucinations"):
+            return "removed_hallucination_candidate"
+        if has("shared_hallucinations"):
+            return "persistent_hallucination"
+        if has("model_lost_gt"):
+            return "lost_gt_candidate"
+        if has("baseline_hit_gt"):
+            return "baseline_correct_object"
+        if has("baseline_hallucinated"):
+            return "baseline_hallucinated_object"
+        return object_type
+
+    return object_type
+
+
 def metric_values(tokens, key):
     values = []
     for token in tokens:
@@ -543,7 +594,7 @@ def summarize_mention_metrics(tokens):
     return result
 
 
-def find_object_mentions(record, canonical_synonym_map, gt_objects, gt_source, case_group):
+def find_object_mentions(record, canonical_synonym_map, gt_objects, gt_source, case_group, case_info):
     token_text, token_spans = build_token_char_spans(record)
     search_text = token_text or record.get("response_text", "")
     if not search_text:
@@ -552,6 +603,10 @@ def find_object_mentions(record, canonical_synonym_map, gt_objects, gt_source, c
     token_records = record.get("token_records", []) or []
     mentions = []
     selected_spans_by_canonical = defaultdict(list)
+    caption_source = get_caption_source(record)
+    metadata = record.get("metadata") or {}
+    behavior_pattern = metadata.get("behavior_pattern") or case_info.get("behavior_pattern")
+    distill_recommendation = metadata.get("distill_recommendation") or case_info.get("distill_recommendation")
 
     candidates = []
     for canonical, terms in canonical_synonym_map.items():
@@ -578,19 +633,25 @@ def find_object_mentions(record, canonical_synonym_map, gt_objects, gt_source, c
                 object_type = "correct_object" if canonical in gt_objects else "hallucinated_object"
             else:
                 object_type = "unknown_object"
+            object_role = classify_object_role(canonical, object_type, caption_source, case_info)
 
             metrics = summarize_mention_metrics(tokens)
             mention = {
                 "image_id": get_image_id(record),
                 "global_step": record.get("global_step"),
+                "trace_scope": record.get("trace_scope", "train"),
+                "caption_source": caption_source,
                 "rank": record.get("rank"),
                 "sample_index_in_rank_batch": record.get("sample_index_in_rank_batch"),
                 "case_group": case_group,
+                "behavior_pattern": behavior_pattern,
+                "distill_recommendation": distill_recommendation,
                 "canonical_object": canonical,
                 "source_term": term,
                 "mention_text": search_text[match.start():match.end()],
                 "context": bounded_context(search_text, match.start(), match.end()),
                 "object_type": object_type,
+                "object_role": object_role,
                 "gt_source": gt_source,
                 "char_start": match.start(),
                 "char_end": match.end(),
@@ -744,14 +805,19 @@ def clean_mention_for_output(mention):
     keep_keys = [
         "image_id",
         "global_step",
+        "trace_scope",
+        "caption_source",
         "rank",
         "sample_index_in_rank_batch",
         "case_group",
+        "behavior_pattern",
+        "distill_recommendation",
         "canonical_object",
         "source_term",
         "mention_text",
         "context",
         "object_type",
+        "object_role",
         "gt_source",
         "char_start",
         "char_end",
@@ -769,6 +835,8 @@ def summarize_mention_rows(rows):
     source_term_counter = Counter(row.get("source_term") for row in rows if row.get("source_term"))
     gt_source_counter = Counter(row.get("gt_source") for row in rows if row.get("gt_source"))
     case_group_counter = Counter(row.get("case_group") for row in rows if row.get("case_group"))
+    caption_source_counter = Counter(row.get("caption_source") for row in rows if row.get("caption_source"))
+    object_role_counter = Counter(row.get("object_role") for row in rows if row.get("object_role"))
     trace_files = {row.get("_trace_file") for row in rows if row.get("_trace_file")}
     image_ids = {row.get("image_id") for row in rows if row.get("image_id") is not None}
     record_keys = {
@@ -795,6 +863,8 @@ def summarize_mention_rows(rows):
         "top_source_terms": dict(source_term_counter.most_common(30)),
         "gt_source_counts": dict(gt_source_counter.most_common()),
         "case_group_counts": dict(case_group_counter.most_common()),
+        "caption_source_counts": dict(caption_source_counter.most_common()),
+        "object_role_counts": dict(object_role_counter.most_common()),
     }
     for key in OBJECT_METRIC_KEYS:
         summary[key] = safe_mean(row.get(key) for row in rows)
@@ -855,6 +925,12 @@ def top_mentions(rows, key, reverse=False, limit=30, object_type=None):
     return [clean_mention_for_output(row) for row in filtered[:limit]]
 
 
+def top_mentions_where(rows, predicate, key, reverse=False, limit=30):
+    filtered = [row for row in rows if row.get(key) is not None and predicate(row)]
+    filtered.sort(key=lambda row: row.get(key), reverse=reverse)
+    return [clean_mention_for_output(row) for row in filtered[:limit]]
+
+
 def summarize_by_object(rows):
     by_object_type = defaultdict(list)
     for row in rows:
@@ -866,6 +942,16 @@ def summarize_by_object(rows):
     for (object_type, canonical), obj_rows in sorted(by_object_type.items()):
         object_summary.setdefault(object_type, {})[canonical] = summarize_mention_rows(obj_rows)
     return object_summary
+
+
+def summarize_by_field(rows, field_name):
+    by_value = defaultdict(list)
+    for row in rows:
+        by_value[row.get(field_name, "unknown")].append(row)
+    return {
+        str(value): summarize_mention_rows(value_rows)
+        for value, value_rows in sorted(by_value.items(), key=lambda item: str(item[0]))
+    }
 
 
 def summarize_by_step(rows):
@@ -952,11 +1038,14 @@ def summarize_object_trace(records, case_groups):
     records_with_mentions = 0
     records_without_mentions = 0
     record_type_counts = Counter()
+    record_role_counts = Counter()
+    caption_source_counts = Counter()
 
     for record in records:
         image_id = get_image_id(record)
         case_info = case_groups.get(image_id, {}) if image_id is not None else {}
         case_group = case_info.get("group", "unmatched_or_no_case")
+        caption_source_counts[get_caption_source(record)] += 1
         gt_objects, gt_source = extract_gt_objects(record, case_groups, inverse_synonym_dict)
         gt_source_counts[gt_source] += 1
         if gt_objects:
@@ -964,13 +1053,14 @@ def summarize_object_trace(records, case_groups):
         else:
             records_without_gt += 1
 
-        mentions = find_object_mentions(record, canonical_synonym_map, gt_objects, gt_source, case_group)
+        mentions = find_object_mentions(record, canonical_synonym_map, gt_objects, gt_source, case_group, case_info)
         if mentions:
             records_with_mentions += 1
         else:
             records_without_mentions += 1
         for mention in mentions:
             record_type_counts[mention.get("object_type", "unknown_object")] += 1
+            record_role_counts[mention.get("object_role", "unknown_role")] += 1
         rows.extend(mentions)
 
     by_type = defaultdict(list)
@@ -992,8 +1082,12 @@ def summarize_object_trace(records, case_groups):
         "records_with_object_mentions_count": records_with_mentions,
         "records_without_object_mentions_count": records_without_mentions,
         "gt_source_counts": dict(gt_source_counts.most_common()),
+        "caption_source_counts": dict(caption_source_counts.most_common()),
         "mention_counts_by_type": dict(record_type_counts.most_common()),
+        "mention_counts_by_role": dict(record_role_counts.most_common()),
         "mention_type_summary": mention_type_summary,
+        "mention_role_summary": summarize_by_field(rows, "object_role"),
+        "mention_caption_source_summary": summarize_by_field(rows, "caption_source"),
         "correct_vs_hallucinated_signal": build_selective_suppression_signal(mention_type_summary),
         "step_summary_by_type": by_step,
         "step_contrast_hallucinated_minus_correct": step_contrast,
@@ -1020,6 +1114,20 @@ def summarize_object_trace(records, case_groups):
             hallucinated_rows,
             "teacher_minus_student_selected_logprob_sum",
             reverse=True,
+            limit=30,
+        ),
+        "top_teacher_suppressed_removed_hallucination_candidates": top_mentions_where(
+            rows,
+            lambda row: row.get("object_role") == "removed_hallucination_candidate",
+            "teacher_minus_student_selected_logprob_sum",
+            reverse=False,
+            limit=30,
+        ),
+        "top_teacher_suppressed_lost_gt_candidates": top_mentions_where(
+            rows,
+            lambda row: row.get("object_role") == "lost_gt_candidate",
+            "teacher_minus_student_selected_logprob_sum",
+            reverse=False,
             limit=30,
         ),
     }
@@ -1068,6 +1176,33 @@ def mention_summary_table_rows(type_summary):
     return rows
 
 
+def generic_summary_table_rows(summary, preferred_order=None):
+    rows = []
+    seen = set()
+    keys = list(preferred_order or []) + sorted(summary.keys())
+    for key in keys:
+        if key in seen or key not in summary:
+            continue
+        seen.add(key)
+        stats = summary.get(key) or {}
+        rows.append(
+            [
+                key,
+                stats.get("num_mentions", 0),
+                stats.get("num_unique_images", 0),
+                fmt_value(stats.get("teacher_minus_student_selected_logprob_mean")),
+                fmt_value(stats.get("teacher_minus_student_selected_logprob_sum")),
+                fmt_value(stats.get("teacher_selected_logprob_lt_student_frac")),
+                fmt_value(stats.get("teacher_penalized_mention_frac")),
+                fmt_value(stats.get("student_entropy_mean")),
+                fmt_value(stats.get("teacher_entropy_mean")),
+                fmt_value(stats.get("topk_overlap_ratio_mean")),
+                fmt_value(stats.get("top1_match_frac")),
+            ]
+        )
+    return rows
+
+
 def step_contrast_table_rows(step_contrast):
     rows = []
     for step, stats in sorted(step_contrast.items(), key=lambda item: step_sort_key(item[0])):
@@ -1096,6 +1231,8 @@ def mention_example_table_rows(mentions, limit=20):
             [
                 mention.get("global_step"),
                 mention.get("image_id"),
+                mention.get("caption_source"),
+                mention.get("object_role"),
                 mention.get("canonical_object"),
                 mention.get("mention_text"),
                 fmt_value(mention.get("teacher_minus_student_selected_logprob_sum")),
@@ -1123,6 +1260,7 @@ def write_markdown_summary(output, output_md):
         f"- case_analysis: `{output.get('case_analysis')}`",
         f"- records: {output.get('num_records')}  tokens: {output.get('num_tokens')}  "
         f"unique_images: {output.get('num_unique_images')}",
+        f"- trace_scope_counts: `{json.dumps(output.get('trace_scope_counts', {}), ensure_ascii=False)}`",
         "",
         "## Case Analysis Overlap",
         "",
@@ -1163,6 +1301,35 @@ def write_markdown_summary(output, output_md):
                 "top1 match",
             ],
             mention_summary_table_rows(type_summary),
+        ),
+        "",
+        "## Eval Object Roles",
+        "",
+        markdown_table(
+            [
+                "role",
+                "mentions",
+                "images",
+                "mean teacher-student logp",
+                "mean mention-sum teacher-student logp",
+                "teacher<student frac",
+                "penalized mention frac",
+                "student entropy",
+                "teacher entropy",
+                "topk overlap",
+                "top1 match",
+            ],
+            generic_summary_table_rows(
+                object_trace.get("mention_role_summary", {}),
+                preferred_order=[
+                    "removed_hallucination_candidate",
+                    "lost_gt_candidate",
+                    "model_only_hallucination",
+                    "persistent_hallucination",
+                    "model_correct_object",
+                    "baseline_correct_object",
+                ],
+            ),
         ),
         "",
         "## Selective Suppression Signal",
@@ -1232,6 +1399,14 @@ def write_markdown_summary(output, output_md):
             "Top Teacher-Supported Hallucination Mentions",
             object_trace.get("top_teacher_supported_hallucination_mentions", []),
         ),
+        (
+            "Top Teacher-Suppressed Removed Hallucination Candidates",
+            object_trace.get("top_teacher_suppressed_removed_hallucination_candidates", []),
+        ),
+        (
+            "Top Teacher-Suppressed Lost GT Candidates",
+            object_trace.get("top_teacher_suppressed_lost_gt_candidates", []),
+        ),
     ]
     for title, mentions in examples:
         if not mentions:
@@ -1245,6 +1420,8 @@ def write_markdown_summary(output, output_md):
                     [
                         "step",
                         "image_id",
+                        "source",
+                        "role",
                         "object",
                         "mention",
                         "sum logp delta",
@@ -1407,6 +1584,7 @@ def main():
     object_trace_summary = summarize_object_trace(records, case_groups)
 
     image_ids = [get_image_id(record) for record in records]
+    trace_scope_counts = Counter(record.get("trace_scope", "train") for record in records)
     matched_records = case_overlap_summary["matched_records_by_image_id"]
     trace_coverage = summarize_trace_coverage(records)
     output = {
@@ -1422,6 +1600,7 @@ def main():
         "skipped_non_trace_records": skipped_non_trace_records,
         "num_tokens": len(tokens),
         "num_unique_images": len({image_id for image_id in image_ids if image_id is not None}),
+        "trace_scope_counts": dict(trace_scope_counts.most_common()),
         "case_matched_records": matched_records,
         "case_matched_record_rate": safe_rate(matched_records, len(records)),
         "case_overlap_summary": case_overlap_summary,

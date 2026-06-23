@@ -463,8 +463,13 @@ def main():
                 result = {
                     "image_id": sample["image_id"],
                     "file_name": sample["file_name"],
+                    "image_path": sample.get("image_path", image_path),
                     "gt_captions": sample.get("captions", []),
                     "gt_objects": sample.get("objects", []),
+                    "eval_degradation_mode": args.degradation_mode,
+                    "eval_student_px": args.student_px,
+                    "eval_target_px": args.target_px,
+                    "eval_student_ratio": args.student_ratio,
                 }
                 result.update(caption)
                 return result
@@ -504,8 +509,13 @@ def main():
                     result = {
                         "image_id": sample["image_id"],
                         "file_name": sample["file_name"],
+                        "image_path": sample.get("image_path", image_path),
                         "gt_captions": sample.get("captions", []),
                         "gt_objects": sample.get("objects", []),
+                        "eval_degradation_mode": args.degradation_mode,
+                        "eval_student_px": args.student_px,
+                        "eval_target_px": args.target_px,
+                        "eval_student_ratio": args.student_ratio,
                     }
                     result.update(generation)
                     f_out.write(json.dumps(result) + "\n")
