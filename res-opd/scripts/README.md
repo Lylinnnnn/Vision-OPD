@@ -122,6 +122,11 @@ The analysis includes object-level correct vs hallucinated summaries, student
 entropy bins, logprob-delta quantiles, and a gate sweep for rules like
 `student_entropy > e && teacher_minus_student_logp < -m`.
 
+For the base-model low-resolution critic sanity check, use
+`python res-opd/eval/run_base_trace_probe.py` on a fixed train-probe
+`eval_results.jsonl`. It scores one high-resolution student view against
+multiple low-resolution critic ratios and writes `base_trace_probe_summary.md`.
+
 ---
 
 ## Output Directory Structure

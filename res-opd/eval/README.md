@@ -129,6 +129,55 @@ rules of the form `student_entropy > e` and
 `teacher_minus_student_logp < -m`, reporting hallucination precision/recall and
 correct-object false-positive rate.
 
+### Base Model Low-Resolution Critic Probe
+
+Use this before designing a selective OPD loss. It checks whether low-resolution
+views already provide a useful veto signal on fixed base-model captions:
+hallucinated object tokens should receive more negative low-res minus high-res
+logprob deltas than correct object tokens.
+
+This does not rerun vLLM generation. It consumes the base model's existing
+`eval_results.jsonl`, runs one high-resolution student forced forward plus
+several low-resolution critic forced forwards, then writes per-ratio summaries
+and an aggregate comparison table.
+
+For proxy or ratio selection, use a fixed train-probe subset rather than
+val/test to avoid tuning on the final evaluation split.
+
+```bash
+python res-opd/eval/run_base_trace_probe.py \
+  --model-path /home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct \
+  --eval-results <base-train-probe-dir>/eval_results.jsonl \
+  --output-dir <base-train-probe-dir>/base_trace_probe \
+  --teacher-ratios 0.25,0.5,0.75 \
+  --degradation-mode original \
+  --student-ratio 1.0 \
+  --topk 100 \
+  --max-samples 0
+```
+
+If `eval_results.jsonl` does not contain `gt_objects`, pass `--case-analysis`
+or `--test-json` so object mentions can be labeled as correct vs hallucinated.
+For quick debugging use `--max-samples 50`.
+
+Main outputs:
+
+```text
+base_trace_probe/
+├── tr0.25/opd_eval_trace.jsonl
+├── tr0.25/opd_trace_summary.json
+├── tr0.5/opd_eval_trace.jsonl
+├── tr0.75/opd_trace_summary.md
+├── base_trace_probe_summary.json
+└── base_trace_probe_summary.md
+```
+
+Positive evidence for a useful low-res critic means:
+
+- `logp gap` is negative: hallucinated objects are suppressed more than correct objects.
+- `tail gap < -0.05` is positive: strong negative deltas are enriched on hallucinations.
+- best gate F1/precision lift improves while correct-object FPR stays tolerable.
+
 ### Training Mini-Eval Generations
 
 Use this when you want step-by-step changes during training. The training loop

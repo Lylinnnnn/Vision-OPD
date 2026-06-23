@@ -1994,6 +1994,78 @@ def summarize_trace_coverage(records):
     }
 
 
+def build_trace_analysis_summary(
+    trace_dir,
+    case_analysis=None,
+    experiment_name=None,
+    oss_name=None,
+    oss_base=None,
+    oss_trace_path=None,
+    fetched_from_oss=False,
+    max_records=0,
+    entropy_bin_edges=None,
+    gate_entropy_thresholds=None,
+    gate_logp_margins=None,
+):
+    """Build the full OPD trace analysis summary without parsing CLI args."""
+    records, skipped_non_trace_records = load_trace_records(trace_dir, max_records=max_records)
+    if not records:
+        hint = ""
+        if experiment_name and oss_name and oss_base:
+            hint = (
+                f"\nTried local trace dir: {trace_dir}\n"
+                f"Expected OSS trace path: {oss_base.rstrip('/')}/{oss_name}/training_artifacts/traces/"
+            )
+        raise SystemExit(f"No trace records found under {trace_dir}.{hint}")
+
+    oss_base = oss_base or os.environ.get("OSS_BASE", "oss://industry-algo/yanlin/ckpt/OPD/v4")
+    case_groups = load_case_groups(case_analysis)
+    case_overlap_summary = summarize_case_overlap(records, case_groups)
+    tokens = flatten_token_records(records, case_groups)
+    entropy_bins = build_entropy_bins(parse_float_sequence(entropy_bin_edges, DEFAULT_ENTROPY_BIN_EDGES))
+    parsed_gate_entropy_thresholds = parse_float_sequence(
+        gate_entropy_thresholds,
+        DEFAULT_GATE_ENTROPY_THRESHOLDS,
+    )
+    parsed_gate_logp_margins = parse_float_sequence(gate_logp_margins, DEFAULT_GATE_LOGP_MARGINS)
+    object_trace_summary = summarize_object_trace(
+        records,
+        case_groups,
+        entropy_bins,
+        parsed_gate_entropy_thresholds,
+        parsed_gate_logp_margins,
+    )
+
+    image_ids = [get_image_id(record) for record in records]
+    trace_scope_counts = Counter(record.get("trace_scope", "train") for record in records)
+    matched_records = case_overlap_summary["matched_records_by_image_id"]
+    trace_coverage = summarize_trace_coverage(records)
+    return {
+        "trace_dir": trace_dir,
+        "experiment_name": experiment_name,
+        "oss_name": oss_name,
+        "oss_base": oss_base,
+        "oss_trace_path": oss_trace_path
+        or (f"{oss_base.rstrip('/')}/{oss_name}/training_artifacts/traces" if oss_name else None),
+        "fetched_from_oss": fetched_from_oss,
+        "case_analysis": case_analysis,
+        "num_records": len(records),
+        "skipped_non_trace_records": skipped_non_trace_records,
+        "num_tokens": len(tokens),
+        "num_unique_images": len({image_id for image_id in image_ids if image_id is not None}),
+        "trace_scope_counts": dict(trace_scope_counts.most_common()),
+        "case_matched_records": matched_records,
+        "case_matched_record_rate": safe_rate(matched_records, len(records)),
+        "case_overlap_summary": case_overlap_summary,
+        "trace_coverage": trace_coverage,
+        "global_steps": trace_coverage["global_steps"],
+        "record_group_summary": summarize_records(records, case_groups),
+        "token_group_summary": summarize_tokens(tokens),
+        "object_mention_summary": summarize_object_mentions(records, case_groups),
+        "object_trace_summary": object_trace_summary,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Analyze OPD training token traces")
     parser.add_argument(
@@ -2098,60 +2170,23 @@ def main():
         oss_trace_path = fetch_traces_from_oss(args.oss_base, oss_name, trace_dir)
         fetched_from_oss = True
 
-    records, skipped_non_trace_records = load_trace_records(trace_dir, max_records=args.max_records)
-    if not records:
-        hint = ""
-        if args.experiment_name and oss_name:
-            hint = (
-                f"\nTried local trace dir: {trace_dir}\n"
-                f"Expected OSS trace path: {args.oss_base.rstrip('/')}/{oss_name}/training_artifacts/traces/"
-            )
-        raise SystemExit(f"No trace records found under {trace_dir}.{hint}")
-    case_groups = load_case_groups(args.case_analysis)
-    case_overlap_summary = summarize_case_overlap(records, case_groups)
-    tokens = flatten_token_records(records, case_groups)
-    entropy_bins = build_entropy_bins(parse_float_sequence(args.entropy_bin_edges, DEFAULT_ENTROPY_BIN_EDGES))
-    gate_entropy_thresholds = parse_float_sequence(
-        args.gate_entropy_thresholds,
-        DEFAULT_GATE_ENTROPY_THRESHOLDS,
+    output = build_trace_analysis_summary(
+        trace_dir,
+        case_analysis=args.case_analysis,
+        experiment_name=args.experiment_name,
+        oss_name=oss_name,
+        oss_base=args.oss_base,
+        oss_trace_path=oss_trace_path,
+        fetched_from_oss=fetched_from_oss,
+        max_records=args.max_records,
+        entropy_bin_edges=args.entropy_bin_edges,
+        gate_entropy_thresholds=args.gate_entropy_thresholds,
+        gate_logp_margins=args.gate_logp_margins,
     )
-    gate_logp_margins = parse_float_sequence(args.gate_logp_margins, DEFAULT_GATE_LOGP_MARGINS)
-    object_trace_summary = summarize_object_trace(
-        records,
-        case_groups,
-        entropy_bins,
-        gate_entropy_thresholds,
-        gate_logp_margins,
-    )
-
-    image_ids = [get_image_id(record) for record in records]
-    trace_scope_counts = Counter(record.get("trace_scope", "train") for record in records)
-    matched_records = case_overlap_summary["matched_records_by_image_id"]
-    trace_coverage = summarize_trace_coverage(records)
-    output = {
-        "trace_dir": trace_dir,
-        "experiment_name": args.experiment_name,
-        "oss_name": oss_name,
-        "oss_base": args.oss_base,
-        "oss_trace_path": oss_trace_path
-        or (f"{args.oss_base.rstrip('/')}/{oss_name}/training_artifacts/traces" if oss_name else None),
-        "fetched_from_oss": fetched_from_oss,
-        "case_analysis": args.case_analysis,
-        "num_records": len(records),
-        "skipped_non_trace_records": skipped_non_trace_records,
-        "num_tokens": len(tokens),
-        "num_unique_images": len({image_id for image_id in image_ids if image_id is not None}),
-        "trace_scope_counts": dict(trace_scope_counts.most_common()),
-        "case_matched_records": matched_records,
-        "case_matched_record_rate": safe_rate(matched_records, len(records)),
-        "case_overlap_summary": case_overlap_summary,
-        "trace_coverage": trace_coverage,
-        "global_steps": trace_coverage["global_steps"],
-        "record_group_summary": summarize_records(records, case_groups),
-        "token_group_summary": summarize_tokens(tokens),
-        "object_mention_summary": summarize_object_mentions(records, case_groups),
-        "object_trace_summary": object_trace_summary,
-    }
+    object_trace_summary = output["object_trace_summary"]
+    case_overlap_summary = output["case_overlap_summary"]
+    trace_coverage = output["trace_coverage"]
+    matched_records = output["case_matched_records"]
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output_json)), exist_ok=True)
     with open(args.output_json, "w", encoding="utf-8") as f:
@@ -2159,8 +2194,8 @@ def main():
     if args.output_md:
         write_markdown_summary(output, args.output_md)
 
-    print(f"Loaded trace records: {len(records)}")
-    print(f"Loaded tokens: {len(tokens)}")
+    print(f"Loaded trace records: {output['num_records']}")
+    print(f"Loaded tokens: {output['num_tokens']}")
     print(
         "Trace steps: "
         f"{trace_coverage['min_global_step']}..{trace_coverage['max_global_step']} "
@@ -2168,9 +2203,9 @@ def main():
     )
     if fetched_from_oss:
         print(f"Fetched traces from OSS: {output['oss_trace_path']}/")
-    if skipped_non_trace_records:
-        print(f"Skipped non-trace JSON records: {skipped_non_trace_records}")
-    print(f"Matched records to case analysis by image_id: {matched_records}/{len(records)}")
+    if output["skipped_non_trace_records"]:
+        print(f"Skipped non-trace JSON records: {output['skipped_non_trace_records']}")
+    print(f"Matched records to case analysis by image_id: {matched_records}/{output['num_records']}")
     if args.case_analysis:
         print(
             "Case-analysis overlap: "

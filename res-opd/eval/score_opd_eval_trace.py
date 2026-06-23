@@ -627,6 +627,54 @@ def _default_output_jsonl(eval_results_path):
     return os.path.join(eval_dir, "opd_eval_trace.jsonl")
 
 
+def build_trace_record(args, record, caption_source, caption, combined, case, image_path, checkpoint_step):
+    """Build one analyzer-compatible OPD trace record from scored views."""
+    image_id = record.get("image_id")
+    metadata = {
+        "uid": record.get("uid") or f"{args.trace_scope}:{image_id}:{caption_source}:step{checkpoint_step}",
+        "index": record.get("index"),
+        "data_source": record.get("data_source") or "coco_res_opd_eval",
+        "image_id": image_id,
+        "file_name": record.get("file_name"),
+        "caption_source": caption_source,
+        "case_group": case.get("distill_recommendation") or case.get("behavior_pattern"),
+        "behavior_pattern": case.get("behavior_pattern"),
+        "distill_recommendation": case.get("distill_recommendation"),
+        "extra_info": {
+            "image_id": image_id,
+            "file_name": record.get("file_name"),
+            "image_path": image_path,
+            "objects": record.get("gt_objects", []) or case.get("gt_objects", []),
+            "captions": record.get("gt_captions", []),
+            "caption_source": caption_source,
+            "generation_step": record.get("generation_step"),
+        },
+    }
+    out = {
+        "trace_scope": args.trace_scope,
+        "global_step": checkpoint_step,
+        "checkpoint_step": checkpoint_step,
+        "rank": 0,
+        "sample_index_in_rank_batch": 0,
+        "caption_source": caption_source,
+        "model_path": args.model_path,
+        "degradation_mode": args.degradation_mode,
+        "student_px": args.student_px,
+        "teacher_px": args.teacher_px,
+        "target_px": args.target_px,
+        "student_ratio": args.student_ratio,
+        "teacher_ratio": args.teacher_ratio,
+        "metadata": metadata,
+        "response_token_ids": combined["response_token_ids"],
+        "response_text": caption,
+        "summary": combined["summary"],
+        "token_records": combined["token_records"],
+    }
+    if combined.get("alignment_warning"):
+        out["alignment_warning"] = combined["alignment_warning"]
+    return out
+
+
 def main():
     args = parse_args()
     if args.output_jsonl is None:
@@ -728,48 +776,16 @@ def main():
                 failures += 1
                 continue
 
-            metadata = {
-                "uid": record.get("uid") or f"{args.trace_scope}:{image_id}:{caption_source}:step{checkpoint_step}",
-                "index": record.get("index"),
-                "data_source": record.get("data_source") or "coco_res_opd_eval",
-                "image_id": image_id,
-                "file_name": record.get("file_name"),
-                "caption_source": caption_source,
-                "case_group": case.get("distill_recommendation") or case.get("behavior_pattern"),
-                "behavior_pattern": case.get("behavior_pattern"),
-                "distill_recommendation": case.get("distill_recommendation"),
-                "extra_info": {
-                    "image_id": image_id,
-                    "file_name": record.get("file_name"),
-                    "image_path": image_path,
-                    "objects": record.get("gt_objects", []) or case.get("gt_objects", []),
-                    "captions": record.get("gt_captions", []),
-                    "caption_source": caption_source,
-                    "generation_step": record.get("generation_step"),
-                },
-            }
-            out = {
-                "trace_scope": args.trace_scope,
-                "global_step": checkpoint_step,
-                "checkpoint_step": checkpoint_step,
-                "rank": 0,
-                "sample_index_in_rank_batch": 0,
-                "caption_source": caption_source,
-                "model_path": args.model_path,
-                "degradation_mode": args.degradation_mode,
-                "student_px": args.student_px,
-                "teacher_px": args.teacher_px,
-                "target_px": args.target_px,
-                "student_ratio": args.student_ratio,
-                "teacher_ratio": args.teacher_ratio,
-                "metadata": metadata,
-                "response_token_ids": combined["response_token_ids"],
-                "response_text": caption,
-                "summary": combined["summary"],
-                "token_records": combined["token_records"],
-            }
-            if combined.get("alignment_warning"):
-                out["alignment_warning"] = combined["alignment_warning"]
+            out = build_trace_record(
+                args,
+                record,
+                caption_source,
+                caption,
+                combined,
+                case,
+                image_path,
+                checkpoint_step,
+            )
             f.write(json.dumps(out, ensure_ascii=False) + "\n")
             f.flush()
             done_keys.add(key)
