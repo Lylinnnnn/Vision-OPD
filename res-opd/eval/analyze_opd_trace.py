@@ -69,6 +69,7 @@ OBJECT_METRIC_KEYS = [
     "top1_match_frac",
     "selected_token_rank_in_student_topk_mean",
     "selected_token_rank_in_teacher_topk_mean",
+    "selected_token_in_teacher_topk_frac",
     "teacher_selected_logprob_lt_student_frac",
 ]
 
@@ -93,6 +94,17 @@ OBJECT_TOKEN_METRIC_KEYS = [
 DEFAULT_ENTROPY_BIN_EDGES = [0.0, 0.5, 1.0, 1.5, float("inf")]
 DEFAULT_GATE_ENTROPY_THRESHOLDS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
 DEFAULT_GATE_LOGP_MARGINS = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2]
+DEFAULT_QUADRANT_CONFIG = {
+    "support_delta_min": -0.01,
+    "reject_delta_max": -0.05,
+    "teacher_entropy_max": 1.5,
+    "teacher_margin_min": 0.0,
+    "support_rank_max": 5.0,
+    "reject_rank_min": 20.0,
+    "support_top1_min": 0.5,
+    "reject_top1_max": 0.25,
+    "reject_in_teacher_topk_max": 0.5,
+}
 DELTA_DISTRIBUTION_FIELDS = [
     "teacher_minus_student_selected_logprob_mean",
     "teacher_minus_student_selected_logprob_sum",
@@ -678,6 +690,11 @@ def summarize_mention_metrics(tokens):
             metric_values(tokens, "selected_token_rank_in_teacher_topk")
         ),
     }
+    teacher_rank_presence = [
+        1.0 if token.get("selected_token_rank_in_teacher_topk") is not None else 0.0
+        for token in tokens
+    ]
+    result["selected_token_in_teacher_topk_frac"] = safe_mean(teacher_rank_presence)
     result["teacher_selected_logprob_lt_student_frac"] = safe_rate(
         len([delta for delta in logp_deltas if delta < 0]),
         len(logp_deltas),
@@ -1255,6 +1272,196 @@ def summarize_gate_sweep(rows, entropy_thresholds, logp_margins):
     }
 
 
+def build_quadrant_config(**overrides):
+    config = dict(DEFAULT_QUADRANT_CONFIG)
+    for key, value in overrides.items():
+        if value is not None:
+            config[key] = float(value)
+    return config
+
+
+def lowres_reliable(row, config):
+    teacher_entropy = row.get("teacher_entropy_mean")
+    teacher_margin = row.get("teacher_top1_top2_margin_mean")
+    entropy_ok = (
+        is_finite_number(teacher_entropy)
+        and float(teacher_entropy) <= config["teacher_entropy_max"]
+    )
+    margin_ok = (
+        not is_finite_number(teacher_margin)
+        or float(teacher_margin) >= config["teacher_margin_min"]
+    )
+    return entropy_ok and margin_ok
+
+
+def lowres_uncertain(row, config):
+    teacher_entropy = row.get("teacher_entropy_mean")
+    teacher_margin = row.get("teacher_top1_top2_margin_mean")
+    entropy_uncertain = (
+        not is_finite_number(teacher_entropy)
+        or float(teacher_entropy) > config["teacher_entropy_max"]
+    )
+    margin_uncertain = (
+        is_finite_number(teacher_margin)
+        and float(teacher_margin) < config["teacher_margin_min"]
+    )
+    return entropy_uncertain or margin_uncertain
+
+
+def lowres_support_evidence(row, config):
+    delta = row.get("teacher_minus_student_selected_logprob_mean")
+    if not is_finite_number(delta) or float(delta) < config["support_delta_min"]:
+        return False
+
+    rank = row.get("selected_token_rank_in_teacher_topk_mean")
+    top1 = row.get("top1_match_frac")
+    in_topk = row.get("selected_token_in_teacher_topk_frac")
+    rank_ok = is_finite_number(rank) and float(rank) <= config["support_rank_max"]
+    top1_ok = is_finite_number(top1) and float(top1) >= config["support_top1_min"]
+    in_topk_ok = is_finite_number(in_topk) and float(in_topk) >= 0.8
+    return rank_ok or top1_ok or in_topk_ok
+
+
+def lowres_reject_evidence(row, config):
+    delta = row.get("teacher_minus_student_selected_logprob_mean")
+    if not is_finite_number(delta) or float(delta) > config["reject_delta_max"]:
+        return False
+
+    rank = row.get("selected_token_rank_in_teacher_topk_mean")
+    top1 = row.get("top1_match_frac")
+    in_topk = row.get("selected_token_in_teacher_topk_frac")
+    rank_bad = not is_finite_number(rank) or float(rank) >= config["reject_rank_min"]
+    top1_bad = is_finite_number(top1) and float(top1) <= config["reject_top1_max"]
+    in_topk_bad = (
+        not is_finite_number(in_topk)
+        or float(in_topk) <= config["reject_in_teacher_topk_max"]
+    )
+    return rank_bad or top1_bad or in_topk_bad
+
+
+def classify_lowres_quadrant(row, config):
+    reliable = lowres_reliable(row, config)
+    uncertain = lowres_uncertain(row, config)
+    support = reliable and lowres_support_evidence(row, config)
+    reject = reliable and lowres_reject_evidence(row, config)
+
+    if support and not reject:
+        return "lowres_confident_support"
+    if reject and not support:
+        return "lowres_confident_reject"
+    if support and reject:
+        return "lowres_conflicting"
+    if uncertain:
+        return "lowres_uncertain"
+    return "lowres_ambiguous"
+
+
+def summarize_lowres_quadrants(rows, config):
+    labeled_rows = [
+        row for row in rows
+        if row.get("object_type") in {"correct_object", "hallucinated_object"}
+    ]
+    total_correct = len([row for row in labeled_rows if row.get("object_type") == "correct_object"])
+    total_hallucinated = len([row for row in labeled_rows if row.get("object_type") == "hallucinated_object"])
+    total_labeled = total_correct + total_hallucinated
+    base_hallucination_rate = safe_rate(total_hallucinated, total_labeled)
+
+    by_bucket = defaultdict(list)
+    for row in rows:
+        row = dict(row)
+        bucket = classify_lowres_quadrant(row, config)
+        row["lowres_quadrant"] = bucket
+        by_bucket[bucket].append(row)
+
+    bucket_summary = {}
+    preferred_order = [
+        "lowres_confident_support",
+        "lowres_confident_reject",
+        "lowres_uncertain",
+        "lowres_ambiguous",
+        "lowres_conflicting",
+    ]
+    metric_keys = [
+        "teacher_minus_student_selected_logprob_mean",
+        "teacher_minus_student_selected_logprob_sum",
+        "teacher_selected_logprob_lt_student_frac",
+        "teacher_penalized_mention_frac",
+        "student_entropy_mean",
+        "teacher_entropy_mean",
+        "teacher_top1_top2_margin_mean",
+        "selected_token_rank_in_teacher_topk_mean",
+        "selected_token_in_teacher_topk_frac",
+        "top1_match_frac",
+        "topk_jaccard_mean",
+    ]
+    for bucket in preferred_order + sorted(set(by_bucket) - set(preferred_order)):
+        bucket_rows = by_bucket.get(bucket, [])
+        if not bucket_rows:
+            continue
+        correct_rows = [row for row in bucket_rows if row.get("object_type") == "correct_object"]
+        hallucinated_rows = [
+            row for row in bucket_rows if row.get("object_type") == "hallucinated_object"
+        ]
+        unknown_rows = [row for row in bucket_rows if row.get("object_type") == "unknown_object"]
+        labeled_count = len(correct_rows) + len(hallucinated_rows)
+        hallucination_rate = safe_rate(len(hallucinated_rows), labeled_count)
+        bucket_summary[bucket] = {
+            "num_mentions": len(bucket_rows),
+            "num_labeled_mentions": labeled_count,
+            "num_correct_mentions": len(correct_rows),
+            "num_hallucinated_mentions": len(hallucinated_rows),
+            "num_unknown_mentions": len(unknown_rows),
+            "hallucination_rate": hallucination_rate,
+            "precision_lift_vs_base": (
+                hallucination_rate / base_hallucination_rate
+                if base_hallucination_rate > 0
+                else None
+            ),
+            "hallucinated_recall": safe_rate(len(hallucinated_rows), total_hallucinated),
+            "correct_capture_rate": safe_rate(len(correct_rows), total_correct),
+            "correct_false_positive_rate": safe_rate(len(correct_rows), total_correct),
+            "correct_to_hallucinated_ratio": safe_rate(len(correct_rows), len(hallucinated_rows)),
+            "metrics": {
+                key: safe_mean(row.get(key) for row in bucket_rows)
+                for key in metric_keys
+            },
+            "by_type": {
+                object_type: summarize_mention_rows(type_rows)
+                for object_type, type_rows in (
+                    ("correct_object", correct_rows),
+                    ("hallucinated_object", hallucinated_rows),
+                    ("unknown_object", unknown_rows),
+                )
+                if type_rows
+            },
+        }
+
+    support = bucket_summary.get("lowres_confident_support", {})
+    reject = bucket_summary.get("lowres_confident_reject", {})
+    return {
+        "config": config,
+        "num_labeled_mentions": total_labeled,
+        "num_correct_mentions": total_correct,
+        "num_hallucinated_mentions": total_hallucinated,
+        "base_hallucination_rate": base_hallucination_rate,
+        "bucket_summary": bucket_summary,
+        "interpretation": {
+            "support_bucket_correct_enrichment": (
+                support.get("num_correct_mentions", 0)
+                / support.get("num_labeled_mentions", 1)
+                if support.get("num_labeled_mentions")
+                else None
+            ),
+            "reject_bucket_hallucination_enrichment": reject.get("hallucination_rate"),
+            "reject_bucket_precision_lift_vs_base": reject.get("precision_lift_vs_base"),
+            "support_bucket_hallucination_rate": support.get("hallucination_rate"),
+            "support_bucket_correct_capture_rate": support.get("correct_capture_rate"),
+            "reject_bucket_hallucinated_recall": reject.get("hallucinated_recall"),
+            "reject_bucket_correct_false_positive_rate": reject.get("correct_false_positive_rate"),
+        },
+    }
+
+
 def build_selective_suppression_signal(type_summary):
     hallucinated = type_summary.get("hallucinated_object")
     correct = type_summary.get("correct_object")
@@ -1292,7 +1499,14 @@ def build_selective_suppression_signal(type_summary):
     }
 
 
-def summarize_object_trace(records, case_groups, entropy_bins, gate_entropy_thresholds, gate_logp_margins):
+def summarize_object_trace(
+    records,
+    case_groups,
+    entropy_bins,
+    gate_entropy_thresholds,
+    gate_logp_margins,
+    quadrant_config=None,
+):
     _, inverse_synonym_dict = parse_official_synonyms()
     canonical_synonym_map = build_canonical_synonym_map(inverse_synonym_dict)
 
@@ -1339,6 +1553,7 @@ def summarize_object_trace(records, case_groups, entropy_bins, gate_entropy_thre
 
     correct_rows = [row for row in rows if row.get("object_type") == "correct_object"]
     hallucinated_rows = [row for row in rows if row.get("object_type") == "hallucinated_object"]
+    quadrant_config = quadrant_config or build_quadrant_config()
 
     return {
         "num_object_mentions": len(rows),
@@ -1357,6 +1572,7 @@ def summarize_object_trace(records, case_groups, entropy_bins, gate_entropy_thre
         "entropy_bin_summary": summarize_entropy_bins(rows, entropy_bins),
         "logp_delta_distribution": summarize_delta_distributions(rows),
         "gate_sweep": summarize_gate_sweep(rows, gate_entropy_thresholds, gate_logp_margins),
+        "lowres_quadrant_summary": summarize_lowres_quadrants(rows, quadrant_config),
         "step_summary_by_type": by_step,
         "step_contrast_hallucinated_minus_correct": step_contrast,
         "object_summary_by_type": summarize_by_object(rows),
@@ -1570,6 +1786,42 @@ def gate_sweep_table_rows(gates, limit=20):
                 fmt_value(gate.get("correct_false_positive_rate")),
                 fmt_value(gate.get("f1")),
                 fmt_value(gate.get("precision_lift_vs_base")),
+            ]
+        )
+    return rows
+
+
+def lowres_quadrant_table_rows(quadrant_summary):
+    rows = []
+    buckets = quadrant_summary.get("bucket_summary", {})
+    preferred_order = [
+        "lowres_confident_support",
+        "lowres_confident_reject",
+        "lowres_uncertain",
+        "lowres_ambiguous",
+        "lowres_conflicting",
+    ]
+    for bucket in preferred_order + sorted(set(buckets) - set(preferred_order)):
+        stats = buckets.get(bucket)
+        if not stats:
+            continue
+        metrics = stats.get("metrics", {})
+        rows.append(
+            [
+                bucket,
+                stats.get("num_labeled_mentions", 0),
+                stats.get("num_correct_mentions", 0),
+                stats.get("num_hallucinated_mentions", 0),
+                fmt_value(stats.get("hallucination_rate")),
+                fmt_value(stats.get("precision_lift_vs_base")),
+                fmt_value(stats.get("hallucinated_recall")),
+                fmt_value(stats.get("correct_false_positive_rate")),
+                fmt_value(metrics.get("teacher_minus_student_selected_logprob_mean")),
+                fmt_value(metrics.get("teacher_entropy_mean")),
+                fmt_value(metrics.get("teacher_top1_top2_margin_mean")),
+                fmt_value(metrics.get("selected_token_rank_in_teacher_topk_mean")),
+                fmt_value(metrics.get("selected_token_in_teacher_topk_frac")),
+                fmt_value(metrics.get("top1_match_frac")),
             ]
         )
     return rows
@@ -1844,6 +2096,45 @@ def write_markdown_summary(output, output_md):
             ]
         )
 
+    quadrant_summary = object_trace.get("lowres_quadrant_summary", {})
+    quadrant_rows = lowres_quadrant_table_rows(quadrant_summary)
+    if quadrant_rows:
+        interpretation = quadrant_summary.get("interpretation", {})
+        lines.extend(
+            [
+                "",
+                "## Low-Resolution Support/Reject Quadrants",
+                "",
+                f"- base_hallucination_rate: {fmt_value(quadrant_summary.get('base_hallucination_rate'))}",
+                f"- support_bucket_hallucination_rate: "
+                f"{fmt_value(interpretation.get('support_bucket_hallucination_rate'))}",
+                f"- reject_bucket_precision_lift_vs_base: "
+                f"{fmt_value(interpretation.get('reject_bucket_precision_lift_vs_base'))}",
+                f"- reject_bucket_correct_false_positive_rate: "
+                f"{fmt_value(interpretation.get('reject_bucket_correct_false_positive_rate'))}",
+                "",
+                markdown_table(
+                    [
+                        "bucket",
+                        "labeled",
+                        "correct",
+                        "halluc",
+                        "halluc rate",
+                        "precision lift",
+                        "halluc recall",
+                        "correct FPR",
+                        "mean logp delta",
+                        "teacher entropy",
+                        "teacher margin",
+                        "teacher rank",
+                        "in teacher topk",
+                        "top1 match",
+                    ],
+                    quadrant_rows,
+                ),
+            ]
+        )
+
     step_rows = step_contrast_table_rows(object_trace.get("step_contrast_hallucinated_minus_correct", {}))
     if step_rows:
         lines.extend(
@@ -2006,6 +2297,7 @@ def build_trace_analysis_summary(
     entropy_bin_edges=None,
     gate_entropy_thresholds=None,
     gate_logp_margins=None,
+    quadrant_config=None,
 ):
     """Build the full OPD trace analysis summary without parsing CLI args."""
     records, skipped_non_trace_records = load_trace_records(trace_dir, max_records=max_records)
@@ -2034,6 +2326,7 @@ def build_trace_analysis_summary(
         entropy_bins,
         parsed_gate_entropy_thresholds,
         parsed_gate_logp_margins,
+        quadrant_config=quadrant_config,
     )
 
     image_ids = [get_image_id(record) for record in records]
@@ -2118,6 +2411,54 @@ def main():
         ),
     )
     parser.add_argument(
+        "--quadrant-support-delta-min",
+        type=float,
+        default=DEFAULT_QUADRANT_CONFIG["support_delta_min"],
+        help="Low-res confident-support requires teacher-student logp >= this value.",
+    )
+    parser.add_argument(
+        "--quadrant-reject-delta-max",
+        type=float,
+        default=DEFAULT_QUADRANT_CONFIG["reject_delta_max"],
+        help="Low-res confident-reject requires teacher-student logp <= this value.",
+    )
+    parser.add_argument(
+        "--quadrant-teacher-entropy-max",
+        type=float,
+        default=DEFAULT_QUADRANT_CONFIG["teacher_entropy_max"],
+        help="Low-res critic is treated as reliable only below this teacher entropy.",
+    )
+    parser.add_argument(
+        "--quadrant-teacher-margin-min",
+        type=float,
+        default=DEFAULT_QUADRANT_CONFIG["teacher_margin_min"],
+        help="Low-res critic is treated as reliable only above this top1-top2 margin.",
+    )
+    parser.add_argument(
+        "--quadrant-support-rank-max",
+        type=float,
+        default=DEFAULT_QUADRANT_CONFIG["support_rank_max"],
+        help="Low-res support evidence when selected token rank is at most this value.",
+    )
+    parser.add_argument(
+        "--quadrant-reject-rank-min",
+        type=float,
+        default=DEFAULT_QUADRANT_CONFIG["reject_rank_min"],
+        help="Low-res reject evidence when selected token rank is at least this value.",
+    )
+    parser.add_argument(
+        "--quadrant-support-top1-min",
+        type=float,
+        default=DEFAULT_QUADRANT_CONFIG["support_top1_min"],
+        help="Low-res support evidence when mention top1-match fraction is at least this value.",
+    )
+    parser.add_argument(
+        "--quadrant-reject-top1-max",
+        type=float,
+        default=DEFAULT_QUADRANT_CONFIG["reject_top1_max"],
+        help="Low-res reject evidence when mention top1-match fraction is at most this value.",
+    )
+    parser.add_argument(
         "--output-json",
         default=None,
         help="Where to save summary JSON. Defaults to <trace-dir>/opd_trace_summary.json",
@@ -2170,6 +2511,17 @@ def main():
         oss_trace_path = fetch_traces_from_oss(args.oss_base, oss_name, trace_dir)
         fetched_from_oss = True
 
+    quadrant_config = build_quadrant_config(
+        support_delta_min=args.quadrant_support_delta_min,
+        reject_delta_max=args.quadrant_reject_delta_max,
+        teacher_entropy_max=args.quadrant_teacher_entropy_max,
+        teacher_margin_min=args.quadrant_teacher_margin_min,
+        support_rank_max=args.quadrant_support_rank_max,
+        reject_rank_min=args.quadrant_reject_rank_min,
+        support_top1_min=args.quadrant_support_top1_min,
+        reject_top1_max=args.quadrant_reject_top1_max,
+    )
+
     output = build_trace_analysis_summary(
         trace_dir,
         case_analysis=args.case_analysis,
@@ -2182,6 +2534,7 @@ def main():
         entropy_bin_edges=args.entropy_bin_edges,
         gate_entropy_thresholds=args.gate_entropy_thresholds,
         gate_logp_margins=args.gate_logp_margins,
+        quadrant_config=quadrant_config,
     )
     object_trace_summary = output["object_trace_summary"]
     case_overlap_summary = output["case_overlap_summary"]

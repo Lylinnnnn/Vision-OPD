@@ -86,6 +86,14 @@ def parse_args():
         default="0,0.01,0.02,0.05,0.1,0.2",
         help="Passed to analyze_opd_trace.py.",
     )
+    parser.add_argument("--quadrant-support-delta-min", type=float, default=None)
+    parser.add_argument("--quadrant-reject-delta-max", type=float, default=None)
+    parser.add_argument("--quadrant-teacher-entropy-max", type=float, default=None)
+    parser.add_argument("--quadrant-teacher-margin-min", type=float, default=None)
+    parser.add_argument("--quadrant-support-rank-max", type=float, default=None)
+    parser.add_argument("--quadrant-reject-rank-min", type=float, default=None)
+    parser.add_argument("--quadrant-support-top1-min", type=float, default=None)
+    parser.add_argument("--quadrant-reject-top1-max", type=float, default=None)
     return parser.parse_args()
 
 
@@ -309,6 +317,16 @@ def run_scoring(args, states):
 
 
 def run_analysis(args, state):
+    quadrant_config = analyzer.build_quadrant_config(
+        support_delta_min=args.quadrant_support_delta_min,
+        reject_delta_max=args.quadrant_reject_delta_max,
+        teacher_entropy_max=args.quadrant_teacher_entropy_max,
+        teacher_margin_min=args.quadrant_teacher_margin_min,
+        support_rank_max=args.quadrant_support_rank_max,
+        reject_rank_min=args.quadrant_reject_rank_min,
+        support_top1_min=args.quadrant_support_top1_min,
+        reject_top1_max=args.quadrant_reject_top1_max,
+    )
     summary = analyzer.build_trace_analysis_summary(
         state["trace_path"],
         case_analysis=args.case_analysis,
@@ -316,6 +334,7 @@ def run_analysis(args, state):
         entropy_bin_edges=args.entropy_bin_edges,
         gate_entropy_thresholds=args.gate_entropy_thresholds,
         gate_logp_margins=args.gate_logp_margins,
+        quadrant_config=quadrant_config,
     )
     with open(state["summary_json"], "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
@@ -343,6 +362,12 @@ def extract_row(state, summary):
     )
     dist_contrast = dist.get("hallucinated_minus_correct", {})
     best_gate = (object_trace.get("gate_sweep", {}).get("top_by_f1") or [{}])[0]
+    quadrants = object_trace.get("lowres_quadrant_summary", {})
+    quadrant_interpretation = quadrants.get("interpretation", {})
+    quadrant_buckets = quadrants.get("bucket_summary", {})
+    support_bucket = quadrant_buckets.get("lowres_confident_support", {})
+    reject_bucket = quadrant_buckets.get("lowres_confident_reject", {})
+    uncertain_bucket = quadrant_buckets.get("lowres_uncertain", {})
     return {
         "teacher_ratio": state["ratio"],
         "label": state["label"],
@@ -372,6 +397,20 @@ def extract_row(state, summary):
         "best_gate_correct_fpr": best_gate.get("correct_false_positive_rate"),
         "best_gate_f1": best_gate.get("f1"),
         "best_gate_precision_lift": best_gate.get("precision_lift_vs_base"),
+        "lowres_support_labeled": support_bucket.get("num_labeled_mentions", 0),
+        "lowres_support_hallucination_rate": support_bucket.get("hallucination_rate"),
+        "lowres_support_correct_capture_rate": support_bucket.get("correct_capture_rate"),
+        "lowres_reject_labeled": reject_bucket.get("num_labeled_mentions", 0),
+        "lowres_reject_hallucination_rate": reject_bucket.get("hallucination_rate"),
+        "lowres_reject_precision_lift": reject_bucket.get("precision_lift_vs_base"),
+        "lowres_reject_hallucinated_recall": reject_bucket.get("hallucinated_recall"),
+        "lowres_reject_correct_fpr": reject_bucket.get("correct_false_positive_rate"),
+        "lowres_uncertain_labeled": uncertain_bucket.get("num_labeled_mentions", 0),
+        "lowres_uncertain_hallucination_rate": uncertain_bucket.get("hallucination_rate"),
+        "lowres_quadrant_base_hallucination_rate": quadrants.get("base_hallucination_rate"),
+        "lowres_quadrant_support_correct_enrichment": quadrant_interpretation.get(
+            "support_bucket_correct_enrichment"
+        ),
     }
 
 
@@ -437,6 +476,36 @@ def write_aggregate(output_dir, rows, args):
             "Positive evidence for a useful low-res critic means `logp gap` is negative, "
             "`tail gap < -0.05` is positive, and the best gate has precision lift with "
             "a tolerable correct-object false-positive rate.",
+            "",
+            "## Low-Resolution Support/Reject Quadrants",
+            "",
+            "| teacher ratio | support n | support halluc rate | support correct capture | "
+            "reject n | reject halluc rate | reject lift | reject recall | reject correct FPR | "
+            "uncertain n | uncertain halluc rate |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    for row in rows:
+        values = [
+            format_ratio(row["teacher_ratio"]),
+            fmt(row["lowres_support_labeled"]),
+            fmt(row["lowres_support_hallucination_rate"]),
+            fmt(row["lowres_support_correct_capture_rate"]),
+            fmt(row["lowres_reject_labeled"]),
+            fmt(row["lowres_reject_hallucination_rate"]),
+            fmt(row["lowres_reject_precision_lift"]),
+            fmt(row["lowres_reject_hallucinated_recall"]),
+            fmt(row["lowres_reject_correct_fpr"]),
+            fmt(row["lowres_uncertain_labeled"]),
+            fmt(row["lowres_uncertain_hallucination_rate"]),
+        ]
+        lines.append("| " + " | ".join(values) + " |")
+    lines.extend(
+        [
+            "",
+            "For the near-sighted critic hypothesis, a good ratio should have a low "
+            "`support halluc rate` and a high `reject lift`, while keeping "
+            "`reject correct FPR` small.",
             "",
         ]
     )

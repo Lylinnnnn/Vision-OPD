@@ -178,6 +178,37 @@ Positive evidence for a useful low-res critic means:
 - `tail gap < -0.05` is positive: strong negative deltas are enriched on hallucinations.
 - best gate F1/precision lift improves while correct-object FPR stays tolerable.
 
+The same report also includes a low-resolution support/reject quadrant table.
+This is the preferred proxy analysis for recall-safe selective distillation:
+
+```text
+lowres_confident_support:
+  low-res critic does not lower the selected token much, and the selected token
+  remains near the low-res top-k/top1 distribution.
+
+lowres_confident_reject:
+  low-res critic strongly lowers the selected token, and the selected token is
+  low-ranked or disagrees with low-res top1.
+
+lowres_uncertain:
+  low-res critic itself is high-entropy or low-margin; do not use this region
+  for hard penalties because it may contain small correct objects.
+```
+
+If the trace files are already full-sized, regenerate only the analysis with:
+
+```bash
+python res-opd/eval/run_base_trace_probe.py \
+  --eval-results <base-train-probe-dir>/eval_results.jsonl \
+  --output-dir <base-train-probe-dir>/base_trace_probe \
+  --teacher-ratios 0.25,0.5,0.75 \
+  --skip-scoring
+```
+
+If some ratios were first run with `--max-samples`, rerun without `--overwrite`
+and with `--max-samples 0`; existing records are skipped and missing records are
+appended.
+
 ### Training Mini-Eval Generations
 
 Use this when you want step-by-step changes during training. The training loop
