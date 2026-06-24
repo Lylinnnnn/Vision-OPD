@@ -379,7 +379,11 @@ for idx in "${!OSS_NAMES[@]}"; do
     echo "=========================================="
 
     # Check if eval results already exist
-    existing_result_root="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${DATASET_VERSION}/${local_exp_name}_${STEP}"
+    if [[ "$DATASET_VERSION" == "full" ]]; then
+        existing_result_root="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/full/${local_exp_name}_${STEP}"
+    else
+        existing_result_root="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${local_exp_name}_${STEP}"
+    fi
     if eval_results_exist "$existing_result_root"; then
         echo "⚠️  Eval results already exist, skipping."
         continue
@@ -441,7 +445,11 @@ for idx in "${!OSS_NAMES[@]}"; do
 
     # Step 4: Verify eval results
     echo "[4/4] Verifying eval results ..."
-    result_dir="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${DATASET_VERSION}/${local_exp_name}_${STEP}"
+    if [[ "$DATASET_VERSION" == "full" ]]; then
+        result_dir="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/full/${local_exp_name}_${STEP}"
+    else
+        result_dir="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${local_exp_name}_${STEP}"
+    fi
     if eval_results_exist "$result_dir"; then
         echo "  ✅ Eval results saved:"
         find "${result_dir}" \( -name "chair_metrics.json" -o -name "pope_summary.json" -o -name "amber_metrics.json" -o -name "mme_metrics.json" \) -exec echo "    {}" \;

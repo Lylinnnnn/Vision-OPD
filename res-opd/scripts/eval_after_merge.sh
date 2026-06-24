@@ -196,8 +196,13 @@ if [[ "$DEGRADATION_MODE" == "original" ]]; then
     RATIO_TAG="${STUDENT_RATIO//./p}"
     DATASET_TAG="${DATASET_TAG}_original_sr${RATIO_TAG}"
 fi
-# Dataset version as parent folder: eval_results/<version_tag>/<dataset_version>/<exp_name>/<dataset_tag>/
-OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${DATASET_VERSION}/${EXPERIMENT_NAME}/${DATASET_TAG}"
+# When DATASET_VERSION=full, add a "full/" parent folder for separation.
+# Legacy results stay directly under eval_results/<version_tag>/<exp_name>/<dataset_tag>/
+if [[ "$DATASET_VERSION" == "full" ]]; then
+    OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/full/${EXPERIMENT_NAME}/${DATASET_TAG}"
+else
+    OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${EXPERIMENT_NAME}/${DATASET_TAG}"
+fi
 
 if has_eval_task "$EVAL_MODE" "chair" && [ ! -f "$TEST_JSON" ]; then
     echo "Error: test.json not found at $TEST_JSON" >&2
