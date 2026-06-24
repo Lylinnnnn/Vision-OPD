@@ -221,15 +221,33 @@ download_checkpoint() {
     fi
 }
 
+verify_oss_backup() {
+    local oss_path="$1"
+    if ossutil stat "${oss_path}/model.safetensors" > /dev/null 2>&1; then
+        return 0
+    else
+        echo "  ⚠️  OSS backup not found at ${oss_path}/model.safetensors" >&2
+        return 1
+    fi
+}
+
 cleanup_checkpoint() {
     local local_ckpt_dir="$1"
-    local f
+    local oss_path="$2"
 
-    rm -f "${local_ckpt_dir}/model.safetensors" "${local_ckpt_dir}/model.safetensors.sha256"
-    for f in "${HF_FILES[@]}"; do
-        rm -f "${local_ckpt_dir}/${f}"
-    done
-    rm -rf "${local_ckpt_dir}/actor"
+    # Only delete local checkpoint if OSS backup is confirmed
+    if [[ -n "$oss_path" ]] && verify_oss_backup "$oss_path"; then
+        echo "  OSS backup verified, removing local checkpoint directory ..."
+        rm -rf "$local_ckpt_dir"
+        # Also remove parent experiment dir if empty
+        local parent_dir
+        parent_dir="$(dirname "$local_ckpt_dir")"
+        if [[ -d "$parent_dir" ]] && [ -z "$(ls -A "$parent_dir" 2>/dev/null)" ]; then
+            rmdir "$parent_dir" 2>/dev/null || true
+        fi
+    else
+        echo "  ⚠️  Skipping local cleanup: OSS backup not verified. Keeping local checkpoint." >&2
+    fi
 }
 
 infer_eval_spec() {
@@ -415,10 +433,10 @@ for idx in "${!OSS_NAMES[@]}"; do
     fi
     echo "  ✅ Evaluation complete"
 
-    # Step 3: Delete model files (keep eval results)
-    echo "[3/4] Cleaning up model files ..."
-    cleanup_checkpoint "$local_ckpt_dir"
-    echo "  ✅ Model files deleted"
+    # Step 3: Delete local checkpoint after verifying OSS backup
+    echo "[3/4] Cleaning up local checkpoint (after OSS verification) ..."
+    cleanup_checkpoint "$local_ckpt_dir" "$oss_path"
+    echo "  ✅ Local checkpoint cleaned up"
 
     # Step 4: Verify eval results
     echo "[4/4] Verifying eval results ..."

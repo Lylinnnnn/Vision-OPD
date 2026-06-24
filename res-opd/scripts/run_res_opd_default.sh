@@ -25,27 +25,39 @@ RES_OPD_ROOT="$(dirname "$SCRIPT_DIR")"
 # =============================================================================
 
 # --- Data loading ---
-# 2 workers: safe starting point; increase to 4 if no OOM/blocking observed
-export DATA_DATALOADER_NUM_WORKERS="${DATA_DATALOADER_NUM_WORKERS:-2}"
+# 4 workers: better throughput for 10k dataset on JuiceFS
+export DATA_DATALOADER_NUM_WORKERS="${DATA_DATALOADER_NUM_WORKERS:-4}"
 
 # --- Offload ---
-# Keep offload enabled by default for safety; disable when confirmed stable
-export ACTOR_PARAM_OFFLOAD="${ACTOR_PARAM_OFFLOAD:-True}"
-export ACTOR_OPTIMIZER_OFFLOAD="${ACTOR_OPTIMIZER_OFFLOAD:-True}"
-export REF_PARAM_OFFLOAD="${REF_PARAM_OFFLOAD:-True}"
+# Disabled by default: H20 98GB has ample VRAM for Qwen3VL-2B actor+ref+rollout.
+# Enable only if OOM occurs with large batch sizes.
+export ACTOR_PARAM_OFFLOAD="${ACTOR_PARAM_OFFLOAD:-False}"
+export ACTOR_OPTIMIZER_OFFLOAD="${ACTOR_OPTIMIZER_OFFLOAD:-False}"
+export REF_PARAM_OFFLOAD="${REF_PARAM_OFFLOAD:-False}"
 
 # --- vLLM rollout ---
-# 0.85: better KV cache utilization without OOM risk (was 0.7)
-export ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.85}"
+# 0.92: maximize KV cache utilization on H20 98GB (offload keeps actor/ref safe)
+export ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.92}"
 
 # --- Logprob micro batch ---
-# 2: better GPU utilization for logprob computation (was 1)
-export ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-2}"
-export REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-2}"
+# 4: higher GPU utilization for logprob computation with offload enabled
+export ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-4}"
+export REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-4}"
 
 # --- Batch size ---
-export TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-32}"
-export PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-32}"
+# 64: larger batch for 10k dataset, better GPU utilization
+export TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-64}"
+export PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-64}"
+
+# --- Mini eval ---
+# Enable mini eval trace by default; adjust freq/samples as needed
+export OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-True}"
+export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-10}"
+export OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-50}"
+
+# --- Training metrics ---
+export OPD_TRAIN_METRICS="${OPD_TRAIN_METRICS:-True}"
+export OPD_METRICS_ENTROPY="${OPD_METRICS_ENTROPY:-True}"
 
 # =============================================================================
 # ENVIRONMENT FIXES
@@ -72,6 +84,11 @@ echo "ROLLOUT_GPU_MEMORY_UTIL     = $ROLLOUT_GPU_MEMORY_UTILIZATION"
 echo "ROLLOUT_LOGPROB_MICRO_BSZ   = $ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU"
 echo "REF_LOGPROB_MICRO_BSZ       = $REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU"
 echo "TRAIN_BATCH_SIZE            = $TRAIN_BATCH_SIZE"
+echo "OPD_MINI_EVAL_TRACE         = $OPD_MINI_EVAL_TRACE"
+echo "OPD_MINI_EVAL_TEST_FREQ     = $OPD_MINI_EVAL_TEST_FREQ"
+echo "OPD_MINI_EVAL_MAX_SAMPLES   = $OPD_MINI_EVAL_MAX_SAMPLES"
+echo "OPD_TRAIN_METRICS           = $OPD_TRAIN_METRICS"
+echo "OPD_METRICS_ENTROPY         = $OPD_METRICS_ENTROPY"
 echo "============================================================"
 
 exec bash "$SCRIPT_DIR/run_res_opd.sh" "$@"

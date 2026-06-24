@@ -58,12 +58,21 @@ MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [student_px] [version_tag]}"
 STUDENT_PX="${2:-${STUDENT_PX:-}}"
 VERSION_TAG="${3:-latest}"
 EVAL_MODE="${4:-${EVAL_MODE:-chair}}"
+OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
+CLEANUP_LOCAL_CKPT="${CLEANUP_LOCAL_CKPT:-True}"
 DEGRADATION_MODE="${DEGRADATION_MODE:-}"
 STUDENT_RATIO="${STUDENT_RATIO:-}"
 TARGET_PX="${TARGET_PX:-448}"
 PORT="${VLLM_PORT:-8000}"
 MODEL_NAME="Res-OPD"
-TEST_JSON="${RES_OPD_ROOT}/data/test.json"
+# Support both legacy (test.json) and full-scale (test_1500.json) datasets.
+# Set DATASET_VERSION=full to use the full-scale dataset; default is legacy.
+DATASET_VERSION="${DATASET_VERSION:-full}"
+if [[ "$DATASET_VERSION" == "full" ]]; then
+    TEST_JSON="${RES_OPD_ROOT}/data/test_1500.json"
+else
+    TEST_JSON="${RES_OPD_ROOT}/data/test.json"
+fi
 PYTHON_BIN="/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3"
 POPE_BENCHMARK="${POPE_BENCHMARK:-pope_adv,pope_pop,pope_random}"
 POPE_SOURCE="${POPE_SOURCE:-res-opd-test}"
@@ -168,8 +177,13 @@ case "$DEGRADATION_MODE" in
 esac
 
 # Build dataset tag from actual data file sizes
-TRAIN_FILE="${RES_OPD_ROOT}/data/train.parquet"
-TEST_FILE="${RES_OPD_ROOT}/data/test.json"
+if [[ "$DATASET_VERSION" == "full" ]]; then
+    TRAIN_FILE="${RES_OPD_ROOT}/data/train_10k.parquet"
+    TEST_FILE="${RES_OPD_ROOT}/data/test_1500.json"
+else
+    TRAIN_FILE="${RES_OPD_ROOT}/data/train.parquet"
+    TEST_FILE="${RES_OPD_ROOT}/data/test.json"
+fi
 DATASET_TAG=""
 if [[ -f "$TRAIN_FILE" && -f "$TEST_FILE" ]]; then
     TRAIN_N=$(/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3 -c "import pandas as pd; print(len(pd.read_parquet('$TRAIN_FILE')))" 2>/dev/null || echo "?")
@@ -286,7 +300,7 @@ if has_eval_task "$EVAL_MODE" "chair"; then
         --target-px "$TARGET_PX" \
         --degradation-mode "$DEGRADATION_MODE" \
         --student-ratio "$STUDENT_RATIO" \
-        "${chair_extra_args[@]}"; then
+        ${chair_extra_args[@]+"${chair_extra_args[@]}"}; then
         echo "  WARNING: CHAIR failed; keeping any completed outputs." >&2
         EVAL_FAILURES=$((EVAL_FAILURES + 1))
     fi
@@ -316,7 +330,7 @@ if has_eval_task "$EVAL_MODE" "pope"; then
         --max-new-tokens "$POPE_MAX_NEW_TOKENS" \
         --max-samples "$POPE_MAX_SAMPLES" \
         --parallel-workers "$POPE_PARALLEL_WORKERS" \
-        "${pope_extra_args[@]}"; then
+        ${pope_extra_args[@]+"${pope_extra_args[@]}"}; then
         echo "  WARNING: POPE failed; keeping any completed outputs." >&2
         EVAL_FAILURES=$((EVAL_FAILURES + 1))
     fi
@@ -408,6 +422,55 @@ if has_eval_task "$EVAL_MODE" "chair" && [[ "$EVAL_OPD_TRACE" == "True" || "$EVA
             analyze_args+=(--case-analysis "$EVAL_OPD_TRACE_CASE_ANALYSIS")
         fi
         "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/analyze_opd_trace.py" "${analyze_args[@]}"
+    fi
+fi
+
+# --- Step 4: Cleanup local checkpoint after verifying OSS backup ---
+if [[ "$CLEANUP_LOCAL_CKPT" == "True" || "$CLEANUP_LOCAL_CKPT" == "true" || "$CLEANUP_LOCAL_CKPT" == "1" ]]; then
+    echo ""
+    echo "[4/4] Checking OSS backup before cleaning up local checkpoint ..."
+    # Derive OSS path from experiment name and step
+    oss_ckpt_dir="$CKPT_ROOT"
+    if [[ -n "$STEP_TAG" ]]; then
+        oss_experiment="$(basename "$(dirname "$CKPT_ROOT")")"
+        oss_step="$STEP_TAG"
+    else
+        oss_experiment="$(basename "$CKPT_ROOT")"
+        oss_step=""
+    fi
+    # Convert local naming (Res-OPD-Qwen3VL-2B-Instruct-...) to OSS naming (ResOPD_...)
+    oss_name=$(echo "$oss_experiment" | sed \
+        -e 's/^Res-OPD-Qwen3VL-2B-Instruct-/ResOPD_/' \
+        -e 's/-orig-sr/_orig_sr/' \
+        -e 's/-tr/_tr/' \
+        -e 's/-a/_a/' \
+        -e 's/-ema/_ema/' \
+        -e 's/-frozen/_frozen/' \
+        -e 's/-rkl/_rkl/' \
+        -e 's/-veto/_veto/' \
+        -e 's/-s/_s/' \
+        -e 's/-t/_t/' \
+        -e 's/-e/_e/' \
+        -e 's/\./_/g')
+    if [[ -n "$oss_step" ]]; then
+        oss_path="${OSS_BASE}/${oss_name}/${oss_step}"
+    else
+        oss_path="${OSS_BASE}/${oss_name}"
+    fi
+
+    if ossutil stat "${oss_path}/model.safetensors" > /dev/null 2>&1; then
+        echo "  ✅ OSS backup verified at ${oss_path}"
+        echo "  Removing local checkpoint directory: $CKPT_ROOT"
+        rm -rf "$CKPT_ROOT"
+        # Remove parent experiment dir if empty
+        local_parent="$(dirname "$CKPT_ROOT")"
+        if [[ -d "$local_parent" ]] && [ -z "$(ls -A "$local_parent" 2>/dev/null)" ]; then
+            rmdir "$local_parent" 2>/dev/null || true
+        fi
+        echo "  ✅ Local checkpoint cleaned up"
+    else
+        echo "  ⚠️  OSS backup NOT found at ${oss_path}/model.safetensors"
+        echo "  Keeping local checkpoint to avoid data loss."
     fi
 fi
 

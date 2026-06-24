@@ -172,9 +172,17 @@ case "$TRAINER_RESUME_MODE" in
 esac
 
 # --- Data paths ---
+# Support both legacy (train.parquet / test.json) and full-scale (train_10k.parquet / test_1500.json) datasets.
+# Set DATASET_VERSION=full to use the full-scale dataset; default is legacy.
 DATA_DIR="${RES_OPD_ROOT}/data"
-TASK_TRAIN_FILE="${DATA_DIR}/train.parquet"
-TASK_VAL_FILE="${DATA_DIR}/val.parquet"
+DATASET_VERSION="${DATASET_VERSION:-full}"
+if [[ "$DATASET_VERSION" == "full" ]]; then
+    TASK_TRAIN_FILE="${DATA_DIR}/train_10k.parquet"
+    TASK_VAL_FILE="${DATA_DIR}/val.parquet"
+else
+    TASK_TRAIN_FILE="${DATA_DIR}/train.parquet"
+    TASK_VAL_FILE="${DATA_DIR}/val.parquet"
+fi
 CUSTOM_DATASET_PATH="${RES_OPD_ROOT}/res_opd_dataset.py"
 
 # --- Experiment naming ---
