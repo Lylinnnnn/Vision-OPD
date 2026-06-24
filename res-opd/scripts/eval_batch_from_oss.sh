@@ -71,6 +71,7 @@ DEGRADATION_MODE="${DEGRADATION_MODE:-}"
 STUDENT_RATIO="${STUDENT_RATIO:-}"
 TEACHER_RATIO="${TEACHER_RATIO:-}"
 VERSION_TAG="latest"
+DATASET_VERSION="${DATASET_VERSION:-full}"
 EVAL_MODE="${EVAL_MODE:-chair,pope}"
 CHAIR_MAX_NEW_TOKENS="${CHAIR_MAX_NEW_TOKENS:-384}"
 CHAIR_PARALLEL_WORKERS="${CHAIR_PARALLEL_WORKERS:-8}"
@@ -378,7 +379,7 @@ for idx in "${!OSS_NAMES[@]}"; do
     echo "=========================================="
 
     # Check if eval results already exist
-    existing_result_root="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${local_exp_name}_${STEP}"
+    existing_result_root="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${DATASET_VERSION}/${local_exp_name}_${STEP}"
     if eval_results_exist "$existing_result_root"; then
         echo "⚠️  Eval results already exist, skipping."
         continue
@@ -440,7 +441,7 @@ for idx in "${!OSS_NAMES[@]}"; do
 
     # Step 4: Verify eval results
     echo "[4/4] Verifying eval results ..."
-    result_dir="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${local_exp_name}_${STEP}"
+    result_dir="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${DATASET_VERSION}/${local_exp_name}_${STEP}"
     if eval_results_exist "$result_dir"; then
         echo "  ✅ Eval results saved:"
         find "${result_dir}" \( -name "chair_metrics.json" -o -name "pope_summary.json" -o -name "amber_metrics.json" -o -name "mme_metrics.json" \) -exec echo "    {}" \;

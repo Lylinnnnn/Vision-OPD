@@ -57,6 +57,9 @@ export PYTHONPATH="$VISION_OPD_ROOT:${PYTHONPATH:-}"
 MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [student_px] [version_tag]}"
 STUDENT_PX="${2:-${STUDENT_PX:-}}"
 VERSION_TAG="${3:-latest}"
+# Support both legacy (test.json) and full-scale (test_1000.json) datasets.
+# Set DATASET_VERSION=full to use the full-scale dataset; default is full.
+DATASET_VERSION="${DATASET_VERSION:-full}"
 EVAL_MODE="${4:-${EVAL_MODE:-chair}}"
 OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
 CLEANUP_LOCAL_CKPT="${CLEANUP_LOCAL_CKPT:-True}"
@@ -65,9 +68,6 @@ STUDENT_RATIO="${STUDENT_RATIO:-}"
 TARGET_PX="${TARGET_PX:-448}"
 PORT="${VLLM_PORT:-8000}"
 MODEL_NAME="Res-OPD"
-# Support both legacy (test.json) and full-scale (test_1500.json) datasets.
-# Set DATASET_VERSION=full to use the full-scale dataset; default is legacy.
-DATASET_VERSION="${DATASET_VERSION:-full}"
 if [[ "$DATASET_VERSION" == "full" ]]; then
     TEST_JSON="${RES_OPD_ROOT}/data/test_1000.json"
 else
@@ -196,7 +196,8 @@ if [[ "$DEGRADATION_MODE" == "original" ]]; then
     RATIO_TAG="${STUDENT_RATIO//./p}"
     DATASET_TAG="${DATASET_TAG}_original_sr${RATIO_TAG}"
 fi
-OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${EXPERIMENT_NAME}/${DATASET_TAG}"
+# Dataset version as parent folder: eval_results/<version_tag>/<dataset_version>/<exp_name>/<dataset_tag>/
+OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${DATASET_VERSION}/${EXPERIMENT_NAME}/${DATASET_TAG}"
 
 if has_eval_task "$EVAL_MODE" "chair" && [ ! -f "$TEST_JSON" ]; then
     echo "Error: test.json not found at $TEST_JSON" >&2
