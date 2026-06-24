@@ -368,6 +368,10 @@ def extract_row(state, summary):
     support_bucket = quadrant_buckets.get("lowres_confident_support", {})
     reject_bucket = quadrant_buckets.get("lowres_confident_reject", {})
     uncertain_bucket = quadrant_buckets.get("lowres_uncertain", {})
+    agreement = object_trace.get("agreement_bucket_summary", {})
+    agreement_buckets = agreement.get("bucket_summary", {})
+    agreement_support = agreement_buckets.get("support", {})
+    agreement_strong = agreement_buckets.get("strong_disagree", {})
     return {
         "teacher_ratio": state["ratio"],
         "label": state["label"],
@@ -411,6 +415,16 @@ def extract_row(state, summary):
         "lowres_quadrant_support_correct_enrichment": quadrant_interpretation.get(
             "support_bucket_correct_enrichment"
         ),
+        "agreement_q70_delta_threshold": agreement.get("config", {}).get("q_low_delta_threshold"),
+        "agreement_q90_delta_threshold": agreement.get("config", {}).get("q_high_delta_threshold"),
+        "agreement_support_labeled": agreement_support.get("num_labeled_mentions", 0),
+        "agreement_support_hallucination_rate": agreement_support.get("hallucination_rate"),
+        "agreement_support_correct_capture_rate": agreement_support.get("correct_capture_rate"),
+        "agreement_strong_labeled": agreement_strong.get("num_labeled_mentions", 0),
+        "agreement_strong_hallucination_rate": agreement_strong.get("hallucination_rate"),
+        "agreement_strong_precision_lift": agreement_strong.get("precision_lift_vs_base"),
+        "agreement_strong_hallucinated_recall": agreement_strong.get("hallucinated_recall"),
+        "agreement_strong_correct_fpr": agreement_strong.get("correct_false_positive_rate"),
     }
 
 
@@ -476,6 +490,36 @@ def write_aggregate(output_dir, rows, args):
             "Positive evidence for a useful low-res critic means `logp gap` is negative, "
             "`tail gap < -0.05` is positive, and the best gate has precision lift with "
             "a tolerable correct-object false-positive rate.",
+            "",
+            "## Low-Resolution Agreement Buckets",
+            "",
+            "| teacher ratio | q70 delta | q90 delta | support n | support halluc rate | "
+            "support correct capture | strong n | strong halluc rate | strong lift | "
+            "strong recall | strong correct FPR |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
+    for row in rows:
+        values = [
+            format_ratio(row["teacher_ratio"]),
+            fmt(row["agreement_q70_delta_threshold"]),
+            fmt(row["agreement_q90_delta_threshold"]),
+            fmt(row["agreement_support_labeled"]),
+            fmt(row["agreement_support_hallucination_rate"]),
+            fmt(row["agreement_support_correct_capture_rate"]),
+            fmt(row["agreement_strong_labeled"]),
+            fmt(row["agreement_strong_hallucination_rate"]),
+            fmt(row["agreement_strong_precision_lift"]),
+            fmt(row["agreement_strong_hallucinated_recall"]),
+            fmt(row["agreement_strong_correct_fpr"]),
+        ]
+        lines.append("| " + " | ".join(values) + " |")
+    lines.extend(
+        [
+            "",
+            "For the near-sighted critic hypothesis, `support` should have a lower "
+            "hallucination rate than the base rate, while `strong_disagree` should "
+            "show hallucination enrichment without a large correct-object FPR.",
             "",
             "## Low-Resolution Support/Reject Quadrants",
             "",

@@ -83,6 +83,11 @@ class SelfDistillationConfig(BaseConfig):
         selective_veto_min_score (float): Minimum student_logprob - teacher_logprob gap required for a token to be selected.
         selective_veto_min_tokens (int): Minimum selected tokens per non-empty micro batch when candidates exist.
         selective_veto_normalize_by_selected (bool): Rescale selected-token loss to preserve the original token-mean scale.
+        token_mask_pct (float): Fraction of highest-divergence valid tokens to mask out per sample.
+        token_mask_metric (str): Token score for token_mask_pct. Options: "loss" or "student_teacher_delta".
+        selective_bucket_metrics_enabled (bool): Whether to log low-res agreement/disagreement bucket metrics.
+        selective_bucket_q_low (float): Lower positive-disagreement quantile for bucket split, default 0.70.
+        selective_bucket_q_high (float): Higher positive-disagreement quantile for bucket split, default 0.90.
     """
 
     full_logit_distillation: bool = True
@@ -140,6 +145,11 @@ class SelfDistillationConfig(BaseConfig):
     selective_veto_min_score: float = 0.0
     selective_veto_min_tokens: int = 1
     selective_veto_normalize_by_selected: bool = True
+    token_mask_pct: float = 0.0
+    token_mask_metric: str = "loss"
+    selective_bucket_metrics_enabled: bool = True
+    selective_bucket_q_low: float = 0.70
+    selective_bucket_q_high: float = 0.90
 
     def __post_init__(self):
         if not 0.0 <= self.alpha <= 1.0:
@@ -174,6 +184,28 @@ class SelfDistillationConfig(BaseConfig):
             raise ValueError(f"self_distillation.trace_topk must be a positive integer, got {self.trace_topk}")
         if self.is_clip is not None and self.is_clip <= 0:
             raise ValueError(f"self_distillation.is_clip must be positive, got {self.is_clip}")
+        if not 0.0 <= self.token_mask_pct < 1.0:
+            raise ValueError(f"self_distillation.token_mask_pct must be in [0,1), got {self.token_mask_pct}")
+        valid_token_mask_metrics = [
+            "loss",
+            "raw_loss",
+            "kl",
+            "student_teacher_delta",
+            "student_minus_teacher",
+            "logprob_delta",
+            "veto_gap",
+        ]
+        token_mask_metric = str(self.token_mask_metric).lower().replace("-", "_")
+        if token_mask_metric not in valid_token_mask_metrics:
+            raise ValueError(
+                "self_distillation.token_mask_metric must be one of "
+                f"{valid_token_mask_metrics}, got {self.token_mask_metric}"
+            )
+        if not 0.0 < self.selective_bucket_q_low < self.selective_bucket_q_high < 1.0:
+            raise ValueError(
+                "self_distillation selective bucket quantiles must satisfy 0 < q_low < q_high < 1, "
+                f"got q_low={self.selective_bucket_q_low}, q_high={self.selective_bucket_q_high}"
+            )
         if self.selective_veto_enabled:
             if not 0.0 < self.selective_veto_top_p <= 1.0:
                 raise ValueError(

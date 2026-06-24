@@ -27,6 +27,8 @@ set -eo pipefail
 #   - ALPHA:               loss interpolation (0.5=JSD, 1.0=RKL, 0.0=FKL)
 #   - ROLLOUT_N:           number of rollouts per sample (1=pure KD, 8=GRPO+KD)
 #   - OPD_SELECTIVE_VETO:  keep only top-p low-res veto tokens for distillation
+#   - OPD_TOKEN_MASK_PCT:  mask highest-divergence token fraction per sample
+#   - OPD_TOKEN_MASK_METRIC: loss / student_teacher_delta
 #
 # Examples:
 #   # Default: student=224, teacher=EMA, loss=JSD
@@ -51,6 +53,18 @@ set -eo pipefail
 #   DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.75 \
 #     TEACHER_MODE=frozen ALPHA=1.0 OPD_SELECTIVE_VETO=True \
 #     OPD_SELECTIVE_VETO_TOP_P=0.10 bash res-opd/scripts/run_res_opd.sh
+#
+#   # Keep 90% token-mask variant: mask top 10% highest low-res disagreement tokens
+#   DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.75 \
+#     TEACHER_MODE=frozen ALPHA=1.0 OPD_TOKEN_MASK_PCT=0.10 \
+#     OPD_TOKEN_MASK_METRIC=student_teacher_delta OPD_BUCKET_METRICS=True \
+#     bash res-opd/scripts/run_res_opd.sh
+#
+#   # Keep 70% stricter variant: mask top 30%
+#   DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.75 \
+#     TEACHER_MODE=frozen ALPHA=1.0 OPD_TOKEN_MASK_PCT=0.30 \
+#     OPD_TOKEN_MASK_METRIC=student_teacher_delta OPD_BUCKET_METRICS=True \
+#     bash res-opd/scripts/run_res_opd.sh
 # =============================================================================
 
 # =============================================================================
@@ -116,6 +130,11 @@ OPD_SELECTIVE_VETO_TOP_P="${OPD_SELECTIVE_VETO_TOP_P:-0.10}"
 OPD_SELECTIVE_VETO_MIN_SCORE="${OPD_SELECTIVE_VETO_MIN_SCORE:-0.0}"
 OPD_SELECTIVE_VETO_MIN_TOKENS="${OPD_SELECTIVE_VETO_MIN_TOKENS:-1}"
 OPD_SELECTIVE_VETO_NORMALIZE="${OPD_SELECTIVE_VETO_NORMALIZE:-True}"
+OPD_TOKEN_MASK_PCT="${OPD_TOKEN_MASK_PCT:-0.0}"
+OPD_TOKEN_MASK_METRIC="${OPD_TOKEN_MASK_METRIC:-loss}"
+OPD_BUCKET_METRICS="${OPD_BUCKET_METRICS:-True}"
+OPD_BUCKET_Q_LOW="${OPD_BUCKET_Q_LOW:-0.70}"
+OPD_BUCKET_Q_HIGH="${OPD_BUCKET_Q_HIGH:-0.90}"
 OPD_TRAIN_METRICS="${OPD_TRAIN_METRICS:-True}"
 OPD_METRICS_ENTROPY="${OPD_METRICS_ENTROPY:-False}"
 OPD_TRACE_TOKEN="${OPD_TRACE_TOKEN:-False}"
@@ -539,6 +558,7 @@ echo "Teacher ratio:    $TEACHER_RATIO (original mode)"
 echo "Teacher mode:     $TEACHER_MODE (src=$TEACHER_MODEL_SOURCE, reg=$TEACHER_REGULARIZATION, rate=$TEACHER_UPDATE_RATE)"
 echo "Alpha (loss):     $ALPHA (0.5=JSD, 1.0=RKL, 0.0=FKL)"
 echo "Selective veto:   $OPD_SELECTIVE_VETO (top_p=$OPD_SELECTIVE_VETO_TOP_P, min_score=$OPD_SELECTIVE_VETO_MIN_SCORE, normalize=$OPD_SELECTIVE_VETO_NORMALIZE)"
+echo "Token mask:       pct=$OPD_TOKEN_MASK_PCT metric=$OPD_TOKEN_MASK_METRIC (bucket_metrics=$OPD_BUCKET_METRICS, bucket_q=${OPD_BUCKET_Q_LOW}/${OPD_BUCKET_Q_HIGH})"
 echo "Rollout N:        $ROLLOUT_N (1=pure KD, >1=GRPO+KD)"
 echo "Learning rate:    $LR"
 echo "Batch size:       $TRAIN_BATCH_SIZE"
@@ -616,6 +636,11 @@ set +e
     actor_rollout_ref.actor.self_distillation.selective_veto_min_score=$OPD_SELECTIVE_VETO_MIN_SCORE \
     actor_rollout_ref.actor.self_distillation.selective_veto_min_tokens=$OPD_SELECTIVE_VETO_MIN_TOKENS \
     actor_rollout_ref.actor.self_distillation.selective_veto_normalize_by_selected=$OPD_SELECTIVE_VETO_NORMALIZE \
+    actor_rollout_ref.actor.self_distillation.token_mask_pct=$OPD_TOKEN_MASK_PCT \
+    actor_rollout_ref.actor.self_distillation.token_mask_metric=$OPD_TOKEN_MASK_METRIC \
+    actor_rollout_ref.actor.self_distillation.selective_bucket_metrics_enabled=$OPD_BUCKET_METRICS \
+    actor_rollout_ref.actor.self_distillation.selective_bucket_q_low=$OPD_BUCKET_Q_LOW \
+    actor_rollout_ref.actor.self_distillation.selective_bucket_q_high=$OPD_BUCKET_Q_HIGH \
     actor_rollout_ref.actor.self_distillation.include_environment_feedback=False \
     actor_rollout_ref.actor.self_distillation.train_metrics_enabled=$OPD_TRAIN_METRICS \
     actor_rollout_ref.actor.self_distillation.trace_enabled=$OPD_TRACE_TOKEN \

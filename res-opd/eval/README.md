@@ -249,6 +249,14 @@ The selective-veto loss keeps only the largest positive
 `student_logprob - teacher_logprob` gaps among valid response tokens. Start with
 `0.10`; smaller values are cleaner but may leave too little training signal.
 
+For the recall-safer high-divergence mask, use
+`OPD_TOKEN_MASK_PCT=0.10 OPD_TOKEN_MASK_METRIC=student_teacher_delta`; this masks
+the top 10% highest low-res disagreement tokens and keeps about 90%. Use
+`OPD_TOKEN_MASK_PCT=0.30` for a stricter keep-70% variant. The same 70/90
+positive-disagreement bucket definition is reported by `analyze_opd_trace.py`
+under `agreement_bucket_summary`, so train metrics and forced-scoring trace
+summaries can be compared directly.
+
 For a 1-epoch sanity run, use `OPD_MINI_EVAL_TEST_FREQ=5` to get enough points.
 For 2 epochs, `OPD_MINI_EVAL_TEST_FREQ=10` is usually enough. The raw generation
 files remain small; the expensive part is the later forced scoring.

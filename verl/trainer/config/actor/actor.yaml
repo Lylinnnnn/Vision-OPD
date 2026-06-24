@@ -180,6 +180,11 @@ self_distillation:
   selective_veto_min_score: 0.0
   selective_veto_min_tokens: 1
   selective_veto_normalize_by_selected: True
+  token_mask_pct: 0.0
+  token_mask_metric: loss
+  selective_bucket_metrics_enabled: True
+  selective_bucket_q_low: 0.70
+  selective_bucket_q_high: 0.90
 
   # IS clip for loss; null disables IS weighting
   is_clip: 2

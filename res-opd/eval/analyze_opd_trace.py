@@ -94,6 +94,8 @@ OBJECT_TOKEN_METRIC_KEYS = [
 DEFAULT_ENTROPY_BIN_EDGES = [0.0, 0.5, 1.0, 1.5, float("inf")]
 DEFAULT_GATE_ENTROPY_THRESHOLDS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
 DEFAULT_GATE_LOGP_MARGINS = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2]
+DEFAULT_AGREEMENT_BUCKET_Q_LOW = 0.70
+DEFAULT_AGREEMENT_BUCKET_Q_HIGH = 0.90
 DEFAULT_QUADRANT_CONFIG = {
     "support_delta_min": -0.01,
     "reject_delta_max": -0.05,
@@ -1462,6 +1464,145 @@ def summarize_lowres_quadrants(rows, config):
     }
 
 
+def agreement_delta(row):
+    teacher_minus_student = row.get("teacher_minus_student_selected_logprob_mean")
+    if not is_finite_number(teacher_minus_student):
+        return None
+    return -float(teacher_minus_student)
+
+
+def classify_agreement_bucket(row, q_low_threshold, q_high_threshold):
+    delta = agreement_delta(row)
+    if delta is None:
+        return "unknown_delta"
+    if delta <= 0:
+        return "support"
+    if q_low_threshold is None or q_high_threshold is None:
+        return "mild_disagree"
+    if delta <= q_low_threshold:
+        return "mild_disagree"
+    if delta <= q_high_threshold:
+        return "medium_disagree"
+    return "strong_disagree"
+
+
+def summarize_agreement_buckets(rows, q_low=DEFAULT_AGREEMENT_BUCKET_Q_LOW, q_high=DEFAULT_AGREEMENT_BUCKET_Q_HIGH):
+    if not 0.0 < q_low < q_high < 1.0:
+        raise ValueError(f"agreement bucket quantiles must satisfy 0 < q_low < q_high < 1, got {q_low}, {q_high}")
+
+    labeled_rows = [
+        row for row in rows
+        if row.get("object_type") in {"correct_object", "hallucinated_object"}
+    ]
+    total_correct = len([row for row in labeled_rows if row.get("object_type") == "correct_object"])
+    total_hallucinated = len([row for row in labeled_rows if row.get("object_type") == "hallucinated_object"])
+    total_labeled = total_correct + total_hallucinated
+    base_hallucination_rate = safe_rate(total_hallucinated, total_labeled)
+
+    positive_deltas = [
+        delta for row in rows
+        for delta in [agreement_delta(row)]
+        if is_finite_number(delta) and delta > 0
+    ]
+    q_low_threshold = quantile(positive_deltas, q_low * 100.0)
+    q_high_threshold = quantile(positive_deltas, q_high * 100.0)
+
+    by_bucket = defaultdict(list)
+    for row in rows:
+        row = dict(row)
+        row["student_minus_teacher_selected_logprob_mean"] = agreement_delta(row)
+        bucket = classify_agreement_bucket(row, q_low_threshold, q_high_threshold)
+        row["agreement_bucket"] = bucket
+        by_bucket[bucket].append(row)
+
+    metric_keys = [
+        "teacher_minus_student_selected_logprob_mean",
+        "teacher_minus_student_selected_logprob_sum",
+        "student_minus_teacher_selected_logprob_mean",
+        "teacher_selected_logprob_lt_student_frac",
+        "teacher_penalized_mention_frac",
+        "student_entropy_mean",
+        "teacher_entropy_mean",
+        "selected_token_rank_in_teacher_topk_mean",
+        "selected_token_in_teacher_topk_frac",
+        "top1_match_frac",
+        "topk_jaccard_mean",
+    ]
+    preferred_order = [
+        "support",
+        "mild_disagree",
+        "medium_disagree",
+        "strong_disagree",
+        "unknown_delta",
+    ]
+    bucket_summary = {}
+    for bucket in preferred_order + sorted(set(by_bucket) - set(preferred_order)):
+        bucket_rows = by_bucket.get(bucket, [])
+        if not bucket_rows:
+            continue
+        correct_rows = [row for row in bucket_rows if row.get("object_type") == "correct_object"]
+        hallucinated_rows = [row for row in bucket_rows if row.get("object_type") == "hallucinated_object"]
+        unknown_rows = [row for row in bucket_rows if row.get("object_type") == "unknown_object"]
+        labeled_count = len(correct_rows) + len(hallucinated_rows)
+        hallucination_rate = safe_rate(len(hallucinated_rows), labeled_count)
+        bucket_summary[bucket] = {
+            "num_mentions": len(bucket_rows),
+            "num_labeled_mentions": labeled_count,
+            "num_correct_mentions": len(correct_rows),
+            "num_hallucinated_mentions": len(hallucinated_rows),
+            "num_unknown_mentions": len(unknown_rows),
+            "hallucination_rate": hallucination_rate,
+            "precision_lift_vs_base": (
+                hallucination_rate / base_hallucination_rate
+                if base_hallucination_rate > 0
+                else None
+            ),
+            "hallucinated_recall": safe_rate(len(hallucinated_rows), total_hallucinated),
+            "correct_capture_rate": safe_rate(len(correct_rows), total_correct),
+            "correct_false_positive_rate": safe_rate(len(correct_rows), total_correct),
+            "metrics": {
+                key: safe_mean(row.get(key) for row in bucket_rows)
+                for key in metric_keys
+            },
+            "by_type": {
+                object_type: summarize_mention_rows(type_rows)
+                for object_type, type_rows in (
+                    ("correct_object", correct_rows),
+                    ("hallucinated_object", hallucinated_rows),
+                    ("unknown_object", unknown_rows),
+                )
+                if type_rows
+            },
+        }
+
+    support = bucket_summary.get("support", {})
+    strong = bucket_summary.get("strong_disagree", {})
+    return {
+        "config": {
+            "q_low": q_low,
+            "q_high": q_high,
+            "q_low_delta_threshold": q_low_threshold,
+            "q_high_delta_threshold": q_high_threshold,
+            "delta_definition": "student_selected_logprob - teacher_selected_logprob",
+        },
+        "num_labeled_mentions": total_labeled,
+        "num_correct_mentions": total_correct,
+        "num_hallucinated_mentions": total_hallucinated,
+        "base_hallucination_rate": base_hallucination_rate,
+        "positive_disagreement_mentions": len(positive_deltas),
+        "positive_disagreement_frac": safe_rate(len(positive_deltas), len(rows)),
+        "bucket_summary": bucket_summary,
+        "interpretation": {
+            "support_bucket_hallucination_rate": support.get("hallucination_rate"),
+            "support_bucket_correct_capture_rate": support.get("correct_capture_rate"),
+            "strong_bucket_hallucination_rate": strong.get("hallucination_rate"),
+            "strong_bucket_precision_lift_vs_base": strong.get("precision_lift_vs_base"),
+            "strong_bucket_hallucinated_recall": strong.get("hallucinated_recall"),
+            "strong_bucket_correct_false_positive_rate": strong.get("correct_false_positive_rate"),
+        },
+    }
+
+
 def build_selective_suppression_signal(type_summary):
     hallucinated = type_summary.get("hallucinated_object")
     correct = type_summary.get("correct_object")
@@ -1505,6 +1646,8 @@ def summarize_object_trace(
     entropy_bins,
     gate_entropy_thresholds,
     gate_logp_margins,
+    agreement_bucket_q_low=DEFAULT_AGREEMENT_BUCKET_Q_LOW,
+    agreement_bucket_q_high=DEFAULT_AGREEMENT_BUCKET_Q_HIGH,
     quadrant_config=None,
 ):
     _, inverse_synonym_dict = parse_official_synonyms()
@@ -1572,6 +1715,11 @@ def summarize_object_trace(
         "entropy_bin_summary": summarize_entropy_bins(rows, entropy_bins),
         "logp_delta_distribution": summarize_delta_distributions(rows),
         "gate_sweep": summarize_gate_sweep(rows, gate_entropy_thresholds, gate_logp_margins),
+        "agreement_bucket_summary": summarize_agreement_buckets(
+            rows,
+            q_low=agreement_bucket_q_low,
+            q_high=agreement_bucket_q_high,
+        ),
         "lowres_quadrant_summary": summarize_lowres_quadrants(rows, quadrant_config),
         "step_summary_by_type": by_step,
         "step_contrast_hallucinated_minus_correct": step_contrast,
@@ -1821,6 +1969,40 @@ def lowres_quadrant_table_rows(quadrant_summary):
                 fmt_value(metrics.get("teacher_top1_top2_margin_mean")),
                 fmt_value(metrics.get("selected_token_rank_in_teacher_topk_mean")),
                 fmt_value(metrics.get("selected_token_in_teacher_topk_frac")),
+                fmt_value(metrics.get("top1_match_frac")),
+            ]
+        )
+    return rows
+
+
+def agreement_bucket_table_rows(agreement_summary):
+    rows = []
+    buckets = agreement_summary.get("bucket_summary", {})
+    preferred_order = [
+        "support",
+        "mild_disagree",
+        "medium_disagree",
+        "strong_disagree",
+        "unknown_delta",
+    ]
+    for bucket in preferred_order + sorted(set(buckets) - set(preferred_order)):
+        stats = buckets.get(bucket)
+        if not stats:
+            continue
+        metrics = stats.get("metrics", {})
+        rows.append(
+            [
+                bucket,
+                stats.get("num_labeled_mentions", 0),
+                stats.get("num_correct_mentions", 0),
+                stats.get("num_hallucinated_mentions", 0),
+                fmt_value(stats.get("hallucination_rate")),
+                fmt_value(stats.get("precision_lift_vs_base")),
+                fmt_value(stats.get("hallucinated_recall")),
+                fmt_value(stats.get("correct_false_positive_rate")),
+                fmt_value(metrics.get("student_minus_teacher_selected_logprob_mean")),
+                fmt_value(metrics.get("student_entropy_mean")),
+                fmt_value(metrics.get("teacher_entropy_mean")),
                 fmt_value(metrics.get("top1_match_frac")),
             ]
         )
@@ -2096,6 +2278,48 @@ def write_markdown_summary(output, output_md):
             ]
         )
 
+    agreement_summary = object_trace.get("agreement_bucket_summary", {})
+    agreement_rows = agreement_bucket_table_rows(agreement_summary)
+    if agreement_rows:
+        interpretation = agreement_summary.get("interpretation", {})
+        config = agreement_summary.get("config", {})
+        lines.extend(
+            [
+                "",
+                "## Low-Resolution Agreement Buckets",
+                "",
+                f"- delta: {config.get('delta_definition')}",
+                f"- q_low/q_high: {fmt_value(config.get('q_low'))} / {fmt_value(config.get('q_high'))}",
+                f"- q_low_delta_threshold: {fmt_value(config.get('q_low_delta_threshold'))}",
+                f"- q_high_delta_threshold: {fmt_value(config.get('q_high_delta_threshold'))}",
+                f"- base_hallucination_rate: {fmt_value(agreement_summary.get('base_hallucination_rate'))}",
+                f"- support_bucket_hallucination_rate: "
+                f"{fmt_value(interpretation.get('support_bucket_hallucination_rate'))}",
+                f"- strong_bucket_precision_lift_vs_base: "
+                f"{fmt_value(interpretation.get('strong_bucket_precision_lift_vs_base'))}",
+                f"- strong_bucket_correct_false_positive_rate: "
+                f"{fmt_value(interpretation.get('strong_bucket_correct_false_positive_rate'))}",
+                "",
+                markdown_table(
+                    [
+                        "bucket",
+                        "labeled",
+                        "correct",
+                        "halluc",
+                        "halluc rate",
+                        "precision lift",
+                        "halluc recall",
+                        "correct FPR",
+                        "student-teacher logp",
+                        "student entropy",
+                        "teacher entropy",
+                        "top1 match",
+                    ],
+                    agreement_rows,
+                ),
+            ]
+        )
+
     quadrant_summary = object_trace.get("lowres_quadrant_summary", {})
     quadrant_rows = lowres_quadrant_table_rows(quadrant_summary)
     if quadrant_rows:
@@ -2297,6 +2521,8 @@ def build_trace_analysis_summary(
     entropy_bin_edges=None,
     gate_entropy_thresholds=None,
     gate_logp_margins=None,
+    agreement_bucket_q_low=DEFAULT_AGREEMENT_BUCKET_Q_LOW,
+    agreement_bucket_q_high=DEFAULT_AGREEMENT_BUCKET_Q_HIGH,
     quadrant_config=None,
 ):
     """Build the full OPD trace analysis summary without parsing CLI args."""
@@ -2326,6 +2552,8 @@ def build_trace_analysis_summary(
         entropy_bins,
         parsed_gate_entropy_thresholds,
         parsed_gate_logp_margins,
+        agreement_bucket_q_low=agreement_bucket_q_low,
+        agreement_bucket_q_high=agreement_bucket_q_high,
         quadrant_config=quadrant_config,
     )
 
@@ -2409,6 +2637,18 @@ def main():
             "Comma-separated positive margins m for gate condition "
             "teacher_minus_student_logp < -m."
         ),
+    )
+    parser.add_argument(
+        "--agreement-bucket-q-low",
+        type=float,
+        default=DEFAULT_AGREEMENT_BUCKET_Q_LOW,
+        help="Lower positive-disagreement quantile for agreement bucket analysis.",
+    )
+    parser.add_argument(
+        "--agreement-bucket-q-high",
+        type=float,
+        default=DEFAULT_AGREEMENT_BUCKET_Q_HIGH,
+        help="Higher positive-disagreement quantile for agreement bucket analysis.",
     )
     parser.add_argument(
         "--quadrant-support-delta-min",
@@ -2534,6 +2774,8 @@ def main():
         entropy_bin_edges=args.entropy_bin_edges,
         gate_entropy_thresholds=args.gate_entropy_thresholds,
         gate_logp_margins=args.gate_logp_margins,
+        agreement_bucket_q_low=args.agreement_bucket_q_low,
+        agreement_bucket_q_high=args.agreement_bucket_q_high,
         quadrant_config=quadrant_config,
     )
     object_trace_summary = output["object_trace_summary"]
@@ -2612,6 +2854,17 @@ def main():
             f"recall={fmt_value(best_gate.get('hallucination_recall'))} "
             f"correct_fpr={fmt_value(best_gate.get('correct_false_positive_rate'))} "
             f"f1={fmt_value(best_gate.get('f1'))}"
+        )
+    agreement_summary = object_trace_summary.get("agreement_bucket_summary", {})
+    agreement_interpretation = agreement_summary.get("interpretation", {})
+    if agreement_summary.get("bucket_summary"):
+        print(
+            "Agreement buckets: "
+            f"q70={fmt_value(agreement_summary.get('config', {}).get('q_low_delta_threshold'))} "
+            f"q90={fmt_value(agreement_summary.get('config', {}).get('q_high_delta_threshold'))} "
+            f"support_halluc_rate={fmt_value(agreement_interpretation.get('support_bucket_hallucination_rate'))} "
+            f"strong_lift={fmt_value(agreement_interpretation.get('strong_bucket_precision_lift_vs_base'))} "
+            f"strong_correct_fpr={fmt_value(agreement_interpretation.get('strong_bucket_correct_false_positive_rate'))}"
         )
     for group, stats in output["token_group_summary"].items():
         delta = stats["teacher_minus_student_selected_logprob_mean"]

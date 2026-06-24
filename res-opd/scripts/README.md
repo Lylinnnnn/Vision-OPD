@@ -83,6 +83,29 @@ the largest top-p fraction. The default `0.10` is intentionally not too strict.
 `OPD_SELECTIVE_VETO_NORMALIZE=True` keeps the selected-token loss on a comparable
 scale to normal token-mean RKL/JSD.
 
+For recall-safer token masking, reuse the original high-divergence token mask:
+
+```bash
+DEGRADATION_MODE=original \
+STUDENT_RATIO=1.0 \
+TEACHER_RATIO=0.75 \
+TEACHER_MODE=frozen \
+ALPHA=1.0 \
+OPD_TOKEN_MASK_PCT=0.10 \
+OPD_TOKEN_MASK_METRIC=student_teacher_delta \
+OPD_BUCKET_METRICS=True \
+OPD_BUCKET_Q_LOW=0.70 \
+OPD_BUCKET_Q_HIGH=0.90 \
+bash res-opd/scripts/run_res_opd_default.sh
+```
+
+`OPD_TOKEN_MASK_PCT=0.10` masks the top 10% highest-scoring valid response tokens
+per sample, so it keeps about 90%; use `0.30` for a stricter keep-70% variant.
+`OPD_TOKEN_MASK_METRIC=student_teacher_delta` ranks tokens by
+`student_logprob - teacher_logprob`; `loss` ranks by the raw distillation loss.
+Training logs bucket metrics when `OPD_BUCKET_METRICS=True`:
+`support`, `mild_disagree`, `medium_disagree`, and `strong_disagree`.
+
 ---
 
 ## Eval Trace Scoring

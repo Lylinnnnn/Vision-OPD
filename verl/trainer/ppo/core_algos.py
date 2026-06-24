@@ -1094,6 +1094,7 @@ def compute_self_distillation_loss(
     student_topk_log_probs: Optional[torch.Tensor] = None,
     teacher_topk_log_probs: Optional[torch.Tensor] = None,
     self_distillation_mask: Optional[torch.Tensor] = None,
+    student_entropy: Optional[torch.Tensor] = None,
     loss_agg_mode: str = "token-mean",
     rollout_is_weights: Optional[torch.Tensor] = None,
     batch_num_tokens: Optional[int] = None,
@@ -1171,9 +1172,19 @@ def compute_self_distillation_loss(
 
     selective_veto_loss_scale = None
     selective_veto_enabled = self_distillation_config.get("selective_veto_enabled", False)
-    token_mask_pct = self_distillation_config.get("token_mask_pct", 0.0)
+    token_mask_pct = float(self_distillation_config.get("token_mask_pct", 0.0))
     if selective_veto_enabled:
         token_mask_pct = 0.0
+    bucket_metrics_enabled = bool(self_distillation_config.get("selective_bucket_metrics_enabled", True))
+    bucket_q_low = float(self_distillation_config.get("selective_bucket_q_low", 0.70))
+    bucket_q_high = float(self_distillation_config.get("selective_bucket_q_high", 0.90))
+    bucket_masks_for_token_metrics = {}
+    if bucket_metrics_enabled or selective_veto_enabled:
+        if not 0.0 < bucket_q_low < bucket_q_high < 1.0:
+            raise ValueError(
+                "self_distillation selective bucket quantiles must satisfy 0 < q_low < q_high < 1, "
+                f"got q_low={bucket_q_low}, q_high={bucket_q_high}"
+            )
         with torch.no_grad():
             selective_veto_top_p = float(self_distillation_config.get("selective_veto_top_p", 0.10))
             selective_veto_min_score = float(self_distillation_config.get("selective_veto_min_score", 0.0))
@@ -1181,76 +1192,164 @@ def compute_self_distillation_loss(
             normalize_by_selected = bool(
                 self_distillation_config.get("selective_veto_normalize_by_selected", True)
             )
-            if not 0.0 < selective_veto_top_p <= 1.0:
-                raise ValueError(
-                    "self_distillation.selective_veto_top_p must be in (0,1], "
-                    f"got {selective_veto_top_p}"
-                )
-            if selective_veto_min_tokens < 0:
-                raise ValueError(
-                    "self_distillation.selective_veto_min_tokens must be non-negative, "
-                    f"got {selective_veto_min_tokens}"
-                )
+            if selective_veto_enabled:
+                if not 0.0 < selective_veto_top_p <= 1.0:
+                    raise ValueError(
+                        "self_distillation.selective_veto_top_p must be in (0,1], "
+                        f"got {selective_veto_top_p}"
+                    )
+                if selective_veto_min_tokens < 0:
+                    raise ValueError(
+                        "self_distillation.selective_veto_min_tokens must be non-negative, "
+                        f"got {selective_veto_min_tokens}"
+                    )
 
             pre_select_loss_mask = loss_mask
             valid_mask = pre_select_loss_mask > 0
-            valid_count = int(valid_mask.sum().item())
-            veto_scores = (student_log_probs - teacher_log_probs).detach()
-            candidate_mask = valid_mask & torch.isfinite(veto_scores) & (veto_scores > selective_veto_min_score)
-            candidate_count = int(candidate_mask.sum().item())
-            selected_token_mask = torch.zeros_like(pre_select_loss_mask)
-            score_threshold = None
+            student_minus_teacher = (student_log_probs - teacher_log_probs).detach()
+            finite_valid_mask = valid_mask & torch.isfinite(student_minus_teacher)
+            valid_count = int(finite_valid_mask.sum().item())
+            positive_disagreement_mask = finite_valid_mask & (student_minus_teacher > 0)
+            positive_disagreement_count = int(positive_disagreement_mask.sum().item())
+            q_low_threshold = None
+            q_high_threshold = None
+            if positive_disagreement_count > 0:
+                positive_values = student_minus_teacher[positive_disagreement_mask].float()
+                q_low_threshold = torch.quantile(positive_values, bucket_q_low)
+                q_high_threshold = torch.quantile(positive_values, bucket_q_high)
 
-            if valid_count > 0 and candidate_count > 0:
-                max_selected = math.ceil(valid_count * selective_veto_top_p)
-                if selective_veto_min_tokens > 0:
-                    max_selected = max(max_selected, selective_veto_min_tokens)
-                selected_count_target = min(candidate_count, max_selected)
-                flat_candidate_indices = torch.nonzero(candidate_mask.flatten(), as_tuple=False).flatten()
-                flat_candidate_scores = veto_scores.flatten()[flat_candidate_indices].float()
-                top_values, top_relative_indices = torch.topk(
-                    flat_candidate_scores,
-                    k=selected_count_target,
-                    largest=True,
-                    sorted=False,
+            raw_loss_for_metrics = raw_per_token_loss.detach()
+            entropy_for_metrics = student_entropy.detach() if student_entropy is not None else None
+
+            def add_bucket_metrics(name: str, bucket_mask: torch.Tensor):
+                bucket_mask = bucket_mask & finite_valid_mask
+                bucket_mask_f = bucket_mask.to(pre_select_loss_mask.dtype)
+                bucket_count_tensor = bucket_mask_f.sum()
+                bucket_count = float(bucket_count_tensor.item())
+                prefix = f"self_distillation/bucket/{name}"
+                metrics[f"{prefix}_tokens"] = bucket_count
+                metrics[f"{prefix}_frac"] = bucket_count / valid_count if valid_count > 0 else 0.0
+                if bucket_count > 0.0:
+                    metrics[f"{prefix}_delta_mean"] = (
+                        verl_F.masked_sum(student_minus_teacher.float(), bucket_mask_f) / bucket_count_tensor
+                    ).detach().item()
+                    metrics[f"{prefix}_raw_loss_mean"] = (
+                        verl_F.masked_sum(raw_loss_for_metrics.float(), bucket_mask_f) / bucket_count_tensor
+                    ).detach().item()
+                    metrics[f"{prefix}_student_logprob_mean"] = (
+                        verl_F.masked_sum(student_log_probs.detach().float(), bucket_mask_f) / bucket_count_tensor
+                    ).detach().item()
+                    metrics[f"{prefix}_teacher_logprob_mean"] = (
+                        verl_F.masked_sum(teacher_log_probs.detach().float(), bucket_mask_f) / bucket_count_tensor
+                    ).detach().item()
+                    if entropy_for_metrics is not None:
+                        metrics[f"{prefix}_student_entropy_mean"] = (
+                            verl_F.masked_sum(entropy_for_metrics.float(), bucket_mask_f) / bucket_count_tensor
+                        ).detach().item()
+                else:
+                    metrics[f"{prefix}_delta_mean"] = 0.0
+                    metrics[f"{prefix}_raw_loss_mean"] = 0.0
+
+            if bucket_metrics_enabled:
+                support_mask = finite_valid_mask & (student_minus_teacher <= 0)
+                if q_low_threshold is None or q_high_threshold is None:
+                    mild_disagreement_mask = positive_disagreement_mask
+                    medium_disagreement_mask = torch.zeros_like(finite_valid_mask)
+                    strong_disagreement_mask = torch.zeros_like(finite_valid_mask)
+                else:
+                    mild_disagreement_mask = positive_disagreement_mask & (student_minus_teacher <= q_low_threshold)
+                    medium_disagreement_mask = (
+                        positive_disagreement_mask
+                        & (student_minus_teacher > q_low_threshold)
+                        & (student_minus_teacher <= q_high_threshold)
+                    )
+                    strong_disagreement_mask = positive_disagreement_mask & (student_minus_teacher > q_high_threshold)
+
+                bucket_masks_for_token_metrics = {
+                    "support": support_mask.detach(),
+                    "mild_disagree": mild_disagreement_mask.detach(),
+                    "medium_disagree": medium_disagreement_mask.detach(),
+                    "strong_disagree": strong_disagreement_mask.detach(),
+                }
+                metrics["self_distillation/bucket/q_low"] = bucket_q_low
+                metrics["self_distillation/bucket/q_high"] = bucket_q_high
+                metrics["self_distillation/bucket/q_low_delta_threshold"] = (
+                    q_low_threshold.detach().item() if q_low_threshold is not None else 0.0
                 )
-                flat_selected_indices = flat_candidate_indices[top_relative_indices]
-                selected_token_mask_flat = torch.zeros_like(pre_select_loss_mask.flatten())
-                selected_token_mask_flat[flat_selected_indices] = 1.0
-                selected_token_mask = selected_token_mask_flat.view_as(pre_select_loss_mask)
-                score_threshold = top_values.min()
+                metrics["self_distillation/bucket/q_high_delta_threshold"] = (
+                    q_high_threshold.detach().item() if q_high_threshold is not None else 0.0
+                )
+                metrics["self_distillation/bucket/valid_tokens"] = valid_count
+                metrics["self_distillation/bucket/positive_disagreement_frac"] = (
+                    positive_disagreement_count / valid_count if valid_count > 0 else 0.0
+                )
+                add_bucket_metrics("support", support_mask)
+                add_bucket_metrics("mild_disagree", mild_disagreement_mask)
+                add_bucket_metrics("medium_disagree", medium_disagreement_mask)
+                add_bucket_metrics("strong_disagree", strong_disagreement_mask)
 
-            selected_count_tensor = selected_token_mask.sum()
-            selected_count = float(selected_count_tensor.item())
-            if normalize_by_selected and selected_count > 0.0:
-                selective_veto_loss_scale = pre_select_loss_mask.sum().detach() / selected_count_tensor.clamp(min=1.0)
-            loss_mask = pre_select_loss_mask * selected_token_mask
+            if selective_veto_enabled:
+                selected_token_mask = torch.zeros_like(pre_select_loss_mask)
+                candidate_mask = (
+                    finite_valid_mask
+                    & torch.isfinite(student_minus_teacher)
+                    & (student_minus_teacher > selective_veto_min_score)
+                )
+                candidate_count = int(candidate_mask.sum().item())
+                score_threshold = None
 
-            metrics["self_distillation/selective_veto_enabled"] = 1.0
-            metrics["self_distillation/selective_veto_top_p"] = selective_veto_top_p
-            metrics["self_distillation/selective_veto_min_score"] = selective_veto_min_score
-            metrics["self_distillation/selective_veto_candidate_frac"] = (
-                candidate_count / valid_count if valid_count > 0 else 0.0
-            )
-            metrics["self_distillation/selective_veto_selected_frac"] = (
-                selected_count / valid_count if valid_count > 0 else 0.0
-            )
-            metrics["self_distillation/selective_veto_selected_tokens"] = selected_count
-            metrics["self_distillation/selective_veto_empty"] = selected_count == 0.0
-            metrics["self_distillation/selective_veto_normalize_by_selected"] = float(normalize_by_selected)
-            metrics["self_distillation/selective_veto_loss_scale"] = (
-                selective_veto_loss_scale.detach().item() if selective_veto_loss_scale is not None else 1.0
-            )
-            metrics["self_distillation/selective_veto_score_threshold"] = (
-                score_threshold.detach().item() if score_threshold is not None else 0.0
-            )
-            if selected_count > 0.0:
-                selected_score_sum = verl_F.masked_sum(veto_scores.float(), selected_token_mask)
-                metrics["self_distillation/selective_veto_score_mean_selected"] = (
-                    selected_score_sum / selected_count_tensor.clamp(min=1.0)
-                ).detach().item()
-            else:
-                metrics["self_distillation/selective_veto_score_mean_selected"] = 0.0
+                if valid_count > 0 and candidate_count > 0:
+                    max_selected = math.ceil(valid_count * selective_veto_top_p)
+                    if selective_veto_min_tokens > 0:
+                        max_selected = max(max_selected, selective_veto_min_tokens)
+                    selected_count_target = min(candidate_count, max_selected)
+                    flat_candidate_indices = torch.nonzero(candidate_mask.flatten(), as_tuple=False).flatten()
+                    flat_candidate_scores = student_minus_teacher.flatten()[flat_candidate_indices].float()
+                    top_values, top_relative_indices = torch.topk(
+                        flat_candidate_scores,
+                        k=selected_count_target,
+                        largest=True,
+                        sorted=False,
+                    )
+                    flat_selected_indices = flat_candidate_indices[top_relative_indices]
+                    selected_token_mask_flat = torch.zeros_like(pre_select_loss_mask.flatten())
+                    selected_token_mask_flat[flat_selected_indices] = 1.0
+                    selected_token_mask = selected_token_mask_flat.view_as(pre_select_loss_mask)
+                    score_threshold = top_values.min()
+
+                selected_count_tensor = selected_token_mask.sum()
+                selected_count = float(selected_count_tensor.item())
+                if normalize_by_selected and selected_count > 0.0:
+                    selective_veto_loss_scale = (
+                        pre_select_loss_mask.sum().detach() / selected_count_tensor.clamp(min=1.0)
+                    )
+                loss_mask = pre_select_loss_mask * selected_token_mask
+
+                metrics["self_distillation/selective_veto_enabled"] = 1.0
+                metrics["self_distillation/selective_veto_top_p"] = selective_veto_top_p
+                metrics["self_distillation/selective_veto_min_score"] = selective_veto_min_score
+                metrics["self_distillation/selective_veto_candidate_frac"] = (
+                    candidate_count / valid_count if valid_count > 0 else 0.0
+                )
+                metrics["self_distillation/selective_veto_selected_frac"] = (
+                    selected_count / valid_count if valid_count > 0 else 0.0
+                )
+                metrics["self_distillation/selective_veto_selected_tokens"] = selected_count
+                metrics["self_distillation/selective_veto_empty"] = selected_count == 0.0
+                metrics["self_distillation/selective_veto_normalize_by_selected"] = float(normalize_by_selected)
+                metrics["self_distillation/selective_veto_loss_scale"] = (
+                    selective_veto_loss_scale.detach().item() if selective_veto_loss_scale is not None else 1.0
+                )
+                metrics["self_distillation/selective_veto_score_threshold"] = (
+                    score_threshold.detach().item() if score_threshold is not None else 0.0
+                )
+                if selected_count > 0.0:
+                    selected_score_sum = verl_F.masked_sum(student_minus_teacher.float(), selected_token_mask)
+                    metrics["self_distillation/selective_veto_score_mean_selected"] = (
+                        selected_score_sum / selected_count_tensor.clamp(min=1.0)
+                    ).detach().item()
+                else:
+                    metrics["self_distillation/selective_veto_score_mean_selected"] = 0.0
 
     # ----------------------------------------------------------------
     # Token-level divergence masking: drop highest-divergence tokens
@@ -1263,19 +1362,34 @@ def compute_self_distillation_loss(
     # from the sample-level self_distillation_mask.
     # ----------------------------------------------------------------
     if token_mask_pct > 0.0:
+        if not 0.0 <= token_mask_pct < 1.0:
+            raise ValueError(f"self_distillation.token_mask_pct must be in [0,1), got {token_mask_pct}")
         with torch.no_grad():
-            token_mask_metric = self_distillation_config.get("token_mask_metric", "loss")
-            if token_mask_metric == "loss":
+            token_mask_metric = str(self_distillation_config.get("token_mask_metric", "loss") or "loss").lower()
+            token_mask_metric = token_mask_metric.replace("-", "_")
+            token_mask_metric_is_delta = False
+            if token_mask_metric in {"loss", "raw_loss", "kl"}:
                 divergence_scores = raw_per_token_loss.detach()
+            elif token_mask_metric in {
+                "student_teacher_delta",
+                "student_minus_teacher",
+                "logprob_delta",
+                "veto_gap",
+            }:
+                token_mask_metric_is_delta = True
+                divergence_scores = (student_log_probs - teacher_log_probs).detach()
             else:
-                divergence_scores = raw_per_token_loss.detach()
+                raise ValueError(
+                    "self_distillation.token_mask_metric must be 'loss' or "
+                    f"'student_teacher_delta', got {token_mask_metric}"
+                )
 
             # Compute per-sample quantile threshold (only over valid tokens)
             keep_quantile = 1.0 - token_mask_pct
             batch_size = divergence_scores.shape[0]
             token_keep_mask = torch.ones_like(loss_mask)
             for sample_idx in range(batch_size):
-                valid = loss_mask[sample_idx] > 0
+                valid = (loss_mask[sample_idx] > 0) & torch.isfinite(divergence_scores[sample_idx])
                 if valid.sum() < 2:
                     continue
                 valid_scores = divergence_scores[sample_idx][valid]
@@ -1285,12 +1399,32 @@ def compute_self_distillation_loss(
                 token_keep_mask[sample_idx][too_high] = 0.0
 
             # Apply token-level mask on top of existing loss_mask
+            pre_token_mask = loss_mask
             loss_mask = loss_mask * token_keep_mask
 
         metrics["self_distillation/token_mask_pct"] = token_mask_pct
+        metrics["self_distillation/token_mask_metric_id"] = 1.0 if token_mask_metric_is_delta else 0.0
+        valid_token_mask = pre_token_mask > 0
+        valid_token_count_for_mask = valid_token_mask.sum().clamp(min=1.0)
+        masked_valid_mask = valid_token_mask & (token_keep_mask <= 0)
+        kept_valid_mask = valid_token_mask & (token_keep_mask > 0)
         metrics["self_distillation/token_mask_kept_frac"] = (
             token_keep_mask.sum() / token_keep_mask.numel()
         ).item()
+        metrics["self_distillation/token_mask_kept_frac_valid"] = (
+            kept_valid_mask.sum() / valid_token_count_for_mask
+        ).item()
+        metrics["self_distillation/token_mask_masked_frac_valid"] = (
+            masked_valid_mask.sum() / valid_token_count_for_mask
+        ).item()
+        metrics["self_distillation/token_mask_masked_tokens"] = masked_valid_mask.sum().detach().item()
+        for bucket_name, bucket_mask in bucket_masks_for_token_metrics.items():
+            active_bucket_mask = bucket_mask & valid_token_mask
+            bucket_count = active_bucket_mask.sum().clamp(min=1.0)
+            bucket_masked = active_bucket_mask & masked_valid_mask
+            prefix = f"self_distillation/token_mask_bucket/{bucket_name}"
+            metrics[f"{prefix}_masked_frac"] = (bucket_masked.sum() / bucket_count).item()
+            metrics[f"{prefix}_masked_tokens"] = bucket_masked.sum().detach().item()
 
     weighted_per_token_loss = raw_per_token_loss
 

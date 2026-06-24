@@ -1571,6 +1571,7 @@ class DataParallelPPOActor(BasePPOActor):
                             student_topk_log_probs=student_topk_logps,
                             teacher_topk_log_probs=teacher_topk_logps,
                             self_distillation_mask=self_distillation_mask,
+                            student_entropy=entropy if policy_calculate_entropy else None,
                             loss_agg_mode=loss_agg_mode,
                             rollout_is_weights=rollout_is_weights,
                             batch_num_tokens=self.config.global_batch_info.get("batch_num_tokens"),
