@@ -39,8 +39,8 @@ export ACTOR_OPTIMIZER_OFFLOAD="${ACTOR_OPTIMIZER_OFFLOAD:-False}"
 export REF_PARAM_OFFLOAD="${REF_PARAM_OFFLOAD:-False}"
 
 # --- vLLM rollout ---
-# 0.92: maximize KV cache utilization on H20 98GB (offload keeps actor/ref safe)
-export ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.92}"
+# 0.8: balanced KV cache utilization on H20 98GB
+export ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.8}"
 
 # --- Logprob micro batch ---
 # 4: higher GPU utilization for logprob computation with offload enabled
