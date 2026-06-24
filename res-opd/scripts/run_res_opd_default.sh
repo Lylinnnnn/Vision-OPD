@@ -53,9 +53,9 @@ export TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-128}"
 export PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-128}"
 
 # --- Mini eval ---
-# Mini eval: 100 samples from val2017, evaluate every epoch (VAL_N=1)
+# Mini eval: 100 samples from val2017, evaluate every 20 steps
 export OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-True}"
-export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-1}"
+export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-20}"
 export OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-100}"
 
 # --- Training metrics ---
