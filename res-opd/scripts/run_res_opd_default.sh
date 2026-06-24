@@ -43,20 +43,20 @@ export REF_PARAM_OFFLOAD="${REF_PARAM_OFFLOAD:-False}"
 export ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.8}"
 
 # --- Logprob micro batch ---
-# 4: higher GPU utilization for logprob computation with offload enabled
-export ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-4}"
-export REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-4}"
+# 8: maximize logprob throughput with offload disabled and ample VRAM
+export ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-8}"
+export REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-8}"
 
 # --- Batch size ---
-# 64: larger batch for 10k dataset, better GPU utilization
-export TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-64}"
-export PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-64}"
+# 128: maximize GPU utilization on H20 98GB with offload disabled
+export TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-128}"
+export PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-128}"
 
 # --- Mini eval ---
-# Enable mini eval trace by default; adjust freq/samples as needed
+# Mini eval: 100 samples from val2017, evaluate every epoch (VAL_N=1)
 export OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-True}"
-export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-10}"
-export OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-50}"
+export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-1}"
+export OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-100}"
 
 # --- Training metrics ---
 export OPD_TRAIN_METRICS="${OPD_TRAIN_METRICS:-True}"
