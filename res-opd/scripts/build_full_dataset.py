@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 Build full-scale OPD dataset:
-  - Train: 10k images sampled from COCO train2017 (no caption/annotation needed for OPD)
-  - Test:  1500 images sampled from COCO val2017 (with captions & objects, same format as existing test.json)
+  - Train: 5k images sampled from COCO train2017 (no caption/annotation needed for OPD)
+  - Test:  1000 images sampled from COCO val2017 (with captions & objects, same format as existing test.json)
 
 Output:
-  - data/train_10k.parquet   (training set, parquet format matching existing train.parquet)
-  - data/test_1500.json      (test set, JSON format matching existing test.json)
+  - data/train_5k.parquet    (training set, parquet format matching existing train.parquet)
+  - data/test_1000.json      (test set, JSON format matching existing test.json)
 """
 
 import json
@@ -18,8 +18,8 @@ import numpy as np
 import pandas as pd
 
 SEED = 42
-TRAIN_SAMPLE_SIZE = 10000
-TEST_SAMPLE_SIZE = 1500
+TRAIN_SAMPLE_SIZE = 5000
+TEST_SAMPLE_SIZE = 1000
 
 RES_OPD_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = RES_OPD_ROOT / "data"
@@ -72,7 +72,7 @@ def build_train_set():
         )
 
     dataframe = pd.DataFrame(records)
-    output_path = DATA_DIR / "train_10k.parquet"
+    output_path = DATA_DIR / "train_5k.parquet"
     dataframe.to_parquet(output_path, index=False)
     print(f"[Train] Saved {len(dataframe)} samples to {output_path}")
     return output_path
@@ -132,7 +132,7 @@ def build_test_set():
             }
         )
 
-    output_path = DATA_DIR / "test_1500.json"
+    output_path = DATA_DIR / "test_1000.json"
     with open(output_path, "w") as output_file:
         json.dump(records, output_file, indent=2, ensure_ascii=False)
     print(f"[Test] Saved {len(records)} samples to {output_path}")

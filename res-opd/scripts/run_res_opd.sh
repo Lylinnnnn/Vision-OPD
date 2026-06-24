@@ -177,7 +177,7 @@ esac
 DATA_DIR="${RES_OPD_ROOT}/data"
 DATASET_VERSION="${DATASET_VERSION:-full}"
 if [[ "$DATASET_VERSION" == "full" ]]; then
-    TASK_TRAIN_FILE="${DATA_DIR}/train_10k.parquet"
+    TASK_TRAIN_FILE="${DATA_DIR}/train_5k.parquet"
     TASK_VAL_FILE="${DATA_DIR}/val.parquet"
 else
     TASK_TRAIN_FILE="${DATA_DIR}/train.parquet"

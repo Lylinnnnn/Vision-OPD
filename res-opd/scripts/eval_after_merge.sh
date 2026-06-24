@@ -69,7 +69,7 @@ MODEL_NAME="Res-OPD"
 # Set DATASET_VERSION=full to use the full-scale dataset; default is legacy.
 DATASET_VERSION="${DATASET_VERSION:-full}"
 if [[ "$DATASET_VERSION" == "full" ]]; then
-    TEST_JSON="${RES_OPD_ROOT}/data/test_1500.json"
+    TEST_JSON="${RES_OPD_ROOT}/data/test_1000.json"
 else
     TEST_JSON="${RES_OPD_ROOT}/data/test.json"
 fi
@@ -178,8 +178,8 @@ esac
 
 # Build dataset tag from actual data file sizes
 if [[ "$DATASET_VERSION" == "full" ]]; then
-    TRAIN_FILE="${RES_OPD_ROOT}/data/train_10k.parquet"
-    TEST_FILE="${RES_OPD_ROOT}/data/test_1500.json"
+    TRAIN_FILE="${RES_OPD_ROOT}/data/train_5k.parquet"
+    TEST_FILE="${RES_OPD_ROOT}/data/test_1000.json"
 else
     TRAIN_FILE="${RES_OPD_ROOT}/data/train.parquet"
     TEST_FILE="${RES_OPD_ROOT}/data/test.json"
