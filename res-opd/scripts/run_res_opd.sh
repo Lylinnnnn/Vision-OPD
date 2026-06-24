@@ -195,7 +195,10 @@ esac
 # Set DATASET_VERSION=full to use the full-scale dataset; default is legacy.
 DATA_DIR="${RES_OPD_ROOT}/data"
 DATASET_VERSION="${DATASET_VERSION:-full}"
-if [[ "$DATASET_VERSION" == "full" ]]; then
+if [[ "$DATASET_VERSION" == "quick" ]]; then
+    TASK_TRAIN_FILE="${DATA_DIR}/train_1.5k.parquet"
+    TASK_VAL_FILE="${DATA_DIR}/val.parquet"
+elif [[ "$DATASET_VERSION" == "full" ]]; then
     TASK_TRAIN_FILE="${DATA_DIR}/train_5k.parquet"
     TASK_VAL_FILE="${DATA_DIR}/val.parquet"
 else
