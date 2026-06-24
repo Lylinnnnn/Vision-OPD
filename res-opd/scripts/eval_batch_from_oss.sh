@@ -43,8 +43,8 @@ cd "$VISION_OPD_ROOT"
 OSS_BASE="oss://industry-algo/yanlin/ckpt/OPD/v4"
 CKPT_BASE="${RES_OPD_ROOT}/checkpoints"
 EVAL_SCRIPT="${RES_OPD_ROOT}/scripts/eval_after_merge.sh"
-AMBER_SCRIPT="${RES_OPD_ROOT}/scripts/tmp/val_amber.sh"
-MME_SCRIPT="${RES_OPD_ROOT}/scripts/tmp/val_mme_perception.sh"
+AMBER_SCRIPT="${RES_OPD_ROOT}/scripts/archive/val_amber.sh"
+MME_SCRIPT="${RES_OPD_ROOT}/scripts/archive/val_mme_perception.sh"
 HF_FILES=(
     config.json
     tokenizer_config.json
