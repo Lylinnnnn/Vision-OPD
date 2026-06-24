@@ -87,6 +87,24 @@ scale to normal token-mean RKL/JSD.
 
 ## Eval Trace Scoring
 
+## Batch Eval From OSS
+
+`eval_batch_from_oss.sh` downloads merged checkpoints from OSS, evaluates them,
+and removes local model files after results are written. The default eval mode
+is `chair,pope`. Optional external hallucination benchmarks are off by default
+and can be enabled explicitly:
+
+```bash
+bash res-opd/scripts/eval_batch_from_oss.sh \
+  --oss-names <oss_exp_name> \
+  --step global_step_46 \
+  --version-tag latest \
+  --eval-mode chair,pope,amber,mme
+```
+
+Aliases: `coco` or `frequent` -> `chair,pope`; `final` -> `amber,mme`;
+`all` -> `chair,pope,amber,mme`.
+
 ### Score with Experiment Shortcut
 
 ```bash

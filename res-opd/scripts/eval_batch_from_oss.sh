@@ -13,8 +13,14 @@
 # Usage:
 #   bash scripts/eval_batch_from_oss.sh --oss-names <name1> [name2] ... \
 #       [--step global_step_92] [--student-px 448] [--target-px 448] [--degradation-mode square] \
-#       [--student-ratio 1.0] [--version-tag v5] [--eval-mode chair] \
+#       [--student-ratio 1.0] [--version-tag v5] [--eval-mode chair,pope] \
 #       [--chair-save-logprobs true] [--chair-top-logprobs 5]
+#
+# eval-mode:
+#   chair,pope       Default local COCO eval.
+#   chair / pope     Run one local COCO eval.
+#   amber / mme      Optional final hallucination benchmarks; off by default.
+#   all              Run chair,pope,amber,mme.
 #
 # Examples:
 #   # Evaluate specific experiments at step 92
@@ -37,6 +43,8 @@ cd "$VISION_OPD_ROOT"
 OSS_BASE="oss://industry-algo/yanlin/ckpt/OPD/v4"
 CKPT_BASE="${RES_OPD_ROOT}/checkpoints"
 EVAL_SCRIPT="${RES_OPD_ROOT}/scripts/eval_after_merge.sh"
+AMBER_SCRIPT="${RES_OPD_ROOT}/scripts/tmp/val_amber.sh"
+MME_SCRIPT="${RES_OPD_ROOT}/scripts/tmp/val_mme_perception.sh"
 HF_FILES=(
     config.json
     tokenizer_config.json
@@ -63,7 +71,7 @@ DEGRADATION_MODE="${DEGRADATION_MODE:-}"
 STUDENT_RATIO="${STUDENT_RATIO:-}"
 TEACHER_RATIO="${TEACHER_RATIO:-}"
 VERSION_TAG="latest"
-EVAL_MODE="chair"
+EVAL_MODE="${EVAL_MODE:-chair,pope}"
 CHAIR_MAX_NEW_TOKENS="${CHAIR_MAX_NEW_TOKENS:-384}"
 CHAIR_PARALLEL_WORKERS="${CHAIR_PARALLEL_WORKERS:-8}"
 CHAIR_MAX_SAMPLES="${CHAIR_MAX_SAMPLES:-0}"
@@ -144,11 +152,44 @@ esac
 
 normalize_eval_mode() {
     local mode
+    local normalized=()
+    local token
     mode="$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
-    if [[ "$mode" == "all" ]]; then
-        mode="chair,pope"
-    fi
-    echo "$mode"
+    IFS=',' read -ra tokens <<< "$mode"
+    for token in "${tokens[@]}"; do
+        case "$token" in
+            all)
+                normalized+=(chair pope amber mme)
+                ;;
+            frequent|coco)
+                normalized+=(chair pope)
+                ;;
+            final|external)
+                normalized+=(amber mme)
+                ;;
+            chair|pope|amber|mme)
+                normalized+=("$token")
+                ;;
+            "")
+                ;;
+            *)
+                echo "Error: unsupported eval task '$token'. Use chair,pope,coco,amber,mme,final,all." >&2
+                exit 1
+                ;;
+        esac
+    done
+
+    local seen=","
+    local unique=()
+    for token in "${normalized[@]}"; do
+        if [[ "$seen" != *",$token,"* ]]; then
+            unique+=("$token")
+            seen+="$token,"
+        fi
+    done
+    local joined
+    joined="$(IFS=','; echo "${unique[*]}")"
+    echo "$joined"
 }
 
 has_eval_task() {
@@ -236,12 +277,22 @@ eval_results_exist() {
             ok=1
         fi
     fi
+    if has_eval_task "$EVAL_MODE" "amber"; then
+        if ! [[ -f "${result_dir}/final_hallucination/amber_metrics.json" ]]; then
+            ok=1
+        fi
+    fi
+    if has_eval_task "$EVAL_MODE" "mme"; then
+        if ! [[ -f "${result_dir}/final_hallucination/mme_metrics.json" ]]; then
+            ok=1
+        fi
+    fi
     return $ok
 }
 
 EVAL_MODE="$(normalize_eval_mode "$EVAL_MODE")"
-if ! has_eval_task "$EVAL_MODE" "chair" && ! has_eval_task "$EVAL_MODE" "pope"; then
-    echo "Error: --eval-mode must be one of chair, pope, chair,pope, all. Got: $EVAL_MODE" >&2
+if [[ -z "$EVAL_MODE" ]]; then
+    echo "Error: --eval-mode expanded to empty. Use chair,pope,coco,amber,mme,final,all." >&2
     exit 1
 fi
 
@@ -322,23 +373,46 @@ for idx in "${!OSS_NAMES[@]}"; do
 
     # Step 2: Run evaluation
     echo "[2/4] Running evaluation ..."
-    DEGRADATION_MODE="$effective_degradation_mode" \
-    STUDENT_RATIO="$effective_student_ratio" \
-    TEACHER_RATIO="$effective_teacher_ratio" \
-    TEACHER_PX="$effective_teacher_px" \
-    TARGET_PX="$effective_target_px" \
-    CHAIR_MAX_NEW_TOKENS="$CHAIR_MAX_NEW_TOKENS" \
-    CHAIR_PARALLEL_WORKERS="$CHAIR_PARALLEL_WORKERS" \
-    CHAIR_MAX_SAMPLES="$CHAIR_MAX_SAMPLES" \
-    CHAIR_SAVE_LOGPROBS="$CHAIR_SAVE_LOGPROBS" \
-    CHAIR_TOP_LOGPROBS="$CHAIR_TOP_LOGPROBS" \
-    EVAL_OPD_TRACE="$EVAL_OPD_TRACE" \
-    EVAL_OPD_TRACE_TOPK="$EVAL_OPD_TRACE_TOPK" \
-    EVAL_OPD_TRACE_ENTROPY="$EVAL_OPD_TRACE_ENTROPY" \
-    EVAL_OPD_TRACE_SCORE_BASELINE="$EVAL_OPD_TRACE_SCORE_BASELINE" \
-    EVAL_OPD_TRACE_CASE_ANALYSIS="$EVAL_OPD_TRACE_CASE_ANALYSIS" \
-    EVAL_OPD_TRACE_MAX_SAMPLES="$EVAL_OPD_TRACE_MAX_SAMPLES" \
-        bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "$EVAL_MODE"
+    coco_tasks=()
+    has_eval_task "$EVAL_MODE" "chair" && coco_tasks+=(chair)
+    has_eval_task "$EVAL_MODE" "pope" && coco_tasks+=(pope)
+    if [[ ${#coco_tasks[@]} -gt 0 ]]; then
+        coco_mode="$(IFS=','; echo "${coco_tasks[*]}")"
+        echo "  Running local COCO eval (${coco_mode}) ..."
+        DEGRADATION_MODE="$effective_degradation_mode" \
+        STUDENT_RATIO="$effective_student_ratio" \
+        TEACHER_RATIO="$effective_teacher_ratio" \
+        TEACHER_PX="$effective_teacher_px" \
+        TARGET_PX="$effective_target_px" \
+        CHAIR_MAX_NEW_TOKENS="$CHAIR_MAX_NEW_TOKENS" \
+        CHAIR_PARALLEL_WORKERS="$CHAIR_PARALLEL_WORKERS" \
+        CHAIR_MAX_SAMPLES="$CHAIR_MAX_SAMPLES" \
+        CHAIR_SAVE_LOGPROBS="$CHAIR_SAVE_LOGPROBS" \
+        CHAIR_TOP_LOGPROBS="$CHAIR_TOP_LOGPROBS" \
+        EVAL_OPD_TRACE="$EVAL_OPD_TRACE" \
+        EVAL_OPD_TRACE_TOPK="$EVAL_OPD_TRACE_TOPK" \
+        EVAL_OPD_TRACE_ENTROPY="$EVAL_OPD_TRACE_ENTROPY" \
+        EVAL_OPD_TRACE_SCORE_BASELINE="$EVAL_OPD_TRACE_SCORE_BASELINE" \
+        EVAL_OPD_TRACE_CASE_ANALYSIS="$EVAL_OPD_TRACE_CASE_ANALYSIS" \
+        EVAL_OPD_TRACE_MAX_SAMPLES="$EVAL_OPD_TRACE_MAX_SAMPLES" \
+            bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "$coco_mode"
+    fi
+    if has_eval_task "$EVAL_MODE" "amber"; then
+        echo "  Running AMBER ..."
+        STUDENT_PX="$effective_student_px" \
+        TARGET_PX="$effective_target_px" \
+        DEGRADATION_MODE="$effective_degradation_mode" \
+        STUDENT_RATIO="$effective_student_ratio" \
+            bash "$AMBER_SCRIPT" "$local_ckpt_dir" "$VERSION_TAG"
+    fi
+    if has_eval_task "$EVAL_MODE" "mme"; then
+        echo "  Running classic MME perception ..."
+        STUDENT_PX="$effective_student_px" \
+        TARGET_PX="$effective_target_px" \
+        DEGRADATION_MODE="$effective_degradation_mode" \
+        STUDENT_RATIO="$effective_student_ratio" \
+            bash "$MME_SCRIPT" "$local_ckpt_dir" "$VERSION_TAG"
+    fi
     echo "  ✅ Evaluation complete"
 
     # Step 3: Delete model files (keep eval results)
@@ -351,7 +425,7 @@ for idx in "${!OSS_NAMES[@]}"; do
     result_dir="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${local_exp_name}_${STEP}"
     if eval_results_exist "$result_dir"; then
         echo "  ✅ Eval results saved:"
-        find "${result_dir}" \( -name "chair_metrics.json" -o -name "pope_summary.json" \) -exec echo "    {}" \;
+        find "${result_dir}" \( -name "chair_metrics.json" -o -name "pope_summary.json" -o -name "amber_metrics.json" -o -name "mme_metrics.json" \) -exec echo "    {}" \;
     else
         echo "  ⚠️  No eval results found!"
     fi
