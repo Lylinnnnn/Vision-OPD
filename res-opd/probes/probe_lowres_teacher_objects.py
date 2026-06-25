@@ -10,6 +10,7 @@ res-opd/data/test_1000.json.
 
 import argparse
 import json
+import glob
 import math
 import os
 import re
@@ -70,7 +71,15 @@ def parse_args():
     parser.add_argument("--summary-json", default=None)
     parser.add_argument("--coco-structure-json", default=None)
     parser.add_argument("--validate-coco-only", action="store_true")
+    parser.add_argument(
+        "--merge-jsonl-glob",
+        default=None,
+        help="Merge completed shard JSONL files and write a combined summary; skips model loading.",
+    )
+    parser.add_argument("--merge-output-json", default=None)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--num-shards", type=int, default=1)
+    parser.add_argument("--shard-index", type=int, default=0)
 
     parser.add_argument("--prompt", default=PROMPT_TEXT)
     parser.add_argument("--caption-field", default="auto")
@@ -137,6 +146,21 @@ def default_output_paths(eval_results):
         os.path.join(base_dir, "lowres_teacher_object_probe_summary.json"),
         os.path.join(base_dir, "coco_instance_structure_summary.json"),
     )
+
+
+def format_sharded_path(path, shard_index, num_shards):
+    if num_shards <= 1:
+        return path
+    shard_tag = f"shard{shard_index:02d}-of-{num_shards:02d}"
+    mapping = {
+        "shard": shard_tag,
+        "shard_index": shard_index,
+        "num_shards": num_shards,
+    }
+    if "{" in path and "}" in path:
+        return path.format(**mapping)
+    root, ext = os.path.splitext(path)
+    return f"{root}.{shard_tag}{ext}"
 
 
 def parse_topk_breaks(value, max_topk):
@@ -616,8 +640,60 @@ def summarize_records(sample_records):
     }
 
 
+def load_probe_jsonl(path):
+    records = []
+    for record in load_jsonl(path):
+        if isinstance(record, dict):
+            records.append(record)
+    return records
+
+
+def merge_probe_outputs(jsonl_glob, output_json, overwrite=False):
+    paths = sorted(glob.glob(jsonl_glob))
+    if not paths:
+        raise FileNotFoundError(f"No JSONL files matched: {jsonl_glob}")
+    if output_json and os.path.exists(output_json) and not overwrite:
+        raise FileExistsError(f"Refusing to overwrite existing summary: {output_json}")
+
+    records = []
+    per_file_counts = {}
+    for path in paths:
+        current = load_probe_jsonl(path)
+        records.extend(current)
+        per_file_counts[path] = len(current)
+
+    summary = summarize_records(records)
+    summary.update({
+        "merged_from": paths,
+        "per_file_counts": per_file_counts,
+        "output_record_count": len(records),
+    })
+    if output_json:
+        os.makedirs(os.path.dirname(os.path.abspath(output_json)), exist_ok=True)
+        with open(output_json, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2, ensure_ascii=False)
+        print(f"Saved merged summary to: {output_json}")
+    print(f"Merged {len(records)} records from {len(paths)} JSONL files.")
+    return summary
+
+
 def main():
     args = parse_args()
+    if args.merge_jsonl_glob:
+        output_json = args.merge_output_json or os.path.join(
+            DEFAULT_RESULTS_DIR,
+            "merged_lowres_teacher_object_probe_summary.json",
+        )
+        merge_probe_outputs(args.merge_jsonl_glob, output_json, overwrite=args.overwrite)
+        return
+
+    if args.num_shards < 1:
+        raise ValueError(f"--num-shards must be >= 1, got {args.num_shards}")
+    if not 0 <= args.shard_index < args.num_shards:
+        raise ValueError(
+            f"--shard-index must be in [0, {args.num_shards}), got {args.shard_index}"
+        )
+
     test_index = load_test_index(args.test_json)
     coco = load_coco_instances(args.instances_json)
 
@@ -625,6 +701,8 @@ def main():
     args.output_jsonl = args.output_jsonl or default_jsonl
     args.summary_json = args.summary_json or default_summary
     args.coco_structure_json = args.coco_structure_json or default_coco
+    args.output_jsonl = format_sharded_path(args.output_jsonl, args.shard_index, args.num_shards)
+    args.summary_json = format_sharded_path(args.summary_json, args.shard_index, args.num_shards)
 
     coco_summary = validate_coco_structure(coco, test_index)
     os.makedirs(os.path.dirname(os.path.abspath(args.coco_structure_json)), exist_ok=True)
@@ -660,6 +738,16 @@ def main():
     ]
     if args.max_samples > 0:
         eval_records = eval_records[: args.max_samples]
+    total_eval_records = len(eval_records)
+    if args.num_shards > 1:
+        eval_records = [
+            record for idx, record in enumerate(eval_records)
+            if idx % args.num_shards == args.shard_index
+        ]
+        print(
+            f"Shard {args.shard_index}/{args.num_shards}: "
+            f"selected {len(eval_records)} of {total_eval_records} records"
+        )
     topk_breaks = parse_topk_breaks(args.topk_breaks, args.topk)
     print(f"topk breaks summarized from top{args.topk}: {topk_breaks}")
 
@@ -839,9 +927,12 @@ def main():
             "topk": args.topk,
             "topk_breaks": topk_breaks,
             "probe_views": sorted(probe_views),
+            "num_shards": args.num_shards,
+            "shard_index": args.shard_index,
+            "total_eval_records": total_eval_records,
+            "shard_eval_records": len(eval_records),
             "support_margin": args.support_margin,
             "confident_entropy_max": args.confident_entropy_max,
-            "topk": args.topk,
             "entropy": args.entropy,
         },
         "failures": failures,

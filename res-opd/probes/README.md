@@ -50,3 +50,22 @@ res-opd/probes/results/lowres_teacher_objects/<run_name>/
 the requested `--topk` logprobs, then slices them into extra summary fields such
 as `teacher_top1_logprob_mean`, `teacher_top10_logprob_mean`,
 `teacher_top20_entropy_mean`, and `teacher_top30_mass_mean`.
+
+## Multi-GPU Sharding
+
+Run one process per GPU. Each shard writes a separate JSONL and summary with a
+`.shardXX-of-YY` suffix:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -u res-opd/probes/probe_lowres_teacher_objects.py ... --num-shards 8 --shard-index 0
+CUDA_VISIBLE_DEVICES=1 python -u res-opd/probes/probe_lowres_teacher_objects.py ... --num-shards 8 --shard-index 1
+```
+
+After all shards finish, merge summaries:
+
+```bash
+python -u res-opd/probes/probe_lowres_teacher_objects.py \
+  --merge-jsonl-glob 'res-opd/probes/results/lowres_teacher_objects/<run_name>/lowres_teacher_object_probe.shard*-of-08.jsonl' \
+  --merge-output-json res-opd/probes/results/lowres_teacher_objects/<run_name>/lowres_teacher_object_probe_summary.merged.json \
+  --overwrite
+```
