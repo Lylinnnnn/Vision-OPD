@@ -81,6 +81,11 @@ def parse_args():
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--teacher-ratio", type=float, default=0.75)
     parser.add_argument("--topk", type=int, default=50)
+    parser.add_argument(
+        "--topk-breaks",
+        default="1,10,20,30",
+        help="Comma-separated top-k cutoffs summarized from the saved topk logprobs.",
+    )
     parser.add_argument("--entropy", dest="entropy", action="store_true", default=True)
     parser.add_argument("--no-entropy", dest="entropy", action="store_false")
     parser.add_argument("--max-samples", type=int, default=0)
@@ -132,6 +137,24 @@ def default_output_paths(eval_results):
         os.path.join(base_dir, "lowres_teacher_object_probe_summary.json"),
         os.path.join(base_dir, "coco_instance_structure_summary.json"),
     )
+
+
+def parse_topk_breaks(value, max_topk):
+    breaks = []
+    for part in str(value or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            k = int(part)
+        except ValueError:
+            raise ValueError(f"Invalid --topk-breaks entry: {part}") from None
+        if k <= 0:
+            raise ValueError(f"--topk-breaks values must be positive, got {k}")
+        if max_topk > 0 and k > max_topk:
+            continue
+        breaks.append(k)
+    return sorted(set(breaks))
 
 
 def load_coco_instances(path):
@@ -343,13 +366,28 @@ def overlapping_token_indices(char_start, char_end, token_offsets):
     return indices
 
 
-def mean_topk_logprob(token_record, prefix):
+def _topk_logprobs(token_record, prefix, k=None):
     vals = token_record.get(f"{prefix}_topk_logprobs") or []
+    vals = [float(v) for v in vals if bool_finite(v)]
+    if k is not None:
+        vals = vals[:k]
+    return vals
+
+
+def mean_topk_logprob(token_record, prefix, k=None):
+    vals = _topk_logprobs(token_record, prefix, k)
     return safe_mean(vals)
 
 
-def mean_topk_entropy(token_record, prefix):
-    vals = [float(v) for v in (token_record.get(f"{prefix}_topk_logprobs") or []) if bool_finite(v)]
+def mean_topk_mass(token_record, prefix, k=None):
+    vals = _topk_logprobs(token_record, prefix, k)
+    if not vals:
+        return None
+    return sum(math.exp(v) for v in vals)
+
+
+def mean_topk_entropy(token_record, prefix, k=None):
+    vals = _topk_logprobs(token_record, prefix, k)
     if not vals:
         return None
     max_val = max(vals)
@@ -361,7 +399,20 @@ def mean_topk_entropy(token_record, prefix):
     return -sum(p * math.log(max(p, 1e-12)) for p in probs)
 
 
-def summarize_token_span(token_records, token_indices):
+def add_topk_break_metrics(out, selected, prefix, topk_breaks):
+    for k in topk_breaks:
+        out[f"{prefix}_top{k}_logprob_mean"] = safe_mean(
+            mean_topk_logprob(record, prefix, k) for record in selected
+        )
+        out[f"{prefix}_top{k}_entropy_mean"] = safe_mean(
+            mean_topk_entropy(record, prefix, k) for record in selected
+        )
+        out[f"{prefix}_top{k}_mass_mean"] = safe_mean(
+            mean_topk_mass(record, prefix, k) for record in selected
+        )
+
+
+def summarize_token_span(token_records, token_indices, topk_breaks):
     selected = [token_records[i] for i in token_indices if 0 <= i < len(token_records)]
     out = {"num_tokens": len(selected)}
     for prefix in ("student", "teacher"):
@@ -371,6 +422,8 @@ def summarize_token_span(token_records, token_indices):
         out[f"{prefix}_entropy_mean"] = safe_mean(record.get(f"{prefix}_entropy") for record in selected)
         out[f"{prefix}_topk_logprob_mean"] = safe_mean(mean_topk_logprob(record, prefix) for record in selected)
         out[f"{prefix}_topk_entropy_mean"] = safe_mean(mean_topk_entropy(record, prefix) for record in selected)
+        out[f"{prefix}_topk_mass_mean"] = safe_mean(mean_topk_mass(record, prefix) for record in selected)
+        add_topk_break_metrics(out, selected, prefix, topk_breaks)
         out[f"{prefix}_top1_top2_margin_mean"] = safe_mean(
             record.get(f"{prefix}_top1_top2_margin") for record in selected
         )
@@ -484,8 +537,9 @@ def object_label(obj, gt_objects, mentioned_objects):
     return "other_candidate"
 
 
-def update_numeric_lists(bucket, record, fields):
+def update_numeric_lists(bucket, record, fields=None):
     bucket["count"] += 1
+    fields = fields or record.keys()
     for field in fields:
         value = record.get(field)
         if bool_finite(value):
@@ -502,31 +556,6 @@ def aggregate_numeric_bucket(bucket):
 
 
 def summarize_records(sample_records):
-    mention_fields = [
-        "student_selected_logprob_mean",
-        "teacher_selected_logprob_mean",
-        "teacher_minus_student_logprob_mean",
-        "student_entropy_mean",
-        "teacher_entropy_mean",
-        "teacher_minus_student_entropy_mean",
-        "student_topk_logprob_mean",
-        "teacher_topk_logprob_mean",
-        "student_topk_entropy_mean",
-        "teacher_topk_entropy_mean",
-        "student_top1_top2_margin_mean",
-        "teacher_top1_top2_margin_mean",
-        "max_area_ratio",
-        "total_area_ratio",
-    ]
-    probe_fields = [
-        "student_yes_minus_no_logprob",
-        "student_binary_entropy",
-        "teacher_yes_minus_no_logprob",
-        "teacher_binary_entropy",
-        "max_area_ratio",
-        "total_area_ratio",
-    ]
-
     mention_buckets = defaultdict(lambda: {"count": 0})
     probe_buckets = defaultdict(lambda: {"count": 0})
     state_by_label = defaultdict(Counter)
@@ -541,13 +570,13 @@ def summarize_records(sample_records):
         totals["missed_gt_objects"] += len(sample.get("missed_gt_objects", []))
         for mention in sample.get("object_mentions", []):
             label = mention.get("label")
-            update_numeric_lists(mention_buckets[label], mention.get("token_metrics", {}), mention_fields)
+            update_numeric_lists(mention_buckets[label], mention.get("token_metrics", {}))
         for probe in sample.get("object_probes", []):
             label = probe.get("label")
             teacher_state = probe.get("teacher_state", "unknown")
             flat = dict(probe)
             flat.update(probe.get("instance_stats", {}))
-            update_numeric_lists(probe_buckets[label], flat, probe_fields)
+            update_numeric_lists(probe_buckets[label], flat)
             state_by_label[label][teacher_state] += 1
             size_by_label_state[label][probe.get("area_bucket", "missing")][teacher_state] += 1
 
@@ -631,6 +660,8 @@ def main():
     ]
     if args.max_samples > 0:
         eval_records = eval_records[: args.max_samples]
+    topk_breaks = parse_topk_breaks(args.topk_breaks, args.topk)
+    print(f"topk breaks summarized from top{args.topk}: {topk_breaks}")
 
     model, processor, device = load_model_and_processor(args.model_path, args.torch_dtype)
     yes_ids = one_token_variant_ids(processor, parse_variants(args.yes_variants))
@@ -680,6 +711,14 @@ def main():
                     args.topk, args.entropy, args.max_model_len,
                 )
                 combined = combine_student_teacher(student, teacher)
+                caption_forced_summary = dict(combined["summary"])
+                caption_forced_summary.update(
+                    summarize_token_span(
+                        combined["token_records"],
+                        range(len(combined["token_records"])),
+                        topk_breaks,
+                    )
+                )
                 decoded_caption, token_offsets = decoded_response_and_offsets(
                     processor,
                     combined["response_token_ids"],
@@ -700,7 +739,7 @@ def main():
                         mention["char_start"], mention["char_end"], token_offsets
                     )
                     stats = object_instance_stats(coco, image_id, mention["object"])
-                    token_metrics = summarize_token_span(combined["token_records"], token_indices)
+                    token_metrics = summarize_token_span(combined["token_records"], token_indices, topk_breaks)
                     token_metrics.update({
                         "max_area_ratio": stats.get("max_area_ratio"),
                         "total_area_ratio": stats.get("total_area_ratio"),
@@ -771,7 +810,7 @@ def main():
                     "correct_objects": correct_objects,
                     "hallucinated_objects": hallucinated_objects,
                     "missed_gt_objects": missed_gt_objects,
-                    "caption_forced_summary": combined["summary"],
+                    "caption_forced_summary": caption_forced_summary,
                     "object_mentions": object_mentions,
                     "object_probes": object_probes,
                 }
@@ -797,6 +836,8 @@ def main():
             "degradation_mode": args.degradation_mode,
             "student_ratio": args.student_ratio,
             "teacher_ratio": args.teacher_ratio,
+            "topk": args.topk,
+            "topk_breaks": topk_breaks,
             "probe_views": sorted(probe_views),
             "support_margin": args.support_margin,
             "confident_entropy_max": args.confident_entropy_max,

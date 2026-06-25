@@ -31,6 +31,8 @@ python -u res-opd/probes/probe_lowres_teacher_objects.py \
   --student-ratio 1.0 \
   --teacher-ratio 0.75 \
   --probe-views teacher \
+  --topk 50 \
+  --topk-breaks 1,10,20,30 \
   --max-samples 20 \
   --overwrite
 ```
@@ -43,3 +45,8 @@ res-opd/probes/results/lowres_teacher_objects/<run_name>/
 ├── lowres_teacher_object_probe.jsonl
 └── lowres_teacher_object_probe_summary.json
 ```
+
+`--topk-breaks` does not trigger extra model forwards. The script first stores
+the requested `--topk` logprobs, then slices them into extra summary fields such
+as `teacher_top1_logprob_mean`, `teacher_top10_logprob_mean`,
+`teacher_top20_entropy_mean`, and `teacher_top30_mass_mean`.
