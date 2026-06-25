@@ -87,3 +87,37 @@ python -u res-opd/probes/probe_lowres_teacher_objects.py \
 The merge command uses `--support-margin 0.5` and `--confident-entropy-max 0.65`
 by default. Pass different values during merge if the state thresholds need to
 be swept.
+
+## RKL Mention Reduction Diagnostic
+
+After a baseline low-res object probe has been run with
+`--probe-views student,teacher`, compare baseline captions against an RKL
+checkpoint's captions:
+
+```bash
+python -u res-opd/probes/analyze_rkl_mention_reduction.py \
+  --baseline-results res-opd/eval_results/baseline_new/Qwen3VL-2B-Instruct/train1500_test300/eval_results.jsonl \
+  --model-results res-opd/eval_results/latest/full/<experiment>_global_step_39/<dataset>/eval_results.jsonl \
+  --baseline-probe-jsonl-glob 'res-opd/probes/results/lowres_teacher_objects/<run_name>/lowres_teacher_object_probe*.jsonl' \
+  --test-json res-opd/data/test_1000.json \
+  --output-dir res-opd/eval_results/latest/full/<experiment>_global_step_39/<dataset>/mention_reduction_analysis
+```
+
+This script does not run inference. It compares object mentions in
+`eval_results.jsonl` and joins baseline mentions with the per-object probe JSONL
+to test whether mentions removed by RKL mainly come from:
+
+- `both_reject`
+- high caption-token entropy
+- low cross-resolution support
+
+Outputs:
+
+```text
+mention_reduction_analysis/
+├── mention_reduction_summary.json
+├── mention_reduction_summary.md
+├── baseline_object_status.jsonl
+├── model_added_objects.jsonl
+└── sample_mention_diff.jsonl
+```
