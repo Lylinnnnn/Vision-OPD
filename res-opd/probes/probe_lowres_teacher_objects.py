@@ -539,7 +539,7 @@ def score_yes_no_first_token(model, processor, device, image, prompt, yes_token_
     }
 
 
-def classify_teacher_state(margin, entropy, support_margin, confident_entropy_max):
+def classify_object_state(margin, entropy, support_margin, confident_entropy_max):
     if not bool_finite(margin) or not bool_finite(entropy):
         return "unknown"
     if entropy > confident_entropy_max:
@@ -549,6 +549,22 @@ def classify_teacher_state(margin, entropy, support_margin, confident_entropy_ma
     if margin <= -support_margin:
         return "reject"
     return "uncertain"
+
+
+def classify_teacher_state(margin, entropy, support_margin, confident_entropy_max):
+    return classify_object_state(margin, entropy, support_margin, confident_entropy_max)
+
+
+def object_state_from_probe(probe, prefix, support_margin, confident_entropy_max):
+    state = classify_object_state(
+        probe.get(f"{prefix}_yes_minus_no_logprob"),
+        probe.get(f"{prefix}_binary_entropy"),
+        support_margin,
+        confident_entropy_max,
+    )
+    if state == "unknown":
+        return probe.get(f"{prefix}_state", "unknown")
+    return state
 
 
 def object_label(obj, gt_objects, mentioned_objects):
@@ -579,11 +595,108 @@ def aggregate_numeric_bucket(bucket):
     return out
 
 
-def summarize_records(sample_records):
+def summarize_state_counter(counter):
+    total = sum(counter.values())
+    return {
+        "count": total,
+        "states": dict(counter),
+        "rates": {
+            state: count / max(total, 1)
+            for state, count in sorted(counter.items())
+        },
+    }
+
+
+def summarize_state_by_label(state_by_label):
+    return {
+        label: summarize_state_counter(counter)
+        for label, counter in sorted(state_by_label.items())
+    }
+
+
+def reject_metrics_for_state_by_label(state_by_label):
+    correct = state_by_label.get("correct", Counter())
+    hallucinated = state_by_label.get("hallucinated", Counter())
+    correct_total = sum(correct.values())
+    hallucinated_total = sum(hallucinated.values())
+    reject_correct = correct.get("reject", 0)
+    reject_hallucinated = hallucinated.get("reject", 0)
+    reject_total = reject_correct + reject_hallucinated
+    return {
+        "correct_count": correct_total,
+        "hallucinated_count": hallucinated_total,
+        "reject_correct": reject_correct,
+        "reject_hallucinated": reject_hallucinated,
+        "reject_total": reject_total,
+        "reject_precision_hallucinated": reject_hallucinated / reject_total if reject_total else None,
+        "reject_recall_hallucinated": reject_hallucinated / hallucinated_total if hallucinated_total else None,
+        "reject_correct_fpr": reject_correct / correct_total if correct_total else None,
+    }
+
+
+def reject_quadrant(student_state, teacher_state):
+    student_reject = student_state == "reject"
+    teacher_reject = teacher_state == "reject"
+    if student_reject and teacher_reject:
+        return "both_reject"
+    if student_reject and not teacher_reject:
+        return "student_only_reject"
+    if teacher_reject and not student_reject:
+        return "teacher_only_reject"
+    return "neither_reject"
+
+
+def summarize_reject_quadrants(quadrants_by_label):
+    labels = sorted(quadrants_by_label.keys())
+    by_label = {}
+    for label in labels:
+        counter = quadrants_by_label[label]
+        total = sum(counter.values())
+        by_label[label] = {
+            "count": total,
+            "quadrants": dict(counter),
+            "rates": {
+                quadrant: count / max(total, 1)
+                for quadrant, count in sorted(counter.items())
+            },
+        }
+
+    correct = quadrants_by_label.get("correct", Counter())
+    hallucinated = quadrants_by_label.get("hallucinated", Counter())
+    correct_total = sum(correct.values())
+    hallucinated_total = sum(hallucinated.values())
+    metrics = {}
+    for quadrant in ("both_reject", "student_only_reject", "teacher_only_reject", "neither_reject"):
+        correct_count = correct.get(quadrant, 0)
+        hallucinated_count = hallucinated.get(quadrant, 0)
+        total = correct_count + hallucinated_count
+        metrics[quadrant] = {
+            "correct_count": correct_count,
+            "hallucinated_count": hallucinated_count,
+            "mentioned_count": total,
+            "hallucination_rate": hallucinated_count / total if total else None,
+            "hallucination_recall": hallucinated_count / hallucinated_total if hallucinated_total else None,
+            "correct_fpr": correct_count / correct_total if correct_total else None,
+        }
+    return {
+        "by_label": by_label,
+        "metrics": metrics,
+    }
+
+
+def summarize_records(sample_records, support_margin=0.5, confident_entropy_max=0.65):
     mention_buckets = defaultdict(lambda: {"count": 0})
     probe_buckets = defaultdict(lambda: {"count": 0})
-    state_by_label = defaultdict(Counter)
-    size_by_label_state = defaultdict(lambda: defaultdict(Counter))
+    state_by_view_label = {
+        "student": defaultdict(Counter),
+        "teacher": defaultdict(Counter),
+    }
+    size_by_view_label_state = {
+        "student": defaultdict(lambda: defaultdict(Counter)),
+        "teacher": defaultdict(lambda: defaultdict(Counter)),
+    }
+    state_pair_by_label = defaultdict(Counter)
+    reject_quadrants_by_label = defaultdict(Counter)
     totals = Counter()
 
     for sample in sample_records:
@@ -597,12 +710,23 @@ def summarize_records(sample_records):
             update_numeric_lists(mention_buckets[label], mention.get("token_metrics", {}))
         for probe in sample.get("object_probes", []):
             label = probe.get("label")
-            teacher_state = probe.get("teacher_state", "unknown")
             flat = dict(probe)
             flat.update(probe.get("instance_stats", {}))
             update_numeric_lists(probe_buckets[label], flat)
-            state_by_label[label][teacher_state] += 1
-            size_by_label_state[label][probe.get("area_bucket", "missing")][teacher_state] += 1
+
+            states = {}
+            for view in ("student", "teacher"):
+                state = object_state_from_probe(probe, view, support_margin, confident_entropy_max)
+                if state == "unknown":
+                    continue
+                states[view] = state
+                state_by_view_label[view][label][state] += 1
+                size_by_view_label_state[view][label][probe.get("area_bucket", "missing")][state] += 1
+
+            if "student" in states and "teacher" in states:
+                pair_key = f"student={states['student']}|teacher={states['teacher']}"
+                state_pair_by_label[label][pair_key] += 1
+                reject_quadrants_by_label[label][reject_quadrant(states["student"], states["teacher"])] += 1
 
     return {
         "totals": dict(totals),
@@ -612,31 +736,31 @@ def summarize_records(sample_records):
         "object_probe_metrics_by_label": {
             label: aggregate_numeric_bucket(bucket) for label, bucket in sorted(probe_buckets.items())
         },
-        "teacher_state_by_label": {
+        "student_state_by_label": summarize_state_by_label(state_by_view_label["student"]),
+        "teacher_state_by_label": summarize_state_by_label(state_by_view_label["teacher"]),
+        "student_state_by_label_and_size": {
             label: {
-                "count": sum(counter.values()),
-                "states": dict(counter),
-                "rates": {
-                    state: count / max(sum(counter.values()), 1)
-                    for state, count in sorted(counter.items())
-                },
+                bucket: summarize_state_counter(counter)
+                for bucket, counter in sorted(size_map.items())
             }
-            for label, counter in sorted(state_by_label.items())
+            for label, size_map in sorted(size_by_view_label_state["student"].items())
         },
         "teacher_state_by_label_and_size": {
             label: {
-                bucket: {
-                    "count": sum(counter.values()),
-                    "states": dict(counter),
-                    "rates": {
-                        state: count / max(sum(counter.values()), 1)
-                        for state, count in sorted(counter.items())
-                    },
-                }
+                bucket: summarize_state_counter(counter)
                 for bucket, counter in sorted(size_map.items())
             }
-            for label, size_map in sorted(size_by_label_state.items())
+            for label, size_map in sorted(size_by_view_label_state["teacher"].items())
         },
+        "reject_metrics_by_view": {
+            view: reject_metrics_for_state_by_label(state_by_view_label[view])
+            for view in ("student", "teacher")
+        },
+        "student_teacher_state_pairs_by_label": {
+            label: summarize_state_counter(counter)
+            for label, counter in sorted(state_pair_by_label.items())
+        },
+        "student_teacher_reject_quadrants": summarize_reject_quadrants(reject_quadrants_by_label),
     }
 
 
@@ -648,7 +772,13 @@ def load_probe_jsonl(path):
     return records
 
 
-def merge_probe_outputs(jsonl_glob, output_json, overwrite=False):
+def merge_probe_outputs(
+    jsonl_glob,
+    output_json,
+    overwrite=False,
+    support_margin=0.5,
+    confident_entropy_max=0.65,
+):
     paths = sorted(glob.glob(jsonl_glob))
     if not paths:
         raise FileNotFoundError(f"No JSONL files matched: {jsonl_glob}")
@@ -662,7 +792,11 @@ def merge_probe_outputs(jsonl_glob, output_json, overwrite=False):
         records.extend(current)
         per_file_counts[path] = len(current)
 
-    summary = summarize_records(records)
+    summary = summarize_records(
+        records,
+        support_margin=support_margin,
+        confident_entropy_max=confident_entropy_max,
+    )
     summary.update({
         "merged_from": paths,
         "per_file_counts": per_file_counts,
@@ -684,7 +818,13 @@ def main():
             DEFAULT_RESULTS_DIR,
             "merged_lowres_teacher_object_probe_summary.json",
         )
-        merge_probe_outputs(args.merge_jsonl_glob, output_json, overwrite=args.overwrite)
+        merge_probe_outputs(
+            args.merge_jsonl_glob,
+            output_json,
+            overwrite=args.overwrite,
+            support_margin=args.support_margin,
+            confident_entropy_max=args.confident_entropy_max,
+        )
         return
 
     if args.num_shards < 1:
@@ -861,6 +1001,12 @@ def main():
                             "student_no_logprob": student_probe["no_logprob"],
                             "student_yes_minus_no_logprob": student_probe["yes_minus_no_logprob"],
                             "student_binary_entropy": student_probe["binary_entropy"],
+                            "student_state": classify_object_state(
+                                student_probe["yes_minus_no_logprob"],
+                                student_probe["binary_entropy"],
+                                args.support_margin,
+                                args.confident_entropy_max,
+                            ),
                         })
                     if "teacher" in probe_views:
                         teacher_probe = score_yes_no_first_token(
@@ -871,7 +1017,7 @@ def main():
                             "teacher_no_logprob": teacher_probe["no_logprob"],
                             "teacher_yes_minus_no_logprob": teacher_probe["yes_minus_no_logprob"],
                             "teacher_binary_entropy": teacher_probe["binary_entropy"],
-                            "teacher_state": classify_teacher_state(
+                            "teacher_state": classify_object_state(
                                 teacher_probe["yes_minus_no_logprob"],
                                 teacher_probe["binary_entropy"],
                                 args.support_margin,
@@ -914,7 +1060,11 @@ def main():
                 elapsed = time.time() - started
                 print(f"Processed {idx}/{len(eval_records)} samples ({elapsed:.0f}s, failures={failures})")
 
-    summary = summarize_records(sample_records)
+    summary = summarize_records(
+        sample_records,
+        support_margin=args.support_margin,
+        confident_entropy_max=args.confident_entropy_max,
+    )
     summary.update({
         "config": {
             "model_path": args.model_path,

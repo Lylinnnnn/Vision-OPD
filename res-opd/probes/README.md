@@ -30,7 +30,7 @@ python -u res-opd/probes/probe_lowres_teacher_objects.py \
   --degradation-mode original \
   --student-ratio 1.0 \
   --teacher-ratio 0.75 \
-  --probe-views teacher \
+  --probe-views student,teacher \
   --topk 50 \
   --topk-breaks 1,10,20,30 \
   --max-samples 20 \
@@ -51,6 +51,20 @@ the requested `--topk` logprobs, then slices them into extra summary fields such
 as `teacher_top1_logprob_mean`, `teacher_top10_logprob_mean`,
 `teacher_top20_entropy_mean`, and `teacher_top30_mass_mean`.
 
+Use `--probe-views student,teacher` when you need a direct high-res vs low-res
+object-existence comparison. The JSONL stores yes/no forced-scoring values for
+both views, and the summary reports:
+
+- `student_state_by_label`
+- `teacher_state_by_label`
+- `reject_metrics_by_view`
+- `student_teacher_state_pairs_by_label`
+- `student_teacher_reject_quadrants`
+
+These fields are computed during summary/merge, so existing JSONL files produced
+with `--probe-views student,teacher` can be re-merged without another model
+forward.
+
 ## Multi-GPU Sharding
 
 Run one process per GPU. Each shard writes a separate JSONL and summary with a
@@ -69,3 +83,7 @@ python -u res-opd/probes/probe_lowres_teacher_objects.py \
   --merge-output-json res-opd/probes/results/lowres_teacher_objects/<run_name>/lowres_teacher_object_probe_summary.merged.json \
   --overwrite
 ```
+
+The merge command uses `--support-margin 0.5` and `--confident-entropy-max 0.65`
+by default. Pass different values during merge if the state thresholds need to
+be swept.
