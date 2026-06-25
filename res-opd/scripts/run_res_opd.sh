@@ -29,6 +29,7 @@ set -eo pipefail
 #   - OPD_SELECTIVE_VETO:  keep only top-p low-res veto tokens for distillation
 #   - OPD_TOKEN_MASK_PCT:  mask highest-divergence token fraction per sample
 #   - OPD_TOKEN_MASK_METRIC: loss / student_teacher_delta
+#   - OPD_SELECTIVE_WEIGHT: soft-weight RKL/JSD tokens by entropy/loss buckets
 #
 # Examples:
 #   # Default: student=224, teacher=EMA, loss=JSD
@@ -64,6 +65,13 @@ set -eo pipefail
 #   DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.75 \
 #     TEACHER_MODE=frozen ALPHA=1.0 OPD_TOKEN_MASK_PCT=0.30 \
 #     OPD_TOKEN_MASK_METRIC=student_teacher_delta OPD_BUCKET_METRICS=True \
+#     bash res-opd/scripts/run_res_opd.sh
+#
+#   # Recall-safer weighted RKL: weaken low-risk/unclear tokens, keep risk tokens
+#   DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.75 \
+#     TEACHER_MODE=frozen ALPHA=1.0 OPD_SELECTIVE_WEIGHT=True \
+#     OPD_SELECTIVE_WEIGHT_PROTECT=0.5 OPD_SELECTIVE_WEIGHT_UNCLEAR=0.5 \
+#     OPD_SELECTIVE_WEIGHT_RISK=1.0 OPD_SELECTIVE_WEIGHT_OTHER=1.0 \
 #     bash res-opd/scripts/run_res_opd.sh
 # =============================================================================
 
@@ -135,7 +143,21 @@ OPD_TOKEN_MASK_METRIC="${OPD_TOKEN_MASK_METRIC:-loss}"
 OPD_BUCKET_METRICS="${OPD_BUCKET_METRICS:-True}"
 OPD_BUCKET_Q_LOW="${OPD_BUCKET_Q_LOW:-0.70}"
 OPD_BUCKET_Q_HIGH="${OPD_BUCKET_Q_HIGH:-0.90}"
+OPD_SELECTIVE_WEIGHT="${OPD_SELECTIVE_WEIGHT:-False}"
+OPD_SELECTIVE_WEIGHT_MODE="${OPD_SELECTIVE_WEIGHT_MODE:-entropy_rkl_bucket}"
+OPD_SELECTIVE_WEIGHT_NORMALIZE="${OPD_SELECTIVE_WEIGHT_NORMALIZE:-True}"
+OPD_SELECTIVE_WEIGHT_ENTROPY_LOW_Q="${OPD_SELECTIVE_WEIGHT_ENTROPY_LOW_Q:-0.40}"
+OPD_SELECTIVE_WEIGHT_ENTROPY_HIGH_Q="${OPD_SELECTIVE_WEIGHT_ENTROPY_HIGH_Q:-0.75}"
+OPD_SELECTIVE_WEIGHT_LOSS_LOW_Q="${OPD_SELECTIVE_WEIGHT_LOSS_LOW_Q:-0.40}"
+OPD_SELECTIVE_WEIGHT_LOSS_MID_Q="${OPD_SELECTIVE_WEIGHT_LOSS_MID_Q:-0.50}"
+OPD_SELECTIVE_WEIGHT_LOSS_HIGH_Q="${OPD_SELECTIVE_WEIGHT_LOSS_HIGH_Q:-0.75}"
+OPD_SELECTIVE_WEIGHT_PROTECT="${OPD_SELECTIVE_WEIGHT_PROTECT:-0.50}"
+OPD_SELECTIVE_WEIGHT_UNCLEAR="${OPD_SELECTIVE_WEIGHT_UNCLEAR:-0.50}"
+OPD_SELECTIVE_WEIGHT_RISK="${OPD_SELECTIVE_WEIGHT_RISK:-1.00}"
+OPD_SELECTIVE_WEIGHT_OTHER="${OPD_SELECTIVE_WEIGHT_OTHER:-1.00}"
 OPD_TRAIN_METRICS="${OPD_TRAIN_METRICS:-True}"
+OPD_TRAIN_METRICS_VERBOSE="${OPD_TRAIN_METRICS_VERBOSE:-False}"
+OPD_SELECTIVE_METRICS_VERBOSE="${OPD_SELECTIVE_METRICS_VERBOSE:-False}"
 OPD_METRICS_ENTROPY="${OPD_METRICS_ENTROPY:-False}"
 OPD_TRACE_TOKEN="${OPD_TRACE_TOKEN:-False}"
 OPD_TRACE_EVERY_N_STEPS="${OPD_TRACE_EVERY_N_STEPS:-5}"
@@ -254,6 +276,9 @@ else
     TRAINER_VALIDATION_DATA_DIR="${TRAINER_VALIDATION_DATA_DIR:-null}"
     TRAINER_TEST_FREQ="${TEST_FREQ:-20}"
     DATA_VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:--1}"
+fi
+if is_truthy "$OPD_SELECTIVE_WEIGHT"; then
+    OPD_METRICS_ENTROPY=True
 fi
 
 delete_experiment_dir() {
@@ -565,10 +590,11 @@ echo "Teacher mode:     $TEACHER_MODE (src=$TEACHER_MODEL_SOURCE, reg=$TEACHER_R
 echo "Alpha (loss):     $ALPHA (0.5=JSD, 1.0=RKL, 0.0=FKL)"
 echo "Selective veto:   $OPD_SELECTIVE_VETO (top_p=$OPD_SELECTIVE_VETO_TOP_P, min_score=$OPD_SELECTIVE_VETO_MIN_SCORE, normalize=$OPD_SELECTIVE_VETO_NORMALIZE)"
 echo "Token mask:       pct=$OPD_TOKEN_MASK_PCT metric=$OPD_TOKEN_MASK_METRIC (bucket_metrics=$OPD_BUCKET_METRICS, bucket_q=${OPD_BUCKET_Q_LOW}/${OPD_BUCKET_Q_HIGH})"
+echo "Selective weight: $OPD_SELECTIVE_WEIGHT (mode=$OPD_SELECTIVE_WEIGHT_MODE, normalize=$OPD_SELECTIVE_WEIGHT_NORMALIZE, entropy_q=${OPD_SELECTIVE_WEIGHT_ENTROPY_LOW_Q}/${OPD_SELECTIVE_WEIGHT_ENTROPY_HIGH_Q}, loss_q=${OPD_SELECTIVE_WEIGHT_LOSS_LOW_Q}/${OPD_SELECTIVE_WEIGHT_LOSS_MID_Q}/${OPD_SELECTIVE_WEIGHT_LOSS_HIGH_Q}, weights protect/unclear/risk/other=${OPD_SELECTIVE_WEIGHT_PROTECT}/${OPD_SELECTIVE_WEIGHT_UNCLEAR}/${OPD_SELECTIVE_WEIGHT_RISK}/${OPD_SELECTIVE_WEIGHT_OTHER})"
 echo "Rollout N:        $ROLLOUT_N (1=pure KD, >1=GRPO+KD)"
 echo "Learning rate:    $LR"
 echo "Batch size:       $TRAIN_BATCH_SIZE"
-echo "OPD metrics:      $OPD_TRAIN_METRICS (entropy curve=$OPD_METRICS_ENTROPY)"
+echo "OPD metrics:      $OPD_TRAIN_METRICS (entropy curve=$OPD_METRICS_ENTROPY, train_verbose=$OPD_TRAIN_METRICS_VERBOSE, selective_verbose=$OPD_SELECTIVE_METRICS_VERBOSE)"
 echo "OPD token trace:  $OPD_TRACE_TOKEN (every ${OPD_TRACE_EVERY_N_STEPS} steps, max ${OPD_TRACE_MAX_SAMPLES}/rank, topk=${OPD_TRACE_TOPK})"
 echo "Trace dir:        $OPD_TRACE_DIR"
 echo "Mini-eval trace:  $OPD_MINI_EVAL_TRACE (test_freq=$TRAINER_TEST_FREQ, max_samples=$DATA_VAL_MAX_SAMPLES, val_n=$VAL_N, do_sample=$VAL_DO_SAMPLE)"
@@ -648,8 +674,22 @@ set +e
     actor_rollout_ref.actor.self_distillation.selective_bucket_metrics_enabled=$OPD_BUCKET_METRICS \
     actor_rollout_ref.actor.self_distillation.selective_bucket_q_low=$OPD_BUCKET_Q_LOW \
     actor_rollout_ref.actor.self_distillation.selective_bucket_q_high=$OPD_BUCKET_Q_HIGH \
+    actor_rollout_ref.actor.self_distillation.selective_weight_enabled=$OPD_SELECTIVE_WEIGHT \
+    actor_rollout_ref.actor.self_distillation.selective_weight_mode=$OPD_SELECTIVE_WEIGHT_MODE \
+    actor_rollout_ref.actor.self_distillation.selective_weight_normalize=$OPD_SELECTIVE_WEIGHT_NORMALIZE \
+    actor_rollout_ref.actor.self_distillation.selective_weight_entropy_low_q=$OPD_SELECTIVE_WEIGHT_ENTROPY_LOW_Q \
+    actor_rollout_ref.actor.self_distillation.selective_weight_entropy_high_q=$OPD_SELECTIVE_WEIGHT_ENTROPY_HIGH_Q \
+    actor_rollout_ref.actor.self_distillation.selective_weight_loss_low_q=$OPD_SELECTIVE_WEIGHT_LOSS_LOW_Q \
+    actor_rollout_ref.actor.self_distillation.selective_weight_loss_mid_q=$OPD_SELECTIVE_WEIGHT_LOSS_MID_Q \
+    actor_rollout_ref.actor.self_distillation.selective_weight_loss_high_q=$OPD_SELECTIVE_WEIGHT_LOSS_HIGH_Q \
+    actor_rollout_ref.actor.self_distillation.selective_weight_protect=$OPD_SELECTIVE_WEIGHT_PROTECT \
+    actor_rollout_ref.actor.self_distillation.selective_weight_unclear=$OPD_SELECTIVE_WEIGHT_UNCLEAR \
+    actor_rollout_ref.actor.self_distillation.selective_weight_risk=$OPD_SELECTIVE_WEIGHT_RISK \
+    actor_rollout_ref.actor.self_distillation.selective_weight_other=$OPD_SELECTIVE_WEIGHT_OTHER \
     actor_rollout_ref.actor.self_distillation.include_environment_feedback=False \
     actor_rollout_ref.actor.self_distillation.train_metrics_enabled=$OPD_TRAIN_METRICS \
+    actor_rollout_ref.actor.self_distillation.train_metrics_verbose=$OPD_TRAIN_METRICS_VERBOSE \
+    actor_rollout_ref.actor.self_distillation.selective_metrics_verbose=$OPD_SELECTIVE_METRICS_VERBOSE \
     actor_rollout_ref.actor.self_distillation.trace_enabled=$OPD_TRACE_TOKEN \
     actor_rollout_ref.actor.self_distillation.trace_dump_dir="$OPD_TRACE_DIR" \
     actor_rollout_ref.actor.self_distillation.trace_every_n_steps=$OPD_TRACE_EVERY_N_STEPS \

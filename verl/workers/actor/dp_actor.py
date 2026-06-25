@@ -383,6 +383,8 @@ class DataParallelPPOActor(BasePPOActor):
         student_topk_logps: Optional[torch.Tensor],
         teacher_logps_on_student_topk: Optional[torch.Tensor],
         student_entropy: Optional[torch.Tensor],
+        teacher_entropy: Optional[torch.Tensor],
+        verbose: bool = False,
     ) -> None:
         loss_mask = response_mask
         if self_distillation_mask is not None:
@@ -405,8 +407,10 @@ class DataParallelPPOActor(BasePPOActor):
 
         if student_entropy is not None:
             add("opd/train/student_entropy_mean", student_entropy)
+        if teacher_entropy is not None:
+            add("opd/train/teacher_entropy_mean", teacher_entropy)
 
-        if student_topk_logps is not None:
+        if verbose and student_topk_logps is not None:
             student_topk_logps_f = student_topk_logps.detach().to(torch.float32)
             add("opd/train/student_topk_mass_mean", torch.exp(student_topk_logps_f).sum(dim=-1))
             add("opd/train/student_top1_logprob_mean", student_topk_logps_f[..., 0])
@@ -416,7 +420,7 @@ class DataParallelPPOActor(BasePPOActor):
                     student_topk_logps_f[..., 0] - student_topk_logps_f[..., 1],
                 )
 
-        if student_topk_indices is not None:
+        if verbose and student_topk_indices is not None:
             selected_in_student_topk = (student_topk_indices.detach() == responses.unsqueeze(-1)).any(dim=-1)
             micro_batch_metrics["opd/train/selected_token_in_student_topk_frac"] = (
                 selected_in_student_topk.to(torch.float32)[valid].mean().item()
@@ -426,7 +430,7 @@ class DataParallelPPOActor(BasePPOActor):
                 student_top1_is_selected.to(torch.float32)[valid].mean().item()
             )
 
-        if teacher_logps_on_student_topk is not None:
+        if verbose and teacher_logps_on_student_topk is not None:
             teacher_logps_on_student_topk_f = teacher_logps_on_student_topk.detach().to(torch.float32)
             add("opd/train/teacher_mass_on_student_topk_mean", torch.exp(teacher_logps_on_student_topk_f).sum(dim=-1))
             add("opd/train/teacher_logprob_on_student_top1_mean", teacher_logps_on_student_topk_f[..., 0])
@@ -1469,10 +1473,13 @@ class DataParallelPPOActor(BasePPOActor):
                             raise ValueError("trust-region teacher requires a separate teacher_module in the actor worker.")
                         with torch.no_grad():
                             teacher_forward_start = time.perf_counter()
+                            teacher_calculate_entropy = policy_calculate_entropy or (
+                                trace_this_micro_batch and trace_entropy
+                            )
                             teacher_outputs = self._forward_micro_batch(
                                 teacher_inputs,
                                 temperature=temperature,
-                                calculate_entropy=trace_this_micro_batch and trace_entropy,
+                                calculate_entropy=teacher_calculate_entropy,
                                 return_all_logps=return_all_logps,
                                 distill_topk=distill_topk,
                                 topk_indices=student_topk_indices,
@@ -1484,7 +1491,7 @@ class DataParallelPPOActor(BasePPOActor):
                         teacher_log_prob = teacher_outputs["log_probs"]
                         teacher_all_logps = teacher_outputs.get("all_logps") if return_all_logps else None
                         teacher_topk_logps = teacher_outputs.get("topk_logps") if distill_topk else None
-                        teacher_entropy = teacher_outputs.get("entropys") if trace_this_micro_batch and trace_entropy else None
+                        teacher_entropy = teacher_outputs.get("entropys") if teacher_calculate_entropy else None
                         teacher_trace_topk_logps = (
                             teacher_outputs.get("trace_topk_logps") if trace_this_micro_batch else None
                         )
@@ -1503,6 +1510,8 @@ class DataParallelPPOActor(BasePPOActor):
                                 student_topk_logps=student_topk_logps,
                                 teacher_logps_on_student_topk=teacher_topk_logps,
                                 student_entropy=entropy if policy_calculate_entropy else None,
+                                teacher_entropy=teacher_entropy if policy_calculate_entropy else None,
+                                verbose=bool(self_distillation_cfg.get("train_metrics_verbose", False)),
                             )
                         if trace_this_micro_batch:
                             remaining_samples = (
@@ -1572,6 +1581,7 @@ class DataParallelPPOActor(BasePPOActor):
                             teacher_topk_log_probs=teacher_topk_logps,
                             self_distillation_mask=self_distillation_mask,
                             student_entropy=entropy if policy_calculate_entropy else None,
+                            teacher_entropy=teacher_entropy if policy_calculate_entropy else None,
                             loss_agg_mode=loss_agg_mode,
                             rollout_is_weights=rollout_is_weights,
                             batch_num_tokens=self.config.global_batch_info.get("batch_num_tokens"),

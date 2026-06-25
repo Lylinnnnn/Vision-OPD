@@ -1095,6 +1095,7 @@ def compute_self_distillation_loss(
     teacher_topk_log_probs: Optional[torch.Tensor] = None,
     self_distillation_mask: Optional[torch.Tensor] = None,
     student_entropy: Optional[torch.Tensor] = None,
+    teacher_entropy: Optional[torch.Tensor] = None,
     loss_agg_mode: str = "token-mean",
     rollout_is_weights: Optional[torch.Tensor] = None,
     batch_num_tokens: Optional[int] = None,
@@ -1176,6 +1177,7 @@ def compute_self_distillation_loss(
     if selective_veto_enabled:
         token_mask_pct = 0.0
     bucket_metrics_enabled = bool(self_distillation_config.get("selective_bucket_metrics_enabled", True))
+    metrics_verbose = bool(self_distillation_config.get("selective_metrics_verbose", False))
     bucket_q_low = float(self_distillation_config.get("selective_bucket_q_low", 0.70))
     bucket_q_high = float(self_distillation_config.get("selective_bucket_q_high", 0.90))
     bucket_masks_for_token_metrics = {}
@@ -1213,13 +1215,13 @@ def compute_self_distillation_loss(
             positive_disagreement_count = int(positive_disagreement_mask.sum().item())
             q_low_threshold = None
             q_high_threshold = None
-            if positive_disagreement_count > 0:
+            if metrics_verbose and positive_disagreement_count > 0:
                 positive_values = student_minus_teacher[positive_disagreement_mask].float()
                 q_low_threshold = torch.quantile(positive_values, bucket_q_low)
                 q_high_threshold = torch.quantile(positive_values, bucket_q_high)
 
-            raw_loss_for_metrics = raw_per_token_loss.detach()
             entropy_for_metrics = student_entropy.detach() if student_entropy is not None else None
+            teacher_entropy_for_metrics = teacher_entropy.detach() if teacher_entropy is not None else None
 
             def add_bucket_metrics(name: str, bucket_mask: torch.Tensor):
                 bucket_mask = bucket_mask & finite_valid_mask
@@ -1227,14 +1229,10 @@ def compute_self_distillation_loss(
                 bucket_count_tensor = bucket_mask_f.sum()
                 bucket_count = float(bucket_count_tensor.item())
                 prefix = f"self_distillation/bucket/{name}"
-                metrics[f"{prefix}_tokens"] = bucket_count
                 metrics[f"{prefix}_frac"] = bucket_count / valid_count if valid_count > 0 else 0.0
                 if bucket_count > 0.0:
                     metrics[f"{prefix}_delta_mean"] = (
                         verl_F.masked_sum(student_minus_teacher.float(), bucket_mask_f) / bucket_count_tensor
-                    ).detach().item()
-                    metrics[f"{prefix}_raw_loss_mean"] = (
-                        verl_F.masked_sum(raw_loss_for_metrics.float(), bucket_mask_f) / bucket_count_tensor
                     ).detach().item()
                     metrics[f"{prefix}_student_logprob_mean"] = (
                         verl_F.masked_sum(student_log_probs.detach().float(), bucket_mask_f) / bucket_count_tensor
@@ -1246,47 +1244,54 @@ def compute_self_distillation_loss(
                         metrics[f"{prefix}_student_entropy_mean"] = (
                             verl_F.masked_sum(entropy_for_metrics.float(), bucket_mask_f) / bucket_count_tensor
                         ).detach().item()
+                    if teacher_entropy_for_metrics is not None:
+                        metrics[f"{prefix}_teacher_entropy_mean"] = (
+                            verl_F.masked_sum(teacher_entropy_for_metrics.float(), bucket_mask_f) / bucket_count_tensor
+                        ).detach().item()
                 else:
                     metrics[f"{prefix}_delta_mean"] = 0.0
-                    metrics[f"{prefix}_raw_loss_mean"] = 0.0
+                    metrics[f"{prefix}_student_logprob_mean"] = 0.0
+                    metrics[f"{prefix}_teacher_logprob_mean"] = 0.0
 
             if bucket_metrics_enabled:
                 support_mask = finite_valid_mask & (student_minus_teacher <= 0)
-                if q_low_threshold is None or q_high_threshold is None:
-                    mild_disagreement_mask = positive_disagreement_mask
-                    medium_disagreement_mask = torch.zeros_like(finite_valid_mask)
-                    strong_disagreement_mask = torch.zeros_like(finite_valid_mask)
-                else:
-                    mild_disagreement_mask = positive_disagreement_mask & (student_minus_teacher <= q_low_threshold)
-                    medium_disagreement_mask = (
-                        positive_disagreement_mask
-                        & (student_minus_teacher > q_low_threshold)
-                        & (student_minus_teacher <= q_high_threshold)
-                    )
-                    strong_disagreement_mask = positive_disagreement_mask & (student_minus_teacher > q_high_threshold)
+                disagree_mask = positive_disagreement_mask
 
                 bucket_masks_for_token_metrics = {
                     "support": support_mask.detach(),
-                    "mild_disagree": mild_disagreement_mask.detach(),
-                    "medium_disagree": medium_disagreement_mask.detach(),
-                    "strong_disagree": strong_disagreement_mask.detach(),
+                    "disagree": disagree_mask.detach(),
                 }
-                metrics["self_distillation/bucket/q_low"] = bucket_q_low
-                metrics["self_distillation/bucket/q_high"] = bucket_q_high
-                metrics["self_distillation/bucket/q_low_delta_threshold"] = (
-                    q_low_threshold.detach().item() if q_low_threshold is not None else 0.0
-                )
-                metrics["self_distillation/bucket/q_high_delta_threshold"] = (
-                    q_high_threshold.detach().item() if q_high_threshold is not None else 0.0
-                )
                 metrics["self_distillation/bucket/valid_tokens"] = valid_count
-                metrics["self_distillation/bucket/positive_disagreement_frac"] = (
-                    positive_disagreement_count / valid_count if valid_count > 0 else 0.0
-                )
                 add_bucket_metrics("support", support_mask)
-                add_bucket_metrics("mild_disagree", mild_disagreement_mask)
-                add_bucket_metrics("medium_disagree", medium_disagreement_mask)
-                add_bucket_metrics("strong_disagree", strong_disagreement_mask)
+                add_bucket_metrics("disagree", disagree_mask)
+
+                if metrics_verbose:
+                    if q_low_threshold is None or q_high_threshold is None:
+                        mild_disagreement_mask = positive_disagreement_mask
+                        medium_disagreement_mask = torch.zeros_like(finite_valid_mask)
+                        strong_disagreement_mask = torch.zeros_like(finite_valid_mask)
+                    else:
+                        mild_disagreement_mask = positive_disagreement_mask & (student_minus_teacher <= q_low_threshold)
+                        medium_disagreement_mask = (
+                            positive_disagreement_mask
+                            & (student_minus_teacher > q_low_threshold)
+                            & (student_minus_teacher <= q_high_threshold)
+                        )
+                        strong_disagreement_mask = positive_disagreement_mask & (student_minus_teacher > q_high_threshold)
+                    metrics["self_distillation/bucket_detail/q_low"] = bucket_q_low
+                    metrics["self_distillation/bucket_detail/q_high"] = bucket_q_high
+                    metrics["self_distillation/bucket_detail/q_low_delta_threshold"] = (
+                        q_low_threshold.detach().item() if q_low_threshold is not None else 0.0
+                    )
+                    metrics["self_distillation/bucket_detail/q_high_delta_threshold"] = (
+                        q_high_threshold.detach().item() if q_high_threshold is not None else 0.0
+                    )
+                    metrics["self_distillation/bucket_detail/positive_disagreement_frac"] = (
+                        positive_disagreement_count / valid_count if valid_count > 0 else 0.0
+                    )
+                    add_bucket_metrics("detail_mild_disagree", mild_disagreement_mask)
+                    add_bucket_metrics("detail_medium_disagree", medium_disagreement_mask)
+                    add_bucket_metrics("detail_strong_disagree", strong_disagreement_mask)
 
             if selective_veto_enabled:
                 selected_token_mask = torch.zeros_like(pre_select_loss_mask)
@@ -1326,8 +1331,6 @@ def compute_self_distillation_loss(
                 loss_mask = pre_select_loss_mask * selected_token_mask
 
                 metrics["self_distillation/selective_veto_enabled"] = 1.0
-                metrics["self_distillation/selective_veto_top_p"] = selective_veto_top_p
-                metrics["self_distillation/selective_veto_min_score"] = selective_veto_min_score
                 metrics["self_distillation/selective_veto_candidate_frac"] = (
                     candidate_count / valid_count if valid_count > 0 else 0.0
                 )
@@ -1335,13 +1338,8 @@ def compute_self_distillation_loss(
                     selected_count / valid_count if valid_count > 0 else 0.0
                 )
                 metrics["self_distillation/selective_veto_selected_tokens"] = selected_count
-                metrics["self_distillation/selective_veto_empty"] = selected_count == 0.0
-                metrics["self_distillation/selective_veto_normalize_by_selected"] = float(normalize_by_selected)
                 metrics["self_distillation/selective_veto_loss_scale"] = (
                     selective_veto_loss_scale.detach().item() if selective_veto_loss_scale is not None else 1.0
-                )
-                metrics["self_distillation/selective_veto_score_threshold"] = (
-                    score_threshold.detach().item() if score_threshold is not None else 0.0
                 )
                 if selected_count > 0.0:
                     selected_score_sum = verl_F.masked_sum(student_minus_teacher.float(), selected_token_mask)
@@ -1350,6 +1348,14 @@ def compute_self_distillation_loss(
                     ).detach().item()
                 else:
                     metrics["self_distillation/selective_veto_score_mean_selected"] = 0.0
+                if metrics_verbose:
+                    metrics["self_distillation/selective_veto_top_p"] = selective_veto_top_p
+                    metrics["self_distillation/selective_veto_min_score"] = selective_veto_min_score
+                    metrics["self_distillation/selective_veto_empty"] = selected_count == 0.0
+                    metrics["self_distillation/selective_veto_normalize_by_selected"] = float(normalize_by_selected)
+                    metrics["self_distillation/selective_veto_score_threshold"] = (
+                        score_threshold.detach().item() if score_threshold is not None else 0.0
+                    )
 
     # ----------------------------------------------------------------
     # Token-level divergence masking: drop highest-divergence tokens
@@ -1367,7 +1373,6 @@ def compute_self_distillation_loss(
         with torch.no_grad():
             token_mask_metric = str(self_distillation_config.get("token_mask_metric", "loss") or "loss").lower()
             token_mask_metric = token_mask_metric.replace("-", "_")
-            token_mask_metric_is_delta = False
             if token_mask_metric in {"loss", "raw_loss", "kl"}:
                 divergence_scores = raw_per_token_loss.detach()
             elif token_mask_metric in {
@@ -1376,7 +1381,6 @@ def compute_self_distillation_loss(
                 "logprob_delta",
                 "veto_gap",
             }:
-                token_mask_metric_is_delta = True
                 divergence_scores = (student_log_probs - teacher_log_probs).detach()
             else:
                 raise ValueError(
@@ -1402,31 +1406,222 @@ def compute_self_distillation_loss(
             pre_token_mask = loss_mask
             loss_mask = loss_mask * token_keep_mask
 
-        metrics["self_distillation/token_mask_pct"] = token_mask_pct
-        metrics["self_distillation/token_mask_metric_id"] = 1.0 if token_mask_metric_is_delta else 0.0
         valid_token_mask = pre_token_mask > 0
         valid_token_count_for_mask = valid_token_mask.sum().clamp(min=1.0)
         masked_valid_mask = valid_token_mask & (token_keep_mask <= 0)
-        kept_valid_mask = valid_token_mask & (token_keep_mask > 0)
-        metrics["self_distillation/token_mask_kept_frac"] = (
-            token_keep_mask.sum() / token_keep_mask.numel()
-        ).item()
-        metrics["self_distillation/token_mask_kept_frac_valid"] = (
-            kept_valid_mask.sum() / valid_token_count_for_mask
-        ).item()
         metrics["self_distillation/token_mask_masked_frac_valid"] = (
             masked_valid_mask.sum() / valid_token_count_for_mask
         ).item()
         metrics["self_distillation/token_mask_masked_tokens"] = masked_valid_mask.sum().detach().item()
-        for bucket_name, bucket_mask in bucket_masks_for_token_metrics.items():
-            active_bucket_mask = bucket_mask & valid_token_mask
-            bucket_count = active_bucket_mask.sum().clamp(min=1.0)
-            bucket_masked = active_bucket_mask & masked_valid_mask
-            prefix = f"self_distillation/token_mask_bucket/{bucket_name}"
-            metrics[f"{prefix}_masked_frac"] = (bucket_masked.sum() / bucket_count).item()
-            metrics[f"{prefix}_masked_tokens"] = bucket_masked.sum().detach().item()
+        if metrics_verbose:
+            for bucket_name, bucket_mask in bucket_masks_for_token_metrics.items():
+                active_bucket_mask = bucket_mask & valid_token_mask
+                bucket_count = active_bucket_mask.sum().clamp(min=1.0)
+                bucket_masked = active_bucket_mask & masked_valid_mask
+                prefix = f"self_distillation/token_mask_bucket/{bucket_name}"
+                metrics[f"{prefix}_masked_frac"] = (bucket_masked.sum() / bucket_count).item()
+                metrics[f"{prefix}_masked_tokens"] = bucket_masked.sum().detach().item()
+
+    token_weight = None
+    selective_weight_enabled = bool(self_distillation_config.get("selective_weight_enabled", False))
+    if selective_weight_enabled:
+        selective_weight_mode = str(
+            self_distillation_config.get("selective_weight_mode", "entropy_rkl_bucket") or "entropy_rkl_bucket"
+        )
+        if selective_weight_mode != "entropy_rkl_bucket":
+            raise ValueError(
+                "self_distillation.selective_weight_mode currently supports only "
+                f"'entropy_rkl_bucket', got {selective_weight_mode}"
+            )
+        if student_entropy is None:
+            raise ValueError(
+                "self_distillation.selective_weight_enabled=True with mode=entropy_rkl_bucket "
+                "requires actor.calculate_entropy=True. Set OPD_METRICS_ENTROPY=True."
+            )
+
+        with torch.no_grad():
+            entropy_low_q = float(self_distillation_config.get("selective_weight_entropy_low_q", 0.40))
+            entropy_high_q = float(self_distillation_config.get("selective_weight_entropy_high_q", 0.75))
+            loss_low_q = float(self_distillation_config.get("selective_weight_loss_low_q", 0.40))
+            loss_mid_q = float(self_distillation_config.get("selective_weight_loss_mid_q", 0.50))
+            loss_high_q = float(self_distillation_config.get("selective_weight_loss_high_q", 0.75))
+            protect_weight = float(self_distillation_config.get("selective_weight_protect", 0.50))
+            unclear_weight = float(self_distillation_config.get("selective_weight_unclear", 0.50))
+            risk_weight = float(self_distillation_config.get("selective_weight_risk", 1.00))
+            other_weight = float(self_distillation_config.get("selective_weight_other", 1.00))
+            normalize_weight = bool(self_distillation_config.get("selective_weight_normalize", True))
+
+            if not 0.0 < entropy_low_q < entropy_high_q < 1.0:
+                raise ValueError(
+                    "self_distillation selective entropy quantiles must satisfy 0 < low < high < 1, "
+                    f"got low={entropy_low_q}, high={entropy_high_q}"
+                )
+            if not 0.0 < loss_low_q < loss_mid_q < loss_high_q < 1.0:
+                raise ValueError(
+                    "self_distillation selective loss quantiles must satisfy 0 < low < mid < high < 1, "
+                    f"got low={loss_low_q}, mid={loss_mid_q}, high={loss_high_q}"
+                )
+            if min(protect_weight, unclear_weight, risk_weight, other_weight) < 0.0:
+                raise ValueError("self_distillation selective weights must be non-negative")
+
+            pre_weight_loss_mask = loss_mask
+            valid_weight_mask = (
+                (pre_weight_loss_mask > 0)
+                & torch.isfinite(raw_per_token_loss)
+                & torch.isfinite(student_entropy)
+            )
+            valid_weight_count_tensor = valid_weight_mask.to(raw_per_token_loss.dtype).sum().clamp(min=1.0)
+            valid_weight_count = int(valid_weight_mask.sum().item())
+            token_weight = torch.ones_like(raw_per_token_loss, dtype=raw_per_token_loss.dtype)
+            token_weight = token_weight * other_weight
+            entropy_low_threshold = None
+            entropy_high_threshold = None
+            loss_low_threshold = None
+            loss_mid_threshold = None
+            loss_high_threshold = None
+            protect_mask = torch.zeros_like(valid_weight_mask)
+            unclear_mask = torch.zeros_like(valid_weight_mask)
+            risk_mask = torch.zeros_like(valid_weight_mask)
+            raw_weight_mean = None
+
+            if valid_weight_count > 0:
+                entropy_values = student_entropy[valid_weight_mask].float()
+                loss_values = raw_per_token_loss.detach()[valid_weight_mask].float()
+                entropy_low_threshold = torch.quantile(entropy_values, entropy_low_q)
+                entropy_high_threshold = torch.quantile(entropy_values, entropy_high_q)
+                loss_low_threshold = torch.quantile(loss_values, loss_low_q)
+                loss_mid_threshold = torch.quantile(loss_values, loss_mid_q)
+                loss_high_threshold = torch.quantile(loss_values, loss_high_q)
+
+                low_entropy_mask = student_entropy <= entropy_low_threshold
+                high_entropy_mask = student_entropy >= entropy_high_threshold
+                low_loss_mask = raw_per_token_loss.detach() <= loss_low_threshold
+                mid_or_lower_loss_mask = raw_per_token_loss.detach() <= loss_mid_threshold
+                high_loss_mask = raw_per_token_loss.detach() >= loss_high_threshold
+
+                risk_mask = valid_weight_mask & high_entropy_mask & high_loss_mask
+                protect_mask = valid_weight_mask & low_entropy_mask & low_loss_mask & (~risk_mask)
+                unclear_mask = (
+                    valid_weight_mask
+                    & high_entropy_mask
+                    & mid_or_lower_loss_mask
+                    & (~risk_mask)
+                    & (~protect_mask)
+                )
+
+                token_weight = torch.where(
+                    protect_mask,
+                    torch.full_like(token_weight, protect_weight),
+                    token_weight,
+                )
+                token_weight = torch.where(
+                    unclear_mask,
+                    torch.full_like(token_weight, unclear_weight),
+                    token_weight,
+                )
+                token_weight = torch.where(
+                    risk_mask,
+                    torch.full_like(token_weight, risk_weight),
+                    token_weight,
+                )
+
+                raw_weight_mean = (
+                    verl_F.masked_sum(token_weight.float(), valid_weight_mask.to(token_weight.dtype))
+                    / valid_weight_count_tensor
+                )
+                if normalize_weight and raw_weight_mean.detach().item() > 0.0:
+                    token_weight = token_weight / raw_weight_mean.to(token_weight.dtype)
+
+            valid_weight_mask_f = valid_weight_mask.to(raw_per_token_loss.dtype)
+            effective_weight_mean = (
+                verl_F.masked_sum(token_weight.float(), valid_weight_mask_f) / valid_weight_count_tensor
+            )
+            protect_count = protect_mask.sum().detach().item()
+            unclear_count = unclear_mask.sum().detach().item()
+            risk_count = risk_mask.sum().detach().item()
+            other_count = max(valid_weight_count - int(protect_count) - int(unclear_count) - int(risk_count), 0)
+
+            metrics["self_distillation/selective_weight_enabled"] = 1.0
+            metrics["self_distillation/selective_weight_raw_mean"] = (
+                raw_weight_mean.detach().item() if raw_weight_mean is not None else 0.0
+            )
+            metrics["self_distillation/selective_weight_effective_mean"] = effective_weight_mean.detach().item()
+            metrics["self_distillation/selective_weight_protect_frac"] = (
+                protect_count / valid_weight_count if valid_weight_count > 0 else 0.0
+            )
+            metrics["self_distillation/selective_weight_unclear_frac"] = (
+                unclear_count / valid_weight_count if valid_weight_count > 0 else 0.0
+            )
+            metrics["self_distillation/selective_weight_risk_frac"] = (
+                risk_count / valid_weight_count if valid_weight_count > 0 else 0.0
+            )
+            metrics["self_distillation/selective_weight_other_frac"] = (
+                other_count / valid_weight_count if valid_weight_count > 0 else 0.0
+            )
+
+            raw_abs_loss_for_metrics = raw_per_token_loss.detach().float().abs()
+            weighted_abs_loss_for_metrics = (raw_per_token_loss.detach() * token_weight.detach()).float().abs()
+            raw_abs_loss_total = verl_F.masked_sum(raw_abs_loss_for_metrics, valid_weight_mask_f).clamp(min=1e-12)
+            weighted_abs_loss_total = verl_F.masked_sum(
+                weighted_abs_loss_for_metrics, valid_weight_mask_f
+            ).clamp(min=1e-12)
+            metrics["self_distillation/selective_weight_weighted_abs_loss_over_raw"] = (
+                weighted_abs_loss_total / raw_abs_loss_total
+            ).detach().item()
+
+            def add_selective_weight_bucket_metrics(name: str, bucket_mask: torch.Tensor) -> None:
+                bucket_mask = bucket_mask & valid_weight_mask
+                bucket_mask_f = bucket_mask.to(raw_per_token_loss.dtype)
+                bucket_count_tensor = bucket_mask_f.sum()
+                bucket_count = float(bucket_count_tensor.item())
+                prefix = f"self_distillation/selective_weight_bucket/{name}"
+                if bucket_count > 0.0:
+                    metrics[f"{prefix}_effective_weight_mean"] = (
+                        verl_F.masked_sum(token_weight.detach().float(), bucket_mask_f) / bucket_count_tensor
+                    ).detach().item()
+                    metrics[f"{prefix}_raw_abs_loss_share"] = (
+                        verl_F.masked_sum(raw_abs_loss_for_metrics, bucket_mask_f) / raw_abs_loss_total
+                    ).detach().item()
+                    metrics[f"{prefix}_weighted_abs_loss_share"] = (
+                        verl_F.masked_sum(weighted_abs_loss_for_metrics, bucket_mask_f) / weighted_abs_loss_total
+                    ).detach().item()
+                else:
+                    metrics[f"{prefix}_effective_weight_mean"] = 0.0
+                    metrics[f"{prefix}_raw_abs_loss_share"] = 0.0
+                    metrics[f"{prefix}_weighted_abs_loss_share"] = 0.0
+
+            add_selective_weight_bucket_metrics("protect", protect_mask)
+            add_selective_weight_bucket_metrics("unclear", unclear_mask)
+            add_selective_weight_bucket_metrics("risk", risk_mask)
+            add_selective_weight_bucket_metrics(
+                "other",
+                valid_weight_mask & (~protect_mask) & (~unclear_mask) & (~risk_mask),
+            )
+
+            if metrics_verbose:
+                metrics["self_distillation/selective_weight_protect_weight"] = protect_weight
+                metrics["self_distillation/selective_weight_unclear_weight"] = unclear_weight
+                metrics["self_distillation/selective_weight_risk_weight"] = risk_weight
+                metrics["self_distillation/selective_weight_other_weight"] = other_weight
+                metrics["self_distillation/selective_weight_entropy_low_threshold"] = (
+                    entropy_low_threshold.detach().item() if entropy_low_threshold is not None else 0.0
+                )
+                metrics["self_distillation/selective_weight_entropy_high_threshold"] = (
+                    entropy_high_threshold.detach().item() if entropy_high_threshold is not None else 0.0
+                )
+                metrics["self_distillation/selective_weight_loss_low_threshold"] = (
+                    loss_low_threshold.detach().item() if loss_low_threshold is not None else 0.0
+                )
+                metrics["self_distillation/selective_weight_loss_mid_threshold"] = (
+                    loss_mid_threshold.detach().item() if loss_mid_threshold is not None else 0.0
+                )
+                metrics["self_distillation/selective_weight_loss_high_threshold"] = (
+                    loss_high_threshold.detach().item() if loss_high_threshold is not None else 0.0
+                )
 
     weighted_per_token_loss = raw_per_token_loss
+    if token_weight is not None:
+        weighted_per_token_loss = weighted_per_token_loss * token_weight
 
     is_clip = self_distillation_config.is_clip
     if is_clip is not None:

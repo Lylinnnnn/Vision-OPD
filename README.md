@@ -58,6 +58,14 @@ bash scripts/run_vision_opd.sh
 
 Key hyperparameters can be edited at the top of the script. See the script for the full configuration.
 
+For the local Res-OPD hallucination-reduction experiments, see
+`res-opd/scripts/README.md`. That workflow includes frozen low-resolution RKL,
+mini-eval tracing, object-probe diagnostics, and an optional selective weighted
+RKL mode that weakens low-risk tokens while preserving the average RKL scale.
+SwanLab logging is compact by default: support/disagree buckets, entropy,
+logprob deltas, and selective-weight hit rates are logged continuously, while
+top-k and fine-grained bucket diagnostics are behind verbose switches.
+
 ### 4. Merge Checkpoints
 
 After training, merge the FSDP-sharded checkpoint into a standard HuggingFace model:

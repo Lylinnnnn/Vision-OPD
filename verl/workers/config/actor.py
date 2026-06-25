@@ -71,6 +71,7 @@ class SelfDistillationConfig(BaseConfig):
             policy loss for samples whose teacher_image_key column is empty.
         log_prob_dump_dir (Optional[str]): Optional directory used to dump student/teacher log-prob tensors for each step.
         train_metrics_enabled (bool): Whether to log lightweight OPD train-time scalar metrics.
+        train_metrics_verbose (bool): Whether to log verbose top-k OPD train metrics.
         trace_enabled (bool): Whether to dump low-frequency token-level student/teacher traces.
         trace_dump_dir (Optional[str]): Directory for JSONL traces. If unset, log_prob_dump_dir is reused.
         trace_every_n_steps (int): Dump traces every N global steps when trace_enabled=True.
@@ -86,8 +87,21 @@ class SelfDistillationConfig(BaseConfig):
         token_mask_pct (float): Fraction of highest-divergence valid tokens to mask out per sample.
         token_mask_metric (str): Token score for token_mask_pct. Options: "loss" or "student_teacher_delta".
         selective_bucket_metrics_enabled (bool): Whether to log low-res agreement/disagreement bucket metrics.
+        selective_metrics_verbose (bool): Whether to log detailed mild/medium/strong buckets and thresholds.
         selective_bucket_q_low (float): Lower positive-disagreement quantile for bucket split, default 0.70.
         selective_bucket_q_high (float): Higher positive-disagreement quantile for bucket split, default 0.90.
+        selective_weight_enabled (bool): Whether to apply soft token weights to the distillation loss.
+        selective_weight_mode (str): Soft-weighting rule. Currently supports "entropy_rkl_bucket".
+        selective_weight_normalize (bool): Normalize valid-token mean weight to one.
+        selective_weight_entropy_low_q (float): Low-entropy quantile used for protect tokens.
+        selective_weight_entropy_high_q (float): High-entropy quantile used for risk/unclear tokens.
+        selective_weight_loss_low_q (float): Low-loss quantile used for protect tokens.
+        selective_weight_loss_mid_q (float): Mid-loss threshold used to identify unclear high-entropy tokens.
+        selective_weight_loss_high_q (float): High-loss quantile used for risk tokens.
+        selective_weight_protect (float): Raw weight for low-entropy, low-loss tokens.
+        selective_weight_unclear (float): Raw weight for high-entropy, low/mid-loss tokens.
+        selective_weight_risk (float): Raw weight for high-entropy, high-loss tokens.
+        selective_weight_other (float): Raw weight for other valid tokens.
     """
 
     full_logit_distillation: bool = True
@@ -133,6 +147,7 @@ class SelfDistillationConfig(BaseConfig):
     fallback_to_policy_loss_on_missing_teacher: bool = False
     log_prob_dump_dir: Optional[str] = None
     train_metrics_enabled: bool = True
+    train_metrics_verbose: bool = False
     trace_enabled: bool = False
     trace_dump_dir: Optional[str] = None
     trace_every_n_steps: int = 5
@@ -148,8 +163,21 @@ class SelfDistillationConfig(BaseConfig):
     token_mask_pct: float = 0.0
     token_mask_metric: str = "loss"
     selective_bucket_metrics_enabled: bool = True
+    selective_metrics_verbose: bool = False
     selective_bucket_q_low: float = 0.70
     selective_bucket_q_high: float = 0.90
+    selective_weight_enabled: bool = False
+    selective_weight_mode: str = "entropy_rkl_bucket"
+    selective_weight_normalize: bool = True
+    selective_weight_entropy_low_q: float = 0.40
+    selective_weight_entropy_high_q: float = 0.75
+    selective_weight_loss_low_q: float = 0.40
+    selective_weight_loss_mid_q: float = 0.50
+    selective_weight_loss_high_q: float = 0.75
+    selective_weight_protect: float = 0.50
+    selective_weight_unclear: float = 0.50
+    selective_weight_risk: float = 1.00
+    selective_weight_other: float = 1.00
 
     def __post_init__(self):
         if not 0.0 <= self.alpha <= 1.0:
@@ -206,6 +234,42 @@ class SelfDistillationConfig(BaseConfig):
                 "self_distillation selective bucket quantiles must satisfy 0 < q_low < q_high < 1, "
                 f"got q_low={self.selective_bucket_q_low}, q_high={self.selective_bucket_q_high}"
             )
+        valid_selective_weight_modes = ["entropy_rkl_bucket"]
+        if self.selective_weight_mode not in valid_selective_weight_modes:
+            raise ValueError(
+                "self_distillation.selective_weight_mode must be one of "
+                f"{valid_selective_weight_modes}, got {self.selective_weight_mode}"
+            )
+        selective_weight_quantiles = [
+            ("selective_weight_entropy_low_q", self.selective_weight_entropy_low_q),
+            ("selective_weight_entropy_high_q", self.selective_weight_entropy_high_q),
+            ("selective_weight_loss_low_q", self.selective_weight_loss_low_q),
+            ("selective_weight_loss_mid_q", self.selective_weight_loss_mid_q),
+            ("selective_weight_loss_high_q", self.selective_weight_loss_high_q),
+        ]
+        for name, value in selective_weight_quantiles:
+            if not 0.0 < value < 1.0:
+                raise ValueError(f"self_distillation.{name} must be in (0,1), got {value}")
+        if self.selective_weight_entropy_low_q >= self.selective_weight_entropy_high_q:
+            raise ValueError(
+                "self_distillation selective entropy quantiles must satisfy low_q < high_q, "
+                f"got {self.selective_weight_entropy_low_q} >= {self.selective_weight_entropy_high_q}"
+            )
+        if not self.selective_weight_loss_low_q < self.selective_weight_loss_mid_q < self.selective_weight_loss_high_q:
+            raise ValueError(
+                "self_distillation selective loss quantiles must satisfy low_q < mid_q < high_q, "
+                f"got low={self.selective_weight_loss_low_q}, mid={self.selective_weight_loss_mid_q}, "
+                f"high={self.selective_weight_loss_high_q}"
+            )
+        selective_weights = [
+            ("selective_weight_protect", self.selective_weight_protect),
+            ("selective_weight_unclear", self.selective_weight_unclear),
+            ("selective_weight_risk", self.selective_weight_risk),
+            ("selective_weight_other", self.selective_weight_other),
+        ]
+        for name, value in selective_weights:
+            if value < 0.0:
+                raise ValueError(f"self_distillation.{name} must be non-negative, got {value}")
         if self.selective_veto_enabled:
             if not 0.0 < self.selective_veto_top_p <= 1.0:
                 raise ValueError(

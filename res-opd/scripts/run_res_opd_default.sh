@@ -16,6 +16,9 @@
 #
 #   # Server example: frozen RKL, tr=0.75, keep 90% token mask (mask top 10% student-teacher delta)
 #   cd /home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD && tmux new-session -d -s opd_frozen_rkl_tr075_mask10 "EXPERIMENT_NAME=Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-mask10-e1 FORCE_FRESH_START=True TRAINER_RESUME_MODE=disable TOTAL_EPOCHS=1 DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.75 TEACHER_MODE=frozen ALPHA=1.0 OPD_TOKEN_MASK_PCT=0.10 OPD_TOKEN_MASK_METRIC=student_teacher_delta OPD_BUCKET_METRICS=True OPD_TRAIN_METRICS=True OPD_METRICS_ENTROPY=True OPD_TRACE_TOKEN=False OPD_MINI_EVAL_TRACE=True OPD_MINI_EVAL_TEST_FREQ=10 OPD_MINI_EVAL_MAX_SAMPLES=50 bash res-opd/scripts/run_res_opd_default.sh 2>&1 | tee res-opd/logs/Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-mask10-e1.log"
+#
+#   # Server example: frozen RKL, tr=0.75, recall-safer selective weighting
+#   cd /home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD && tmux new-session -d -s opd_frozen_rkl_tr075_sw "EXPERIMENT_NAME=Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-sw-e1 FORCE_FRESH_START=True TRAINER_RESUME_MODE=disable TOTAL_EPOCHS=1 DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.75 TEACHER_MODE=frozen ALPHA=1.0 OPD_SELECTIVE_WEIGHT=True OPD_SELECTIVE_WEIGHT_PROTECT=0.5 OPD_SELECTIVE_WEIGHT_UNCLEAR=0.5 OPD_SELECTIVE_WEIGHT_RISK=1.0 OPD_SELECTIVE_WEIGHT_OTHER=1.0 OPD_BUCKET_METRICS=True OPD_TRAIN_METRICS=True OPD_TRACE_TOKEN=False OPD_MINI_EVAL_TRACE=True OPD_MINI_EVAL_TEST_FREQ=10 OPD_MINI_EVAL_MAX_SAMPLES=50 bash res-opd/scripts/run_res_opd_default.sh 2>&1 | tee res-opd/logs/Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-sw-e1.log"
 # =============================================================================
 
 set -euo pipefail
@@ -64,6 +67,8 @@ export VALIDATION_METRIC_MODE="${VALIDATION_METRIC_MODE:-mean_only}"
 # --- Training metrics ---
 export OPD_TRAIN_METRICS="${OPD_TRAIN_METRICS:-True}"
 export OPD_METRICS_ENTROPY="${OPD_METRICS_ENTROPY:-True}"
+export OPD_TRAIN_METRICS_VERBOSE="${OPD_TRAIN_METRICS_VERBOSE:-False}"
+export OPD_SELECTIVE_METRICS_VERBOSE="${OPD_SELECTIVE_METRICS_VERBOSE:-False}"
 
 # =============================================================================
 # ENVIRONMENT FIXES
@@ -98,6 +103,10 @@ echo "VAL_DO_SAMPLE               = $VAL_DO_SAMPLE"
 echo "VALIDATION_METRIC_MODE      = $VALIDATION_METRIC_MODE"
 echo "OPD_TRAIN_METRICS           = $OPD_TRAIN_METRICS"
 echo "OPD_METRICS_ENTROPY         = $OPD_METRICS_ENTROPY"
+echo "OPD_TRAIN_METRICS_VERBOSE   = $OPD_TRAIN_METRICS_VERBOSE"
+echo "OPD_SELECTIVE_METRICS_VERBOSE = $OPD_SELECTIVE_METRICS_VERBOSE"
+echo "OPD_SELECTIVE_WEIGHT        = ${OPD_SELECTIVE_WEIGHT:-False}"
+echo "OPD_SELECTIVE_WEIGHT_MODE   = ${OPD_SELECTIVE_WEIGHT_MODE:-entropy_rkl_bucket}"
 echo "============================================================"
 
 exec bash "$SCRIPT_DIR/run_res_opd.sh" "$@"

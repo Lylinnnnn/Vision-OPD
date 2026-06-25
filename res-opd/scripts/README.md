@@ -31,13 +31,13 @@ Optimized defaults for 8× H20 GPUs (conservative):
 
 | Parameter | Default | Original | Notes |
 |-----------|:-------:|:--------:|-------|
-| `DATA_DATALOADER_NUM_WORKERS` | 2 | 0 | Avoids main-process blocking; increase to 4 if stable |
-| `ROLLOUT_GPU_MEMORY_UTILIZATION` | 0.85 | 0.7 | Better KV cache utilization |
-| `ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU` | 2 | 1 | Better GPU utilization for logprob |
-| `REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU` | 2 | 1 | Same as above |
-| `ACTOR_PARAM_OFFLOAD` | True | True | Keep for safety; disable when confirmed stable |
-| `ACTOR_OPTIMIZER_OFFLOAD` | True | True | Same |
-| `REF_PARAM_OFFLOAD` | True | True | Same |
+| `DATA_DATALOADER_NUM_WORKERS` | 4 | 0 | Avoids main-process blocking on the 5k/full datasets |
+| `ROLLOUT_GPU_MEMORY_UTILIZATION` | 0.8 | 0.7 | Better KV cache utilization |
+| `ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU` | 8 | 1 | Better GPU utilization for logprob |
+| `REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU` | 8 | 1 | Same as above |
+| `ACTOR_PARAM_OFFLOAD` | False | True | H20 98GB default; set True if OOM |
+| `ACTOR_OPTIMIZER_OFFLOAD` | False | True | Same |
+| `REF_PARAM_OFFLOAD` | False | True | Same |
 
 All parameters can be overridden via environment variables:
 
@@ -103,8 +103,91 @@ bash res-opd/scripts/run_res_opd_default.sh
 per sample, so it keeps about 90%; use `0.30` for a stricter keep-70% variant.
 `OPD_TOKEN_MASK_METRIC=student_teacher_delta` ranks tokens by
 `student_logprob - teacher_logprob`; `loss` ranks by the raw distillation loss.
-Training logs bucket metrics when `OPD_BUCKET_METRICS=True`:
-`support`, `mild_disagree`, `medium_disagree`, and `strong_disagree`.
+Training logs only compact token-mask metrics by default:
+`self_distillation/token_mask_masked_frac_valid` and
+`self_distillation/token_mask_masked_tokens`. This keeps the legacy hard-mask
+path usable without flooding SwanLab. Set `OPD_SELECTIVE_METRICS_VERBOSE=True`
+to restore detailed token-mask bucket hit rates for debugging.
+
+For a recall-safer RKL variant, prefer soft token weighting over hard masking:
+
+```bash
+DEGRADATION_MODE=original \
+STUDENT_RATIO=1.0 \
+TEACHER_RATIO=0.75 \
+TEACHER_MODE=frozen \
+ALPHA=1.0 \
+OPD_SELECTIVE_WEIGHT=True \
+OPD_SELECTIVE_WEIGHT_PROTECT=0.5 \
+OPD_SELECTIVE_WEIGHT_UNCLEAR=0.5 \
+OPD_SELECTIVE_WEIGHT_RISK=1.0 \
+OPD_SELECTIVE_WEIGHT_OTHER=1.0 \
+OPD_SELECTIVE_WEIGHT_NORMALIZE=True \
+OPD_BUCKET_METRICS=True \
+bash res-opd/scripts/run_res_opd_default.sh
+```
+
+`OPD_SELECTIVE_WEIGHT=True` applies a soft weight to each token's RKL/JSD loss
+using the `entropy_rkl_bucket` rule:
+
+| Bucket | Rule | Default weight | Purpose |
+| --- | --- | ---: | --- |
+| protect | student entropy <= q40 and raw distill loss <= q40 | 0.5 | Reduce low-res teacher pressure on low-risk tokens |
+| risk | student entropy >= q75 and raw distill loss >= q75 | 1.0 | Keep full raw RKL pressure on high-risk tokens |
+| unclear | student entropy >= q75 and raw distill loss <= q50 | 0.5 | Avoid over-penalizing high-entropy tokens that teacher does not clearly reject |
+| other | all remaining valid tokens | 1.0 | Keep full raw RKL pressure |
+
+The implementation normalizes weights over valid tokens by default, so this is
+not just a smaller global RKL learning rate:
+
+```text
+weighted_loss_t = raw_loss_t * raw_weight_t / mean(raw_weight_valid)
+```
+
+With normalization on, tokens in `risk`/`other` can receive an effective weight
+above 1.0 when many `protect`/`unclear` tokens are downweighted. This is
+intentional: the average distillation strength stays stable while gradients are
+shifted away from low-risk tokens.
+
+This mode automatically enables entropy computation in `run_res_opd.sh`.
+Monitor the compact SwanLab metrics:
+
+- `self_distillation/bucket/support_*`: tokens where low-res teacher assigns at
+  least as much logprob as the high-res student.
+- `self_distillation/bucket/disagree_*`: tokens where the high-res student is
+  more confident than the low-res teacher.
+- `self_distillation/bucket/*_student_entropy_mean` and
+  `self_distillation/bucket/*_teacher_entropy_mean`: whether disagreement is
+  mostly coming from uncertain regions.
+- `self_distillation/bucket/*_delta_mean`: mean
+  `student_logprob - teacher_logprob`; larger positive values mean stronger
+  cross-resolution disagreement.
+
+- `self_distillation/selective_weight_effective_mean` should stay near 1.0 when normalization is on.
+- `self_distillation/selective_weight_raw_mean` shows how much the unnormalized
+  weights would shrink or amplify the average RKL/JSD loss.
+- `self_distillation/selective_weight_weighted_abs_loss_over_raw` shows the
+  global absolute-loss magnitude after selective weighting.
+- `self_distillation/selective_weight_protect_frac`
+- `self_distillation/selective_weight_unclear_frac`
+- `self_distillation/selective_weight_risk_frac`
+- `self_distillation/selective_weight_other_frac`
+- `self_distillation/selective_weight_bucket/<bucket>_effective_weight_mean`
+  confirms the actual post-normalization weight for each bucket.
+- `self_distillation/selective_weight_bucket/<bucket>_raw_abs_loss_share` vs
+  `<bucket>_weighted_abs_loss_share` shows whether gradient mass moved away
+  from `protect/unclear` and stayed on `risk/other`.
+
+Verbose curves are off by default. Use
+`OPD_TRAIN_METRICS_VERBOSE=True` for top-k training metrics and
+`OPD_SELECTIVE_METRICS_VERBOSE=True` for mild/medium/strong disagreement
+thresholds, token-mask bucket hit rates, selective-veto thresholds, and
+selective-weight quantile thresholds.
+
+The intended validation is not only CHAIR/POPE: rerun
+`res-opd/probes/analyze_rkl_mention_reduction.py` and check whether
+`student=support|teacher=support` correct removals decrease while `both_reject`
+removal remains high.
 
 ---
 
