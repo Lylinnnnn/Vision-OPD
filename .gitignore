@@ -6,6 +6,7 @@ res-opd/logs/
 res-opd/traces/
 res-opd/rollouts/
 res-opd/mini_eval_generations/
+res-opd/probes/results/
 
 # Checkpoints
 *.ckpt
@@ -22,6 +23,7 @@ __pycache__/
 *.pyc
 *.pyo
 verl.egg-info/
+.venv-cpu/
 
 # Misc generated files
 =2.0,

@@ -530,21 +530,27 @@ def calc_maj_val(data: list[dict[str, Any]], vote_key: str, val_key: str) -> flo
 
 
 def process_validation_metrics(
-    data_sources: list[str], sample_uids: list[str], infos_dict: dict[str, list[Any]], seed: int = 42
+    data_sources: list[str],
+    sample_uids: list[str],
+    infos_dict: dict[str, list[Any]],
+    seed: int = 42,
+    mode: str = "full",
 ) -> dict[str, dict[str, dict[str, float]]]:
     """
-    Process validation metrics into a structured format with statistical analysis.
+    Process validation metrics into a structured format.
 
     This function organizes validation metrics by data source and prompt, then computes
-    various statistical measures including means, standard deviations, best/worst values,
-    and majority voting results. It also performs bootstrap sampling to estimate statistics
-    for different sample sizes.
+    statistics for each variable. Use ``mode="mean_only"`` for frequent mini-eval
+    logging where one stable SwanLab curve per metric is enough.
 
     Args:
         data_sources: List of data source identifiers for each sample.
         sample_uids: List of sample uids corresponding to each sample.
         infos_dict: Dictionary mapping variable names to lists of values for each sample.
         seed: Random seed for bootstrap sampling. Defaults to 42.
+        mode: "full" keeps the original mean/std/best/worst/maj behavior.
+            "mean_only" logs only "mean@N", where N is the actual number of
+            validation generations per prompt.
 
     Returns:
         A nested dictionary with the structure:
@@ -558,13 +564,7 @@ def process_validation_metrics(
 
         Where metric_name includes:
         - "mean@N": Mean value across N samples
-        - "std@N": Standard deviation across N samples
-        - "best@N/mean": Mean of the best values in bootstrap samples of size N
-        - "best@N/std": Standard deviation of the best values in bootstrap samples
-        - "worst@N/mean": Mean of the worst values in bootstrap samples
-        - "worst@N/std": Standard deviation of the worst values in bootstrap samples
-        - "maj@N/mean": Mean of majority voting results in bootstrap samples (if "pred" exists)
-        - "maj@N/std": Standard deviation of majority voting results (if "pred" exists)
+        - "std@N", "best@N/*", "worst@N/*", and "maj@N/*" only in full mode
 
     Example:
         >>> data_sources = ["source1", "source1", "source2"]
@@ -573,6 +573,10 @@ def process_validation_metrics(
         >>> result = process_validation_metrics(data_sources, sample_uids, infos_dict)
         >>> # result will contain statistics for each data source and variable
     """
+    mode = str(mode or "full").lower()
+    if mode not in {"full", "mean_only"}:
+        raise ValueError(f"Unsupported validation metric mode: {mode}")
+
     # Group metrics by data source, prompt and variable
     data_src2uid2var2vals = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
     for sample_idx, data_source in enumerate(data_sources):
@@ -618,11 +622,11 @@ def process_validation_metrics(
                 if not var_vals or isinstance(var_vals[0], str):
                     continue
 
-                # compute mean and std
+                # compute mean; optional full mode adds std/best/worst/maj curves
                 n_resps = len(var_vals)
                 metric = {f"mean@{n_resps}": float(np_mean(var_vals))}
 
-                if n_resps > 1:
+                if n_resps > 1 and mode == "full":
                     metric[f"std@{n_resps}"] = float(np_std(var_vals))
 
                     # cache ns list

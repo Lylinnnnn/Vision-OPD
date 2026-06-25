@@ -228,6 +228,9 @@ OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-False}"
 OPD_MINI_EVAL_GENERATION_DIR="${OPD_MINI_EVAL_GENERATION_DIR:-${RES_OPD_ROOT}/mini_eval_generations/${EXPERIMENT_NAME}}"
 OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-50}"
 OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-5}"
+VAL_N="${VAL_N:-1}"
+VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-False}"
+VALIDATION_METRIC_MODE="${VALIDATION_METRIC_MODE:-mean_only}"
 export EXPERIMENT="$EXPERIMENT_NAME"
 WATCHER_SCRIPT="${RES_OPD_ROOT}/scripts/ckpt_upload_watcher.sh"
 WATCHER_PID_FILE="${TRAINER_DEFAULT_LOCAL_DIR}/.watcher.pid"
@@ -568,8 +571,9 @@ echo "Batch size:       $TRAIN_BATCH_SIZE"
 echo "OPD metrics:      $OPD_TRAIN_METRICS (entropy curve=$OPD_METRICS_ENTROPY)"
 echo "OPD token trace:  $OPD_TRACE_TOKEN (every ${OPD_TRACE_EVERY_N_STEPS} steps, max ${OPD_TRACE_MAX_SAMPLES}/rank, topk=${OPD_TRACE_TOPK})"
 echo "Trace dir:        $OPD_TRACE_DIR"
-echo "Mini-eval trace:  $OPD_MINI_EVAL_TRACE (test_freq=$TRAINER_TEST_FREQ, max_samples=$DATA_VAL_MAX_SAMPLES)"
+echo "Mini-eval trace:  $OPD_MINI_EVAL_TRACE (test_freq=$TRAINER_TEST_FREQ, max_samples=$DATA_VAL_MAX_SAMPLES, val_n=$VAL_N, do_sample=$VAL_DO_SAMPLE)"
 echo "Mini-eval gen:    $TRAINER_VALIDATION_DATA_DIR"
+echo "Val metric mode:  $VALIDATION_METRIC_MODE"
 echo "Resume mode:      $TRAINER_RESUME_MODE (force fresh=$FORCE_FRESH_START)"
 echo "OSS base:         $OSS_BASE"
 echo "Post-train OSS:   sync=$POST_TRAIN_SYNC_TO_OSS clean_local=$POST_TRAIN_CLEAN_LOCAL"
@@ -688,8 +692,9 @@ set +e
     trainer.resume_mode=$TRAINER_RESUME_MODE \
     +trainer.save_at_epoch_end="${SAVE_AT_EPOCH_END:-True}" \
     +trainer.test_at_epoch_end="${TEST_AT_EPOCH_END:-False}" \
-    actor_rollout_ref.rollout.val_kwargs.n="${VAL_N:-6}" \
-    actor_rollout_ref.rollout.val_kwargs.do_sample=True \
+    actor_rollout_ref.rollout.val_kwargs.n="$VAL_N" \
+    actor_rollout_ref.rollout.val_kwargs.do_sample="$VAL_DO_SAMPLE" \
+    +trainer.validation_metric_mode="$VALIDATION_METRIC_MODE" \
     trainer.max_actor_ckpt_to_keep=$TRAINER_MAX_ACTOR_CKPT_TO_KEEP \
     trainer.total_epochs=$TRAINER_TOTAL_EPOCHS \
     trainer.val_before_train=False \

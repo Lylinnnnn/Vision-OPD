@@ -1730,7 +1730,13 @@ class RayPPOTrainer:
         return self._val_metrics_update(data_sources, sample_uids, reward_extra_infos_dict, sample_turns)
 
     def _val_metrics_update(self, data_sources, sample_uids, reward_extra_infos_dict, sample_turns):
-        data_src2var2metric2val = process_validation_metrics(data_sources, sample_uids, reward_extra_infos_dict)
+        validation_metric_mode = self.config.trainer.get("validation_metric_mode", "full")
+        data_src2var2metric2val = process_validation_metrics(
+            data_sources,
+            sample_uids,
+            reward_extra_infos_dict,
+            mode=validation_metric_mode,
+        )
         metric_dict = {}
         for data_source, var2metric2val in data_src2var2metric2val.items():
             core_var = "acc" if "acc" in var2metric2val else "reward"
