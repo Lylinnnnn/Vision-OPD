@@ -46,6 +46,13 @@ declare -A TASK_BY_VARIANT=(
   ["tr075_rkl_sw075"]="tr075_sw075"
 )
 
+declare -A COMPARISON_JSON_BY_VARIANT=(
+  ["tr10_rkl"]="${RES_OPD_ROOT}/probes/results/same_image_rkl_signal/eval_compare_base_vs_tr10_rkl/eval_result_object_comparison.json"
+  ["tr075_rkl"]="${RES_OPD_ROOT}/probes/results/targeted_pope_base_vs_tr075_rkl/eval_result_object_comparison.json"
+  ["tr075_rkl_sw"]="${RES_OPD_ROOT}/probes/results/targeted_pope_base_vs_tr075_rkl_sw/eval_result_object_comparison.json"
+  ["tr075_rkl_sw075"]="${RES_OPD_ROOT}/probes/results/targeted_pope_base_vs_tr075_rkl_sw075/eval_result_object_comparison.json"
+)
+
 IFS=',' read -r -a variants <<< "$TARGETED_VARIANTS"
 
 echo "=== Targeted POPE variant batch ==="
@@ -80,10 +87,20 @@ for raw_variant in "${variants[@]}"; do
   echo "OTHER_CKPT_EXP=$exp"
   echo "BASE_VLLM_PORT=$base_port OTHER_VLLM_PORT=$other_port"
 
+  comparison_json="${COMPARISON_JSON_BY_VARIANT[$variant]:-}"
+  if [[ -z "$comparison_json" || ! -f "$comparison_json" ]]; then
+    echo "ERROR: no comparison JSON for variant '$variant'" >&2
+    echo "Expected: ${comparison_json:-<not mapped>}" >&2
+    exit 1
+  fi
+
+  echo "COMPARISON_JSON=$comparison_json"
+
   OTHER_RUN_NAME="$variant" \
   OTHER_TASK="$task" \
   OTHER_CKPT_EXP="$exp" \
   OTHER_STEP="$TARGETED_STEP" \
+  COMPARISON_JSON="$comparison_json" \
   BASE_VLLM_PORT="$base_port" \
   OTHER_VLLM_PORT="$other_port" \
   TARGETED_TASKS="$TARGETED_TASKS" \
