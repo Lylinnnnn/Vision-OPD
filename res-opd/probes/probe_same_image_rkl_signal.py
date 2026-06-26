@@ -183,6 +183,23 @@ def parse_args():
         action="store_true",
         help="Skip model scoring and summarize an existing --output-jsonl.",
     )
+    parser.add_argument(
+        "--score-only",
+        action="store_true",
+        help="Run scoring only and skip object-level summary generation.",
+    )
+    parser.add_argument(
+        "--num-shards",
+        type=int,
+        default=1,
+        help="Total number of data shards for embarrassingly parallel scoring.",
+    )
+    parser.add_argument(
+        "--shard-index",
+        type=int,
+        default=0,
+        help="Shard index to score, in [0, num_shards).",
+    )
     parser.add_argument("--max-samples", type=int, default=0)
     parser.add_argument("--max-model-len", type=int, default=9728)
     parser.add_argument("--torch-dtype", choices=["bfloat16", "float16", "float32"], default="bfloat16")
@@ -285,6 +302,10 @@ def validate_args(args):
         args.teacher_model_path = args.student_model_path
     if args.kl_chunk_size <= 0:
         raise SystemExit("--kl-chunk-size must be positive.")
+    if args.num_shards <= 0:
+        raise SystemExit("--num-shards must be positive.")
+    if args.shard_index < 0 or args.shard_index >= args.num_shards:
+        raise SystemExit("--shard-index must satisfy 0 <= shard_index < num_shards.")
 
 
 def checkpoint_has_weights(local_path):
@@ -853,6 +874,14 @@ def existing_done_keys(path):
     return keys
 
 
+def record_caption_source(args, record):
+    return args.caption_source_label or record.get("caption_source") or "model_caption"
+
+
+def record_done_key(args, record):
+    return (as_int(record.get("image_id")), record_caption_source(args, record))
+
+
 def load_models_for_mode(args):
     student_model, student_processor, student_device = load_model_and_processor(
         args.student_model_path, args.torch_dtype
@@ -871,9 +900,37 @@ def run_scoring(args, output_jsonl):
         normalize_generation_record(record, test_index, args.caption_field)
         for record in load_jsonl(args.eval_results)
     ]
+    if args.max_samples:
+        records = records[:args.max_samples]
+    if args.num_shards > 1:
+        records = [
+            record
+            for idx, record in enumerate(records)
+            if idx % args.num_shards == args.shard_index
+        ]
     if args.overwrite and os.path.exists(output_jsonl):
         os.remove(output_jsonl)
     done_keys = existing_done_keys(output_jsonl)
+    pending_records = []
+    skipped = 0
+    for record in records:
+        caption = record.get("generated_caption") or ""
+        if not caption or str(caption).startswith("[ERROR]"):
+            skipped += 1
+            continue
+        if record_done_key(args, record) in done_keys:
+            skipped += 1
+            continue
+        pending_records.append(record)
+
+    print(
+        f"Shard {args.shard_index}/{args.num_shards}: "
+        f"records={len(records)} pending={len(pending_records)} skipped={skipped} "
+        f"output={output_jsonl}"
+    )
+    if not pending_records:
+        print("No pending records for this shard; skipping model load.")
+        return
 
     (
         student_model,
@@ -887,18 +944,12 @@ def run_scoring(args, output_jsonl):
     os.makedirs(os.path.dirname(os.path.abspath(output_jsonl)), exist_ok=True)
     started = time.time()
     written = 0
-    skipped = 0
     failures = 0
     with open(output_jsonl, "a", encoding="utf-8") as f:
-        for idx, record in enumerate(records):
-            if args.max_samples and idx >= args.max_samples:
-                break
+        for record in pending_records:
             caption = record.get("generated_caption") or ""
-            if not caption or str(caption).startswith("[ERROR]"):
-                skipped += 1
-                continue
-            caption_source = args.caption_source_label or record.get("caption_source") or "model_caption"
-            key = (as_int(record.get("image_id")), caption_source)
+            caption_source = record_caption_source(args, record)
+            key = record_done_key(args, record)
             if key in done_keys:
                 skipped += 1
                 continue
@@ -1238,6 +1289,8 @@ def main():
     try:
         if not args.analyze_only:
             run_scoring(args, output_jsonl)
+        if args.score_only:
+            return
         if not os.path.exists(output_jsonl):
             raise SystemExit(f"Trace JSONL does not exist: {output_jsonl}")
 
@@ -1257,6 +1310,8 @@ def main():
             "target_px": args.target_px,
             "topk": args.topk,
             "kl_chunk_size": args.kl_chunk_size,
+            "num_shards": args.num_shards,
+            "shard_index": args.shard_index,
         }
         os.makedirs(os.path.dirname(os.path.abspath(summary_json)), exist_ok=True)
         with open(summary_json, "w", encoding="utf-8") as f:

@@ -10,6 +10,8 @@
 #   BASE_MODEL, BASE_SR10, BASE_SR075_DIR
 #   OSS_BASE, TR10_CKPT_EXP, TR10_STEP, TR10_EVAL_EXP, TR10_EVAL, TR10_LOCAL
 #   PYTHON_BIN, MAX_SAMPLES, KL_CHUNK_SIZE, TOPK, TORCH_DTYPE
+#   PARALLEL_PROBES=True|False, GPU_IDS=0,1,2,3,4,5,6,7, NUM_SHARDS=8
+#   OVERWRITE=True|False, PROBE_OUTPUT_ROOT
 #   RUN_BASE_SR075_EVAL=True|False|auto
 #   RUN_DUPLICATE_SR075=True|False
 #   RUN_TR10=True|False
@@ -69,6 +71,49 @@ truthy() {
   esac
 }
 
+checkpoint_has_weights() {
+  local path="$1"
+  [[ -d "$path" ]] || return 1
+  find "$path" -type f \( -name '*.safetensors' -o -name '*.bin' -o -name '*.pt' -o -name '*.pth' \) -print -quit | grep -q .
+}
+
+download_checkpoint_from_oss() {
+  local oss_path="$1"
+  local local_path="$2"
+  if checkpoint_has_weights "$local_path"; then
+    echo "[OSS] Checkpoint already exists at ${local_path}; reusing it."
+    return 1
+  fi
+  if ! command -v ossutil >/dev/null 2>&1; then
+    echo "ERROR: ossutil is required to download ${oss_path}" >&2
+    exit 1
+  fi
+  echo "[OSS] Downloading checkpoint: ${oss_path} -> ${local_path}"
+  mkdir -p "$local_path"
+  ossutil cp -r "${oss_path%/}/" "${local_path%/}/" -f
+  if ! checkpoint_has_weights "$local_path"; then
+    echo "ERROR: downloaded checkpoint has no weights: ${local_path}" >&2
+    exit 1
+  fi
+  return 0
+}
+
+infer_gpu_ids() {
+  if [[ -n "${GPU_IDS:-}" ]]; then
+    echo "$GPU_IDS"
+    return
+  fi
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    local ids
+    ids="$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | paste -sd, - || true)"
+    if [[ -n "$ids" ]]; then
+      echo "$ids"
+      return
+    fi
+  fi
+  echo "0"
+}
+
 # Same OSS naming convention as res-opd/scripts/eval_batch_from_oss.sh expects
 # and res-opd/scripts/ckpt_upload_watcher.sh writes:
 #   Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr1.0-a1.0-frozen-rkl-full5k-e1
@@ -111,15 +156,26 @@ KL_CHUNK_SIZE="${KL_CHUNK_SIZE:-16}"
 TOPK="${TOPK:-20}"
 TORCH_DTYPE="${TORCH_DTYPE:-bfloat16}"
 CLEANUP_AFTER="${CLEANUP_AFTER:-True}"
+OVERWRITE="${OVERWRITE:-False}"
+PARALLEL_PROBES="${PARALLEL_PROBES:-True}"
+GPU_IDS="$(infer_gpu_ids)"
+IFS=',' read -r -a GPU_LIST <<< "$GPU_IDS"
+NUM_GPUS="${#GPU_LIST[@]}"
+if [[ "$NUM_GPUS" -le 0 ]]; then
+  echo "ERROR: no GPUs available in GPU_IDS=${GPU_IDS}" >&2
+  exit 1
+fi
+NUM_SHARDS="${NUM_SHARDS:-$NUM_GPUS}"
+PROBE_OUTPUT_ROOT="${PROBE_OUTPUT_ROOT:-${RES_OPD_ROOT}/probes/results/same_image_rkl_signal}"
 RUN_BASE_SR075_EVAL="${RUN_BASE_SR075_EVAL:-auto}"
 RUN_DUPLICATE_SR075="${RUN_DUPLICATE_SR075:-True}"
 RUN_TR10="${RUN_TR10:-True}"
 
 mkdir -p "${RES_OPD_ROOT}/logs" "${RES_OPD_ROOT}/tmp_checkpoints"
 
-cleanup_arg=()
-if truthy "$CLEANUP_AFTER"; then
-  cleanup_arg=(--cleanup-after)
+overwrite_arg=()
+if truthy "$OVERWRITE"; then
+  overwrite_arg=(--overwrite)
 fi
 
 common_probe_args=(
@@ -129,8 +185,102 @@ common_probe_args=(
   --kl-chunk-size "$KL_CHUNK_SIZE"
   --topk "$TOPK"
   --torch-dtype "$TORCH_DTYPE"
-  --overwrite
+  "${overwrite_arg[@]}"
 )
+
+run_probe() {
+  local label="$1"
+  shift
+  local output_dir="${PROBE_OUTPUT_ROOT}/${label}"
+  local shard_dir="${output_dir}/shards"
+  local output_jsonl="${output_dir}/pair_kl_trace.jsonl"
+  local summary_json="${output_dir}/pair_kl_object_summary.json"
+  local summary_md="${output_dir}/pair_kl_object_summary.md"
+  local complete_marker="${output_dir}/.complete"
+  local probe_args=("$@")
+
+  mkdir -p "$output_dir" "$shard_dir"
+
+  if ! truthy "$OVERWRITE" \
+    && [[ -f "$complete_marker" ]] \
+    && [[ -s "$output_jsonl" ]] \
+    && [[ -f "$summary_json" ]] \
+    && [[ -f "$summary_md" ]]; then
+    echo "Reusing complete probe output: ${output_dir}"
+    return
+  fi
+
+  if truthy "$OVERWRITE"; then
+    rm -f "$output_jsonl" "$summary_json" "$summary_md" "$complete_marker"
+    rm -f "${shard_dir}"/pair_kl_trace.shard_*.jsonl "${shard_dir}"/shard_*.log 2>/dev/null || true
+  fi
+
+  echo "Probe output: ${output_dir}"
+  if truthy "$PARALLEL_PROBES"; then
+    echo "Running ${label} with ${NUM_SHARDS} shards on GPUs: ${GPU_IDS}"
+    local pids=()
+    local shard_logs=()
+    local shard
+    for ((shard = 0; shard < NUM_SHARDS; shard++)); do
+      local gpu="${GPU_LIST[$((shard % NUM_GPUS))]}"
+      local shard_jsonl="${shard_dir}/pair_kl_trace.shard_${shard}_of_${NUM_SHARDS}.jsonl"
+      local shard_log="${shard_dir}/shard_${shard}_gpu_${gpu}.log"
+      shard_logs+=("$shard_log")
+      (
+        export CUDA_VISIBLE_DEVICES="$gpu"
+        "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/probe_same_image_rkl_signal.py" \
+          "${probe_args[@]}" \
+          "${common_probe_args[@]}" \
+          --num-shards "$NUM_SHARDS" \
+          --shard-index "$shard" \
+          --output-jsonl "$shard_jsonl" \
+          --summary-json "${shard_dir}/summary.shard_${shard}.json" \
+          --summary-md "${shard_dir}/summary.shard_${shard}.md" \
+          --score-only
+      ) > "$shard_log" 2>&1 &
+      pids+=("$!")
+      echo "  shard ${shard}/${NUM_SHARDS} -> GPU ${gpu}, log=${shard_log}"
+    done
+
+    local failed=0
+    local idx
+    for idx in "${!pids[@]}"; do
+      if ! wait "${pids[$idx]}"; then
+        echo "ERROR: shard ${idx} failed. Last log lines:" >&2
+        tail -n 80 "${shard_logs[$idx]}" >&2 || true
+        failed=1
+      fi
+    done
+    if [[ "$failed" -ne 0 ]]; then
+      exit 1
+    fi
+
+    : > "$output_jsonl"
+    for ((shard = 0; shard < NUM_SHARDS; shard++)); do
+      local shard_jsonl="${shard_dir}/pair_kl_trace.shard_${shard}_of_${NUM_SHARDS}.jsonl"
+      if [[ -f "$shard_jsonl" ]]; then
+        cat "$shard_jsonl" >> "$output_jsonl"
+      fi
+    done
+
+    "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/probe_same_image_rkl_signal.py" \
+      "${probe_args[@]}" \
+      "${common_probe_args[@]}" \
+      --output-jsonl "$output_jsonl" \
+      --summary-json "$summary_json" \
+      --summary-md "$summary_md" \
+      --analyze-only
+  else
+    "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/probe_same_image_rkl_signal.py" \
+      "${probe_args[@]}" \
+      "${common_probe_args[@]}" \
+      --output-jsonl "$output_jsonl" \
+      --summary-json "$summary_json" \
+      --summary-md "$summary_md"
+  fi
+
+  date > "$complete_marker"
+}
 
 echo "=== Same-image KL probe config ==="
 echo "VISION_OPD_ROOT=$VISION_OPD_ROOT"
@@ -149,6 +299,8 @@ echo "TR10_EVAL=$TR10_EVAL"
 echo "TR10_LOCAL=$TR10_LOCAL"
 echo "TR10_OSS=$TR10_OSS"
 echo "MAX_SAMPLES=$MAX_SAMPLES KL_CHUNK_SIZE=$KL_CHUNK_SIZE TOPK=$TOPK"
+echo "OVERWRITE=$OVERWRITE PARALLEL_PROBES=$PARALLEL_PROBES GPU_IDS=$GPU_IDS NUM_SHARDS=$NUM_SHARDS"
+echo "PROBE_OUTPUT_ROOT=$PROBE_OUTPUT_ROOT"
 echo
 
 echo "[0/4] Ensure base sr0.75 eval_results exists"
@@ -175,26 +327,24 @@ fi
 
 echo
 echo "[1/4] duplicate_base on original captions, original image twice"
-"$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/probe_same_image_rkl_signal.py" \
+run_probe "duplicate_base_base_sr10_original_twice" \
   --pair-mode duplicate_base \
   --model-path "$BASE_MODEL" \
   --eval-results "$BASE_SR10" \
   --student-ratio 1.0 \
   --teacher-ratio 1.0 \
-  --caption-source-label base_sr10_caption \
-  "${common_probe_args[@]}"
+  --caption-source-label base_sr10_caption
 
 if truthy "$RUN_DUPLICATE_SR075"; then
   echo
   echo "[2/4] duplicate_base on sr0.75 captions, degraded image twice"
-  "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/probe_same_image_rkl_signal.py" \
+  run_probe "duplicate_base_base_sr075_lowres_twice" \
     --pair-mode duplicate_base \
     --model-path "$BASE_MODEL" \
     --eval-results "$BASE_SR075" \
     --student-ratio 0.75 \
     --teacher-ratio 0.75 \
-    --caption-source-label base_sr075_caption \
-    "${common_probe_args[@]}"
+    --caption-source-label base_sr075_caption
 else
   echo
   echo "[2/4] Skipping duplicate_base sr0.75 captions"
@@ -202,14 +352,13 @@ fi
 
 echo
 echo "[3/4] dual_view_same_model, base original captions, full vs lowres 0.75"
-"$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/probe_same_image_rkl_signal.py" \
+run_probe "dual_view_base_sr10_full_vs_lowres075" \
   --pair-mode dual_view_same_model \
   --model-path "$BASE_MODEL" \
   --eval-results "$BASE_SR10" \
   --student-ratio 1.0 \
   --teacher-ratio 0.75 \
-  --caption-source-label base_sr10_caption \
-  "${common_probe_args[@]}"
+  --caption-source-label base_sr10_caption
 
 if truthy "$RUN_TR10"; then
   if [[ ! -f "$TR10_EVAL" ]]; then
@@ -217,19 +366,30 @@ if truthy "$RUN_TR10"; then
     exit 1
   fi
 
+  tr10_downloaded=False
+  if download_checkpoint_from_oss "$TR10_OSS" "$TR10_LOCAL"; then
+    tr10_downloaded=True
+  fi
+
   echo
   echo "[4/4] dual_model_same_image, tr1.0 RKL student vs frozen base teacher"
-  "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/probe_same_image_rkl_signal.py" \
+  run_probe "dual_model_tr10_rkl_vs_base_original" \
     --pair-mode dual_model_same_image \
     --student-model-path "$TR10_LOCAL" \
-    --student-oss-checkpoint "$TR10_OSS" \
     --teacher-model-path "$BASE_MODEL" \
     --eval-results "$TR10_EVAL" \
     --student-ratio 1.0 \
     --teacher-ratio 1.0 \
-    --caption-source-label tr10_rkl_caption \
-    "${cleanup_arg[@]}" \
-    "${common_probe_args[@]}"
+    --caption-source-label tr10_rkl_caption
+
+  if truthy "$CLEANUP_AFTER" && truthy "$tr10_downloaded"; then
+    echo "[Cleanup] Removing checkpoint downloaded by this launcher: $TR10_LOCAL"
+    rm -rf "$TR10_LOCAL"
+    tr10_parent="$(dirname "$TR10_LOCAL")"
+    if [[ -d "$tr10_parent" ]] && [[ -z "$(ls -A "$tr10_parent" 2>/dev/null)" ]]; then
+      rmdir "$tr10_parent" 2>/dev/null || true
+    fi
+  fi
 else
   echo
   echo "[4/4] Skipping tr1.0 dual-model probe"
