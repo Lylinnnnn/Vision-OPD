@@ -127,6 +127,41 @@ download_checkpoint_from_oss() {
   return 0
 }
 
+verify_oss_checkpoint() {
+  local oss_path="$1"
+  if ! command -v ossutil >/dev/null 2>&1; then
+    echo "ERROR: ossutil is required to verify ${oss_path}" >&2
+    return 1
+  fi
+  if ossutil stat "${oss_path%/}/model.safetensors" >/dev/null 2>&1; then
+    return 0
+  fi
+  if ossutil ls "${oss_path%/}/" 2>/dev/null | grep -E '\.(safetensors|bin|pt|pth)$' >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "ERROR: OSS checkpoint weights not found under ${oss_path}" >&2
+  return 1
+}
+
+cleanup_checkpoint_after_use() {
+  local local_path="$1"
+  local oss_path="$2"
+  if [[ ! -d "$local_path" ]]; then
+    return 0
+  fi
+  if ! verify_oss_checkpoint "$oss_path"; then
+    echo "[Cleanup] Keeping local checkpoint because OSS verification failed: $local_path" >&2
+    return 1
+  fi
+  echo "[Cleanup] OSS backup verified; removing local checkpoint: $local_path"
+  rm -rf "$local_path"
+  local parent_dir
+  parent_dir="$(dirname "$local_path")"
+  if [[ -d "$parent_dir" ]] && [[ -z "$(ls -A "$parent_dir" 2>/dev/null)" ]]; then
+    rmdir "$parent_dir" 2>/dev/null || true
+  fi
+}
+
 get_oss_name() {
   local ckpt_dir_name="$1"
   local suffix
@@ -185,12 +220,16 @@ TARGETED_TASKS="${TARGETED_TASKS:-all}"
 SKIP_COMPLETED="${SKIP_COMPLETED:-True}"
 FORCE_TARGETED="${FORCE_TARGETED:-False}"
 ALLOW_PARTIAL_SUMMARY="${ALLOW_PARTIAL_SUMMARY:-False}"
+SEED_BASE_ANSWERS="${SEED_BASE_ANSWERS:-True}"
+BASE_ANSWER_CACHE_GLOB="${BASE_ANSWER_CACHE_GLOB:-${RES_OPD_ROOT}/probes/results/targeted_pope_base_vs_*/base_answers.jsonl}"
 CLEANUP_AFTER="${CLEANUP_AFTER:-False}"
 
 mkdir -p "${RES_OPD_ROOT}/logs" "$OUTPUT_DIR"
 
 VLLM_PID=""
 CURRENT_VLLM_PORT=""
+other_ckpt_used=False
+checkpoint_cleanup_done=False
 wait_port_released() {
   local port="$1"
   local max_wait="${2:-60}"
@@ -219,7 +258,19 @@ cleanup_vllm_server() {
   VLLM_PID=""
   CURRENT_VLLM_PORT=""
 }
-trap cleanup_vllm_server EXIT
+
+cleanup_other_checkpoint_if_needed() {
+  if truthy "$CLEANUP_AFTER" && truthy "${other_ckpt_used:-False}" && ! truthy "${checkpoint_cleanup_done:-False}"; then
+    checkpoint_cleanup_done=True
+    cleanup_checkpoint_after_use "$OTHER_LOCAL" "$OTHER_OSS" || true
+  fi
+}
+
+cleanup_on_exit() {
+  cleanup_vllm_server
+  cleanup_other_checkpoint_if_needed
+}
+trap cleanup_on_exit EXIT
 
 start_vllm_server() {
   local model_path="$1"
@@ -386,10 +437,96 @@ maybe_build_comparison() {
     --output-md "$COMPARISON_MD"
 }
 
+seed_base_answers_from_cache() {
+  if ! truthy "$SEED_BASE_ANSWERS"; then
+    return 0
+  fi
+  "$PYTHON_BIN" - "$samples_path" "$base_answers" "$BASE_ANSWER_CACHE_GLOB" <<'PY'
+import glob
+import json
+import os
+import sys
+
+samples_path, dest_path, cache_glob = sys.argv[1:4]
+
+def load_jsonl(path):
+    rows = []
+    if not path or not os.path.exists(path):
+        return rows
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    return rows
+
+def good_base_row(row):
+    text = str(row.get("model_answer", "")).strip()
+    if not text or text.startswith("[ERROR]"):
+        return False
+    run_name = str(row.get("run_name", "")).strip()
+    model_name = str(row.get("model_name", "")).strip()
+    return run_name in {"", "base"} or model_name == "Qwen3VL-2B-Instruct"
+
+sample_uids = {
+    row.get("sample_uid")
+    for row in load_jsonl(samples_path)
+    if row.get("sample_uid")
+}
+if not sample_uids:
+    print("[BaseCache] No samples available; skip cache seeding.")
+    sys.exit(0)
+
+dest_abs = os.path.abspath(dest_path)
+dest_rows = load_jsonl(dest_path)
+existing = {
+    row.get("sample_uid")
+    for row in dest_rows
+    if row.get("sample_uid") and good_base_row(row)
+}
+missing = sample_uids - existing
+if not missing:
+    print(f"[BaseCache] Current base answers already cover all {len(sample_uids)} samples.")
+    sys.exit(0)
+
+patterns = [part.strip() for part in cache_glob.split(",") if part.strip()]
+cache_paths = []
+for pattern in patterns:
+    cache_paths.extend(glob.glob(pattern))
+cache_paths = sorted({os.path.abspath(path) for path in cache_paths if os.path.abspath(path) != dest_abs})
+
+added = []
+seen_added = set()
+for path in cache_paths:
+    for row in load_jsonl(path):
+        uid = row.get("sample_uid")
+        if uid in missing and uid not in seen_added and good_base_row(row):
+            added.append(row)
+            seen_added.add(uid)
+    missing -= seen_added
+    if not missing:
+        break
+
+if added:
+    os.makedirs(os.path.dirname(dest_abs), exist_ok=True)
+    with open(dest_abs, "a", encoding="utf-8") as f:
+        for row in added:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+print(
+    f"[BaseCache] files={len(cache_paths)} seeded={len(added)} "
+    f"still_missing={len(sample_uids - existing - seen_added)} dest={dest_path}"
+)
+PY
+}
+
 samples_path="$SAMPLES_JSONL"
 base_answers="${OUTPUT_DIR}/base_answers.jsonl"
 other_answers="${OUTPUT_DIR}/${OTHER_RUN_NAME}_answers.jsonl"
-other_downloaded=False
 
 common_args=(
   --comparison-json "$COMPARISON_JSON"
@@ -422,6 +559,9 @@ echo "SAMPLES_JSONL=$samples_path"
 echo "TEST_JSON=$TEST_JSON"
 echo "TARGETED_BUCKETS=$TARGETED_BUCKETS MAX_PER_BUCKET=$MAX_PER_BUCKET"
 echo "TARGETED_TASKS=$TARGETED_TASKS SKIP_COMPLETED=$SKIP_COMPLETED FORCE_TARGETED=$FORCE_TARGETED"
+echo "SEED_BASE_ANSWERS=$SEED_BASE_ANSWERS"
+echo "BASE_ANSWER_CACHE_GLOB=$BASE_ANSWER_CACHE_GLOB"
+echo "CLEANUP_AFTER=$CLEANUP_AFTER"
 echo "VLLM_GPU_IDS=$VLLM_GPU_IDS VLLM_TENSOR_PARALLEL_SIZE=$VLLM_TENSOR_PARALLEL_SIZE"
 echo "BASE_VLLM_PORT=$BASE_VLLM_PORT OTHER_VLLM_PORT=$OTHER_VLLM_PORT"
 echo
@@ -436,6 +576,8 @@ if task_enabled build || [[ ! -s "$samples_path" ]]; then
 else
   echo "[0/3] Reusing targeted POPE samples: $samples_path"
 fi
+
+seed_base_answers_from_cache
 
 if task_enabled base; then
   echo
@@ -467,8 +609,9 @@ if task_enabled other; then
     :
   else
     if download_checkpoint_from_oss "$OTHER_OSS" "$OTHER_LOCAL"; then
-      other_downloaded=True
+      :
     fi
+    other_ckpt_used=True
     start_vllm_server "$OTHER_LOCAL" "$OTHER_EVAL_EXP" "${RES_OPD_ROOT}/logs/vllm_targeted_pope_${OTHER_RUN_NAME}.log" "$OTHER_VLLM_PORT"
     "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/targeted_pope_from_eval_compare.py" \
       "${common_args[@]}" \
@@ -504,10 +647,7 @@ else
   echo "[3/3] Skipping summary because TARGETED_TASKS=$TARGETED_TASKS"
 fi
 
-if truthy "$CLEANUP_AFTER" && truthy "$other_downloaded"; then
-  echo "[Cleanup] Removing checkpoint downloaded by this launcher: $OTHER_LOCAL"
-  rm -rf "$OTHER_LOCAL"
-fi
+cleanup_other_checkpoint_if_needed
 
 echo
 echo "Targeted POPE finished:"
