@@ -109,6 +109,27 @@ for raw_variant in "${variants[@]}"; do
   BASE_ANSWER_CACHE_GLOB="$BASE_ANSWER_CACHE_GLOB" \
     bash "${RES_OPD_ROOT}/probes/run_targeted_pope_from_eval_compare.sh"
 
+  # Wait for GPU memory to be fully released before starting next variant
+  if [[ $((idx + 1)) -lt ${#variants[@]} ]]; then
+    echo
+    echo "[Cooldown] Waiting for GPU memory release..."
+    for wait_i in $(seq 1 30); do
+      sleep 5
+      # Check if any vLLM process is still running on our GPUs
+      if ! pgrep -f "vllm.entrypoints.openai.api_server" >/dev/null 2>&1; then
+        # Also verify GPU memory is actually free
+        gpu_used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | awk '{s+=$1} END {print s+0}')
+        if [[ "$gpu_used" -lt 1000 ]]; then
+          echo "[Cooldown] GPUs clear after $((wait_i * 5))s (used=${gpu_used}MB)"
+          break
+        fi
+      fi
+      if [[ $wait_i -eq 30 ]]; then
+        echo "[Cooldown] WARNING: GPUs may still be busy after 150s, proceeding anyway"
+      fi
+    done
+  fi
+
   idx=$((idx + 1))
 done
 
