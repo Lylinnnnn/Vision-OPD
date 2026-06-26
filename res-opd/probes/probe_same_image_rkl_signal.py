@@ -900,6 +900,8 @@ def run_scoring(args, output_jsonl):
         normalize_generation_record(record, test_index, args.caption_field)
         for record in load_jsonl(args.eval_results)
     ]
+    if not records:
+        raise SystemExit(f"No records loaded from --eval-results: {args.eval_results}")
     if args.max_samples:
         records = records[:args.max_samples]
     if args.num_shards > 1:

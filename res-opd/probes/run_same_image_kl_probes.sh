@@ -262,6 +262,13 @@ run_probe() {
         cat "$shard_jsonl" >> "$output_jsonl"
       fi
     done
+    local merged_records
+    merged_records="$(wc -l < "$output_jsonl" | tr -d '[:space:]')"
+    if [[ "${merged_records:-0}" -eq 0 ]]; then
+      echo "ERROR: merged trace is empty for ${label}: ${output_jsonl}" >&2
+      echo "Check eval_results input and shard logs under ${shard_dir}" >&2
+      exit 1
+    fi
 
     "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/probe_same_image_rkl_signal.py" \
       "${probe_args[@]}" \
