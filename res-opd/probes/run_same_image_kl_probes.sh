@@ -16,6 +16,7 @@
 #   RUN_DUPLICATE_SR075=True|False
 #   RUN_TR10=True|False
 #   RUN_TR10_BASE_CAPTIONS=True|False
+#   RUN_EVAL_COMPARE=True|False
 #   CLEANUP_AFTER=True|False
 
 set -euo pipefail
@@ -172,6 +173,7 @@ RUN_BASE_SR075_EVAL="${RUN_BASE_SR075_EVAL:-auto}"
 RUN_DUPLICATE_SR075="${RUN_DUPLICATE_SR075:-True}"
 RUN_TR10="${RUN_TR10:-True}"
 RUN_TR10_BASE_CAPTIONS="${RUN_TR10_BASE_CAPTIONS:-True}"
+RUN_EVAL_COMPARE="${RUN_EVAL_COMPARE:-True}"
 
 mkdir -p "${RES_OPD_ROOT}/logs" "${RES_OPD_ROOT}/tmp_checkpoints"
 
@@ -311,6 +313,7 @@ echo "MAX_SAMPLES=$MAX_SAMPLES KL_CHUNK_SIZE=$KL_CHUNK_SIZE TOPK=$TOPK"
 echo "OVERWRITE=$OVERWRITE PARALLEL_PROBES=$PARALLEL_PROBES GPU_IDS=$GPU_IDS NUM_SHARDS=$NUM_SHARDS"
 echo "PROBE_OUTPUT_ROOT=$PROBE_OUTPUT_ROOT"
 echo "RUN_TR10_BASE_CAPTIONS=$RUN_TR10_BASE_CAPTIONS"
+echo "RUN_EVAL_COMPARE=$RUN_EVAL_COMPARE"
 echo
 
 echo "[0/5] Ensure base sr0.75 eval_results exists"
@@ -419,6 +422,32 @@ if truthy "$RUN_TR10"; then
 else
   echo
   echo "[4-5/5] Skipping tr1.0 dual-model probes"
+fi
+
+if truthy "$RUN_EVAL_COMPARE"; then
+  echo
+  echo "[extra] Compare base eval result vs tr1.0 RKL eval result"
+  if [[ ! -f "$BASE_SR10" ]]; then
+    echo "ERROR: base eval_results missing: $BASE_SR10" >&2
+    exit 1
+  fi
+  if [[ ! -f "$TR10_EVAL" ]]; then
+    echo "ERROR: tr1.0 eval_results missing: $TR10_EVAL" >&2
+    exit 1
+  fi
+  compare_dir="${PROBE_OUTPUT_ROOT}/eval_compare_base_vs_tr10_rkl"
+  mkdir -p "$compare_dir"
+  "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/compare_eval_result_objects.py" \
+    --base-results "$BASE_SR10" \
+    --other-results "$TR10_EVAL" \
+    --base-name base_sr1.0 \
+    --other-name tr1.0_rkl \
+    --test-json "${RES_OPD_ROOT}/data/test_1000.json" \
+    --output-json "${compare_dir}/eval_result_object_comparison.json" \
+    --output-md "${compare_dir}/eval_result_object_comparison.md"
+else
+  echo
+  echo "[extra] Skipping eval result comparison"
 fi
 
 echo
