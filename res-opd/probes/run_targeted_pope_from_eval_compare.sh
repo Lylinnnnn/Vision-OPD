@@ -5,6 +5,10 @@
 #
 #   tmux new-session -d -s targeted_pope_tr10 \
 #     "GPU_IDS=0,1,2,3,4,5,6,7 bash res-opd/probes/run_targeted_pope_from_eval_compare.sh 2>&1 | tee res-opd/logs/targeted_pope_tr10.log"
+#
+# Resume only tr1.0 RKL and summary after base is complete:
+#
+#   TARGETED_TASKS=tr10,summary bash res-opd/probes/run_targeted_pope_from_eval_compare.sh
 
 set -euo pipefail
 
@@ -54,6 +58,24 @@ truthy() {
     True|true|TRUE|1|yes|YES|y|Y) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+task_enabled() {
+  local task="$1"
+  local requested="${TARGETED_TASKS:-all}"
+  if [[ "$requested" == "all" || "$requested" == "ALL" ]]; then
+    return 0
+  fi
+  local -a _targeted_tasks
+  IFS=',' read -r -a _targeted_tasks <<< "$requested"
+  local item
+  for item in "${_targeted_tasks[@]}"; do
+    item="${item//[[:space:]]/}"
+    if [[ "$item" == "$task" ]]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 infer_gpu_ids() {
@@ -125,6 +147,7 @@ TR10_OSS="${TR10_OSS:-${OSS_BASE%/}/${TR10_OSS_NAME}/${TR10_STEP}}"
 
 COMPARISON_JSON="${COMPARISON_JSON:-${RES_OPD_ROOT}/probes/results/same_image_kl_probe_results/6_eval_compare_base_vs_tr10_rkl.json}"
 OUTPUT_DIR="${OUTPUT_DIR:-${RES_OPD_ROOT}/probes/results/targeted_pope_base_vs_tr10_rkl}"
+SAMPLES_JSONL="${SAMPLES_JSONL:-${OUTPUT_DIR}/targeted_pope_samples.jsonl}"
 TEST_JSON="${TEST_JSON:-${RES_OPD_ROOT}/data/test_1000.json}"
 TARGETED_BUCKETS="${TARGETED_BUCKETS:-removed_hallucinated,added_hallucinated,removed_correct,added_correct}"
 MAX_PER_BUCKET="${MAX_PER_BUCKET:-0}"
@@ -137,24 +160,50 @@ if [[ "$VLLM_NUM_GPUS" -le 0 ]]; then
   VLLM_NUM_GPUS=1
 fi
 VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-$VLLM_NUM_GPUS}"
-VLLM_PORT="${VLLM_PORT:-8027}"
+BASE_VLLM_PORT="${BASE_VLLM_PORT:-${VLLM_BASE_PORT:-${VLLM_PORT:-8027}}}"
+TR10_VLLM_PORT="${TR10_VLLM_PORT:-$((BASE_VLLM_PORT + 1))}"
 VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.90}"
 VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-9728}"
 VLLM_PARALLEL_WORKERS="${VLLM_PARALLEL_WORKERS:-64}"
 TARGETED_MAX_NEW_TOKENS="${TARGETED_MAX_NEW_TOKENS:-4}"
 TARGETED_SAVE_LOGPROBS="${TARGETED_SAVE_LOGPROBS:-True}"
+TARGETED_TASKS="${TARGETED_TASKS:-all}"
+SKIP_COMPLETED="${SKIP_COMPLETED:-True}"
+FORCE_TARGETED="${FORCE_TARGETED:-False}"
+ALLOW_PARTIAL_SUMMARY="${ALLOW_PARTIAL_SUMMARY:-False}"
 CLEANUP_AFTER="${CLEANUP_AFTER:-False}"
 
 mkdir -p "${RES_OPD_ROOT}/logs" "$OUTPUT_DIR"
 
 VLLM_PID=""
+CURRENT_VLLM_PORT=""
+wait_port_released() {
+  local port="$1"
+  local max_wait="${2:-60}"
+  local i
+  for i in $(seq 1 "$max_wait"); do
+    if ! curl -s "http://localhost:${port}/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 cleanup_vllm_server() {
+  local port="${CURRENT_VLLM_PORT:-}"
   if [[ -n "${VLLM_PID:-}" ]] && kill -0 "$VLLM_PID" 2>/dev/null; then
     echo "[vLLM] Shutting down server pid=${VLLM_PID}"
     kill "$VLLM_PID" 2>/dev/null || true
     wait "$VLLM_PID" 2>/dev/null || true
+    if [[ -n "$port" ]]; then
+      if ! wait_port_released "$port" 60; then
+        echo "[vLLM] WARNING: port ${port} still responds after shutdown; continuing because later tasks use their own ports."
+      fi
+    fi
   fi
   VLLM_PID=""
+  CURRENT_VLLM_PORT=""
 }
 trap cleanup_vllm_server EXIT
 
@@ -162,15 +211,16 @@ start_vllm_server() {
   local model_path="$1"
   local served_model_name="$2"
   local log_path="$3"
+  local port="$4"
 
   cleanup_vllm_server
-  if curl -s "http://localhost:${VLLM_PORT}/health" >/dev/null 2>&1; then
-    echo "ERROR: vLLM port ${VLLM_PORT} is already serving /health; set VLLM_PORT to a free port." >&2
+  if curl -s "http://localhost:${port}/health" >/dev/null 2>&1; then
+    echo "ERROR: vLLM port ${port} is already serving /health; set BASE_VLLM_PORT/TR10_VLLM_PORT to a free port." >&2
     exit 1
   fi
 
   echo "[vLLM] Starting server model=${model_path} name=${served_model_name}"
-  echo "[vLLM] port=${VLLM_PORT} gpu_ids=${VLLM_GPU_IDS} tensor_parallel=${VLLM_TENSOR_PARALLEL_SIZE}"
+  echo "[vLLM] port=${port} gpu_ids=${VLLM_GPU_IDS} tensor_parallel=${VLLM_TENSOR_PARALLEL_SIZE}"
   export VLLM_DISABLE_PROMETHEUS=1
   export VLLM_USE_V1=1
   unset VLLM_ATTENTION_BACKEND
@@ -180,16 +230,17 @@ start_vllm_server() {
       --model "$model_path" \
       --served-model-name "$served_model_name" \
       --trust-remote-code \
-      --port "$VLLM_PORT" \
+      --port "$port" \
       --max-model-len "$VLLM_MAX_MODEL_LEN" \
       --gpu-memory-utilization "$VLLM_GPU_MEMORY_UTILIZATION" \
       --tensor-parallel-size "$VLLM_TENSOR_PARALLEL_SIZE" \
       --disable-frontend-multiprocessing
   ) > "$log_path" 2>&1 &
   VLLM_PID=$!
+  CURRENT_VLLM_PORT="$port"
 
   for i in $(seq 1 300); do
-    if curl -s "http://localhost:${VLLM_PORT}/health" >/dev/null 2>&1; then
+    if curl -s "http://localhost:${port}/health" >/dev/null 2>&1; then
       echo "[vLLM] Ready after ${i}s"
       return
     fi
@@ -205,10 +256,97 @@ start_vllm_server() {
   exit 1
 }
 
+answers_complete() {
+  local samples_path="$1"
+  local answers_path="$2"
+  local label="$3"
+  "$PYTHON_BIN" - "$samples_path" "$answers_path" "$label" <<'PY'
+import json
+import os
+import sys
+
+samples_path, answers_path, label = sys.argv[1:4]
+
+def load_jsonl(path):
+    rows = []
+    if not path or not os.path.exists(path):
+        return rows
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    return rows
+
+samples = load_jsonl(samples_path)
+answers = load_jsonl(answers_path)
+sample_uids = [row.get("sample_uid") for row in samples if row.get("sample_uid")]
+answer_by_uid = {}
+for row in answers:
+    uid = row.get("sample_uid")
+    if uid:
+        answer_by_uid[uid] = row
+
+missing = [uid for uid in sample_uids if uid not in answer_by_uid]
+bad = []
+for uid in sample_uids:
+    row = answer_by_uid.get(uid)
+    if not row:
+        continue
+    text = str(row.get("model_answer", "")).strip()
+    if not text or text.startswith("[ERROR]"):
+        bad.append(uid)
+
+complete = bool(sample_uids) and not missing and not bad
+print(
+    f"[SkipCheck] {label}: samples={len(sample_uids)} "
+    f"answers={len(answer_by_uid)} missing={len(missing)} bad={len(bad)} "
+    f"complete={complete}"
+)
+sys.exit(0 if complete else 1)
+PY
+}
+
+should_skip_answers() {
+  local label="$1"
+  local answers_path="$2"
+  if truthy "$FORCE_TARGETED" || ! truthy "$SKIP_COMPLETED"; then
+    return 1
+  fi
+  if answers_complete "$samples_path" "$answers_path" "$label"; then
+    echo "[Skip] ${label} answers are complete; not starting vLLM."
+    return 0
+  fi
+  return 1
+}
+
+ensure_complete_for_summary() {
+  local label="$1"
+  local answers_path="$2"
+  if truthy "$ALLOW_PARTIAL_SUMMARY"; then
+    return 0
+  fi
+  if answers_complete "$samples_path" "$answers_path" "$label"; then
+    return 0
+  fi
+  echo "ERROR: ${label} answers are incomplete; run TARGETED_TASKS=${label} first or set ALLOW_PARTIAL_SUMMARY=True." >&2
+  return 1
+}
+
+samples_path="$SAMPLES_JSONL"
+base_answers="${OUTPUT_DIR}/base_answers.jsonl"
+tr10_answers="${OUTPUT_DIR}/tr10_rkl_answers.jsonl"
+tr10_downloaded=False
+
 common_args=(
   --comparison-json "$COMPARISON_JSON"
   --test-json "$TEST_JSON"
   --output-dir "$OUTPUT_DIR"
+  --samples-jsonl "$samples_path"
   --buckets "$TARGETED_BUCKETS"
   --max-per-bucket "$MAX_PER_BUCKET"
 )
@@ -224,60 +362,89 @@ echo "TR10_LOCAL=$TR10_LOCAL"
 echo "TR10_OSS=$TR10_OSS"
 echo "COMPARISON_JSON=$COMPARISON_JSON"
 echo "OUTPUT_DIR=$OUTPUT_DIR"
+echo "SAMPLES_JSONL=$samples_path"
 echo "TEST_JSON=$TEST_JSON"
 echo "TARGETED_BUCKETS=$TARGETED_BUCKETS MAX_PER_BUCKET=$MAX_PER_BUCKET"
-echo "VLLM_GPU_IDS=$VLLM_GPU_IDS VLLM_TENSOR_PARALLEL_SIZE=$VLLM_TENSOR_PARALLEL_SIZE VLLM_PORT=$VLLM_PORT"
+echo "TARGETED_TASKS=$TARGETED_TASKS SKIP_COMPLETED=$SKIP_COMPLETED FORCE_TARGETED=$FORCE_TARGETED"
+echo "VLLM_GPU_IDS=$VLLM_GPU_IDS VLLM_TENSOR_PARALLEL_SIZE=$VLLM_TENSOR_PARALLEL_SIZE"
+echo "BASE_VLLM_PORT=$BASE_VLLM_PORT TR10_VLLM_PORT=$TR10_VLLM_PORT"
 echo
 
-"$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/targeted_pope_from_eval_compare.py" \
-  "${common_args[@]}" \
-  --build-only
-
-base_answers="${OUTPUT_DIR}/base_answers.jsonl"
-tr10_answers="${OUTPUT_DIR}/tr10_rkl_answers.jsonl"
-
-echo
-echo "[1/3] Targeted POPE for base"
-start_vllm_server "$BASE_MODEL" "Qwen3VL-2B-Instruct" "${RES_OPD_ROOT}/logs/vllm_targeted_pope_base.log"
-"$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/targeted_pope_from_eval_compare.py" \
-  "${common_args[@]}" \
-  --api-base "http://localhost:${VLLM_PORT}/v1/" \
-  --model-name "Qwen3VL-2B-Instruct" \
-  --run-name "base" \
-  --answers-jsonl "$base_answers" \
-  --parallel-workers "$VLLM_PARALLEL_WORKERS" \
-  --max-new-tokens "$TARGETED_MAX_NEW_TOKENS" \
-  "${logprob_args[@]}"
-cleanup_vllm_server
-
-echo
-echo "[2/3] Targeted POPE for tr1.0 RKL"
-tr10_downloaded=False
-if download_checkpoint_from_oss "$TR10_OSS" "$TR10_LOCAL"; then
-  tr10_downloaded=True
+if task_enabled build || [[ ! -s "$samples_path" ]]; then
+  echo "[0/3] Build targeted POPE samples"
+  "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/targeted_pope_from_eval_compare.py" \
+    "${common_args[@]}" \
+    --build-only
+else
+  echo "[0/3] Reusing targeted POPE samples: $samples_path"
 fi
-start_vllm_server "$TR10_LOCAL" "$TR10_EVAL_EXP" "${RES_OPD_ROOT}/logs/vllm_targeted_pope_tr10.log"
-"$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/targeted_pope_from_eval_compare.py" \
-  "${common_args[@]}" \
-  --api-base "http://localhost:${VLLM_PORT}/v1/" \
-  --model-name "$TR10_EVAL_EXP" \
-  --run-name "tr10_rkl" \
-  --answers-jsonl "$tr10_answers" \
-  --parallel-workers "$VLLM_PARALLEL_WORKERS" \
-  --max-new-tokens "$TARGETED_MAX_NEW_TOKENS" \
-  "${logprob_args[@]}"
-cleanup_vllm_server
 
-echo
-echo "[3/3] Paired targeted POPE summary"
-"$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/targeted_pope_from_eval_compare.py" \
-  "${common_args[@]}" \
-  --base-answers "$base_answers" \
-  --other-answers "$tr10_answers" \
-  --base-name "base" \
-  --other-name "tr10_rkl" \
-  --summary-json "${OUTPUT_DIR}/targeted_pope_summary.json" \
-  --summary-md "${OUTPUT_DIR}/targeted_pope_summary.md"
+if task_enabled base; then
+  echo
+  echo "[1/3] Targeted POPE for base"
+  if should_skip_answers "base" "$base_answers"; then
+    :
+  else
+    start_vllm_server "$BASE_MODEL" "Qwen3VL-2B-Instruct" "${RES_OPD_ROOT}/logs/vllm_targeted_pope_base.log" "$BASE_VLLM_PORT"
+    "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/targeted_pope_from_eval_compare.py" \
+      "${common_args[@]}" \
+      --api-base "http://localhost:${BASE_VLLM_PORT}/v1/" \
+      --model-name "Qwen3VL-2B-Instruct" \
+      --run-name "base" \
+      --answers-jsonl "$base_answers" \
+      --parallel-workers "$VLLM_PARALLEL_WORKERS" \
+      --max-new-tokens "$TARGETED_MAX_NEW_TOKENS" \
+      "${logprob_args[@]}"
+    cleanup_vllm_server
+  fi
+else
+  echo
+  echo "[1/3] Skipping base because TARGETED_TASKS=$TARGETED_TASKS"
+fi
+
+if task_enabled tr10; then
+  echo
+  echo "[2/3] Targeted POPE for tr1.0 RKL"
+  if should_skip_answers "tr10" "$tr10_answers"; then
+    :
+  else
+    if download_checkpoint_from_oss "$TR10_OSS" "$TR10_LOCAL"; then
+      tr10_downloaded=True
+    fi
+    start_vllm_server "$TR10_LOCAL" "$TR10_EVAL_EXP" "${RES_OPD_ROOT}/logs/vllm_targeted_pope_tr10.log" "$TR10_VLLM_PORT"
+    "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/targeted_pope_from_eval_compare.py" \
+      "${common_args[@]}" \
+      --api-base "http://localhost:${TR10_VLLM_PORT}/v1/" \
+      --model-name "$TR10_EVAL_EXP" \
+      --run-name "tr10_rkl" \
+      --answers-jsonl "$tr10_answers" \
+      --parallel-workers "$VLLM_PARALLEL_WORKERS" \
+      --max-new-tokens "$TARGETED_MAX_NEW_TOKENS" \
+      "${logprob_args[@]}"
+    cleanup_vllm_server
+  fi
+else
+  echo
+  echo "[2/3] Skipping tr1.0 RKL because TARGETED_TASKS=$TARGETED_TASKS"
+fi
+
+if task_enabled summary; then
+  echo
+  echo "[3/3] Paired targeted POPE summary"
+  ensure_complete_for_summary "base" "$base_answers"
+  ensure_complete_for_summary "tr10" "$tr10_answers"
+  "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/targeted_pope_from_eval_compare.py" \
+    "${common_args[@]}" \
+    --base-answers "$base_answers" \
+    --other-answers "$tr10_answers" \
+    --base-name "base" \
+    --other-name "tr10_rkl" \
+    --summary-json "${OUTPUT_DIR}/targeted_pope_summary.json" \
+    --summary-md "${OUTPUT_DIR}/targeted_pope_summary.md"
+else
+  echo
+  echo "[3/3] Skipping summary because TARGETED_TASKS=$TARGETED_TASKS"
+fi
 
 if truthy "$CLEANUP_AFTER" && truthy "$tr10_downloaded"; then
   echo "[Cleanup] Removing checkpoint downloaded by this launcher: $TR10_LOCAL"
@@ -286,7 +453,7 @@ fi
 
 echo
 echo "Targeted POPE finished:"
-echo "  samples: ${OUTPUT_DIR}/targeted_pope_samples.jsonl"
+echo "  samples: $samples_path"
 echo "  base:    $base_answers"
 echo "  tr10:    $tr10_answers"
 echo "  summary: ${OUTPUT_DIR}/targeted_pope_summary.md"
