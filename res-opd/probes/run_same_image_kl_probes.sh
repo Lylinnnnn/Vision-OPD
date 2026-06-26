@@ -15,6 +15,7 @@
 #   RUN_BASE_SR075_EVAL=True|False|auto
 #   RUN_DUPLICATE_SR075=True|False
 #   RUN_TR10=True|False
+#   RUN_TR10_BASE_CAPTIONS=True|False
 #   CLEANUP_AFTER=True|False
 
 set -euo pipefail
@@ -170,6 +171,7 @@ PROBE_OUTPUT_ROOT="${PROBE_OUTPUT_ROOT:-${RES_OPD_ROOT}/probes/results/same_imag
 RUN_BASE_SR075_EVAL="${RUN_BASE_SR075_EVAL:-auto}"
 RUN_DUPLICATE_SR075="${RUN_DUPLICATE_SR075:-True}"
 RUN_TR10="${RUN_TR10:-True}"
+RUN_TR10_BASE_CAPTIONS="${RUN_TR10_BASE_CAPTIONS:-True}"
 
 mkdir -p "${RES_OPD_ROOT}/logs" "${RES_OPD_ROOT}/tmp_checkpoints"
 
@@ -308,9 +310,10 @@ echo "TR10_OSS=$TR10_OSS"
 echo "MAX_SAMPLES=$MAX_SAMPLES KL_CHUNK_SIZE=$KL_CHUNK_SIZE TOPK=$TOPK"
 echo "OVERWRITE=$OVERWRITE PARALLEL_PROBES=$PARALLEL_PROBES GPU_IDS=$GPU_IDS NUM_SHARDS=$NUM_SHARDS"
 echo "PROBE_OUTPUT_ROOT=$PROBE_OUTPUT_ROOT"
+echo "RUN_TR10_BASE_CAPTIONS=$RUN_TR10_BASE_CAPTIONS"
 echo
 
-echo "[0/4] Ensure base sr0.75 eval_results exists"
+echo "[0/5] Ensure base sr0.75 eval_results exists"
 need_sr075_eval=False
 if [[ ! -f "$BASE_SR075" ]]; then
   need_sr075_eval=True
@@ -333,7 +336,7 @@ if [[ ! -f "$BASE_SR075" && "$(printf '%s' "$RUN_DUPLICATE_SR075" | tr '[:upper:
 fi
 
 echo
-echo "[1/4] duplicate_base on original captions, original image twice"
+echo "[1/5] duplicate_base on original captions, original image twice"
 run_probe "duplicate_base_base_sr10_original_twice" \
   --pair-mode duplicate_base \
   --model-path "$BASE_MODEL" \
@@ -344,7 +347,7 @@ run_probe "duplicate_base_base_sr10_original_twice" \
 
 if truthy "$RUN_DUPLICATE_SR075"; then
   echo
-  echo "[2/4] duplicate_base on sr0.75 captions, degraded image twice"
+  echo "[2/5] duplicate_base on sr0.75 captions, degraded image twice"
   run_probe "duplicate_base_base_sr075_lowres_twice" \
     --pair-mode duplicate_base \
     --model-path "$BASE_MODEL" \
@@ -354,11 +357,11 @@ if truthy "$RUN_DUPLICATE_SR075"; then
     --caption-source-label base_sr075_caption
 else
   echo
-  echo "[2/4] Skipping duplicate_base sr0.75 captions"
+  echo "[2/5] Skipping duplicate_base sr0.75 captions"
 fi
 
 echo
-echo "[3/4] dual_view_same_model, base original captions, full vs lowres 0.75"
+echo "[3/5] dual_view_same_model, base original captions, full vs lowres 0.75"
 run_probe "dual_view_base_sr10_full_vs_lowres075" \
   --pair-mode dual_view_same_model \
   --model-path "$BASE_MODEL" \
@@ -378,8 +381,24 @@ if truthy "$RUN_TR10"; then
     tr10_downloaded=True
   fi
 
+  if truthy "$RUN_TR10_BASE_CAPTIONS"; then
+    echo
+    echo "[4/5] dual_model_same_image, tr1.0 RKL student vs frozen base teacher on base captions"
+    run_probe "dual_model_tr10_rkl_vs_base_on_base_captions" \
+      --pair-mode dual_model_same_image \
+      --student-model-path "$TR10_LOCAL" \
+      --teacher-model-path "$BASE_MODEL" \
+      --eval-results "$BASE_SR10" \
+      --student-ratio 1.0 \
+      --teacher-ratio 1.0 \
+      --caption-source-label base_sr10_caption
+  else
+    echo
+    echo "[4/5] Skipping tr1.0-vs-base probe on base captions"
+  fi
+
   echo
-  echo "[4/4] dual_model_same_image, tr1.0 RKL student vs frozen base teacher"
+  echo "[5/5] dual_model_same_image, tr1.0 RKL student vs frozen base teacher on tr1.0 captions"
   run_probe "dual_model_tr10_rkl_vs_base_original" \
     --pair-mode dual_model_same_image \
     --student-model-path "$TR10_LOCAL" \
@@ -399,7 +418,7 @@ if truthy "$RUN_TR10"; then
   fi
 else
   echo
-  echo "[4/4] Skipping tr1.0 dual-model probe"
+  echo "[4-5/5] Skipping tr1.0 dual-model probes"
 fi
 
 echo
