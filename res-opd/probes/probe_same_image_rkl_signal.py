@@ -202,6 +202,12 @@ def parse_args():
     )
     parser.add_argument("--max-samples", type=int, default=0)
     parser.add_argument("--max-model-len", type=int, default=9728)
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help="Forced-forward batch size per shard. Increase to improve GPU utilization.",
+    )
     parser.add_argument("--torch-dtype", choices=["bfloat16", "float16", "float32"], default="bfloat16")
     parser.add_argument("--kl-chunk-size", type=int, default=16)
     parser.add_argument("--topk", type=int, default=20, help="Store top-k diagnostics; 0 disables top-k fields.")
@@ -302,6 +308,8 @@ def validate_args(args):
         args.teacher_model_path = args.student_model_path
     if args.kl_chunk_size <= 0:
         raise SystemExit("--kl-chunk-size must be positive.")
+    if args.batch_size <= 0:
+        raise SystemExit("--batch-size must be positive.")
     if args.num_shards <= 0:
         raise SystemExit("--num-shards must be positive.")
     if args.shard_index < 0 or args.shard_index >= args.num_shards:
@@ -398,11 +406,8 @@ def load_model_and_processor(model_path, torch_dtype_name):
     return model, processor, device
 
 
-def tensorize_inputs(processor, image, prompt, response_text, device):
-    import torch
-    from qwen_vl_utils import process_vision_info
-
-    messages = [
+def build_messages(image, prompt):
+    return [
         {
             "role": "user",
             "content": [
@@ -411,33 +416,77 @@ def tensorize_inputs(processor, image, prompt, response_text, device):
             ],
         }
     ]
-    prompt_text = processor.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-    image_inputs, video_inputs = process_vision_info(messages)
+
+
+def as_list_or_empty(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def tensorize_inputs_batch(processor, images, prompt, response_texts, device):
+    import torch
+    from qwen_vl_utils import process_vision_info
+
+    prompt_texts = []
+    full_texts = []
+    image_inputs = []
+    video_inputs = []
+    for image, response_text in zip(images, response_texts):
+        messages = build_messages(image, prompt)
+        prompt_text = processor.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        sample_image_inputs, sample_video_inputs = process_vision_info(messages)
+        prompt_texts.append(prompt_text)
+        full_texts.append(prompt_text + response_text)
+        image_inputs.extend(as_list_or_empty(sample_image_inputs))
+        video_inputs.extend(as_list_or_empty(sample_video_inputs))
+
     prompt_inputs = processor(
-        text=[prompt_text],
-        images=image_inputs,
-        videos=video_inputs,
+        text=prompt_texts,
+        images=image_inputs or None,
+        videos=video_inputs or None,
         return_tensors="pt",
+        padding=True,
     )
     full_inputs = processor(
-        text=[prompt_text + response_text],
-        images=image_inputs,
-        videos=video_inputs,
+        text=full_texts,
+        images=image_inputs or None,
+        videos=video_inputs or None,
         return_tensors="pt",
+        padding=True,
     )
-    prompt_len = int(prompt_inputs["input_ids"].shape[1])
+    prompt_lens = [int(value) for value in prompt_inputs["attention_mask"].sum(dim=1).tolist()]
     full_inputs = {
         key: value.to(device) if torch.is_tensor(value) else value
         for key, value in full_inputs.items()
     }
-    response_ids = full_inputs["input_ids"][0, prompt_len:].detach().cpu()
-    if response_ids.numel() == 0:
-        raise ValueError("response has no tokens after prompt")
-    return full_inputs, prompt_len, response_ids, prompt_text
+    response_ids = []
+    input_ids = full_inputs["input_ids"]
+    attention_mask = full_inputs["attention_mask"].bool()
+    for sample_idx, prompt_len in enumerate(prompt_lens):
+        nonpad_ids = input_ids[sample_idx][attention_mask[sample_idx]]
+        sample_response_ids = nonpad_ids[prompt_len:].detach().cpu()
+        if sample_response_ids.numel() == 0:
+            raise ValueError("response has no tokens after prompt")
+        response_ids.append(sample_response_ids)
+    return full_inputs, prompt_lens, response_ids, prompt_texts
+
+
+def tensorize_inputs(processor, image, prompt, response_text, device):
+    full_inputs, prompt_lens, response_ids, prompt_texts = tensorize_inputs_batch(
+        processor,
+        [image],
+        prompt,
+        [response_text],
+        device,
+    )
+    return full_inputs, prompt_lens[0], response_ids[0], prompt_texts[0]
 
 
 def find_rank(token_ids, selected_id):
@@ -484,41 +533,51 @@ def forward_target_logits(model, inputs, prompt_len, max_model_len):
     return target_logits, target_ids
 
 
-def score_pair(
+def forward_target_logits_batch(model, inputs, prompt_lens, max_model_len):
+    import torch
+
+    input_ids = inputs["input_ids"]
+    attention_mask = inputs["attention_mask"].bool()
+    if int(input_ids.shape[1]) > max_model_len:
+        raise ValueError(f"input length {int(input_ids.shape[1])} exceeds max_model_len={max_model_len}")
+    with torch.no_grad():
+        outputs = model(**inputs)
+    logits = outputs.logits
+    out = []
+    for sample_idx, prompt_len in enumerate(prompt_lens):
+        nonpad_positions = torch.nonzero(attention_mask[sample_idx], as_tuple=False).flatten()
+        if nonpad_positions.numel() == 0:
+            raise ValueError("empty input after padding")
+        first = int(nonpad_positions[0].item())
+        last = int(nonpad_positions[-1].item()) + 1
+        if first + prompt_len >= last:
+            raise ValueError("response has no target tokens after prompt")
+        target_logits = logits[sample_idx, first + prompt_len - 1 : last - 1]
+        target_ids = input_ids[sample_idx, first + prompt_len : last]
+        if target_logits.shape[0] != target_ids.shape[0]:
+            raise ValueError(
+                f"target/logit length mismatch: logits={target_logits.shape[0]} target={target_ids.shape[0]}"
+            )
+        out.append((target_logits, target_ids))
+    return out
+
+
+def score_logits_pair(
     *,
-    student_model,
     student_processor,
-    student_device,
-    teacher_model,
-    teacher_processor,
-    teacher_device,
-    student_image,
-    teacher_image,
-    prompt,
-    response_text,
-    max_model_len,
+    student_prompt_len,
+    student_response_ids,
+    student_prompt_text,
+    teacher_prompt_text,
+    student_target_logits,
+    teacher_target_logits,
+    student_target_ids,
+    teacher_target_ids,
     kl_chunk_size,
     topk,
 ):
     import torch
 
-    student_inputs, student_prompt_len, student_response_ids, student_prompt_text = tensorize_inputs(
-        student_processor, student_image, prompt, response_text, student_device
-    )
-    teacher_inputs, teacher_prompt_len, teacher_response_ids, teacher_prompt_text = tensorize_inputs(
-        teacher_processor, teacher_image, prompt, response_text, teacher_device
-    )
-    if student_response_ids.tolist() != teacher_response_ids.tolist():
-        raise ValueError(
-            "student/teacher response tokenization differs; use matching model/tokenizer pair for this probe"
-        )
-
-    student_target_logits, student_target_ids = forward_target_logits(
-        student_model, student_inputs, student_prompt_len, max_model_len
-    )
-    teacher_target_logits, teacher_target_ids = forward_target_logits(
-        teacher_model, teacher_inputs, teacher_prompt_len, max_model_len
-    )
     if int(student_target_logits.shape[0]) != int(teacher_target_logits.shape[0]):
         raise ValueError(
             f"student/teacher target length mismatch: "
@@ -635,6 +694,111 @@ def score_pair(
         "token_records": token_records,
         "summary": summary,
     }
+
+
+def score_pair(
+    *,
+    student_model,
+    student_processor,
+    student_device,
+    teacher_model,
+    teacher_processor,
+    teacher_device,
+    student_image,
+    teacher_image,
+    prompt,
+    response_text,
+    max_model_len,
+    kl_chunk_size,
+    topk,
+):
+    student_inputs, student_prompt_len, student_response_ids, student_prompt_text = tensorize_inputs(
+        student_processor, student_image, prompt, response_text, student_device
+    )
+    teacher_inputs, teacher_prompt_len, teacher_response_ids, teacher_prompt_text = tensorize_inputs(
+        teacher_processor, teacher_image, prompt, response_text, teacher_device
+    )
+    if student_response_ids.tolist() != teacher_response_ids.tolist():
+        raise ValueError(
+            "student/teacher response tokenization differs; use matching model/tokenizer pair for this probe"
+        )
+
+    student_target_logits, student_target_ids = forward_target_logits(
+        student_model, student_inputs, student_prompt_len, max_model_len
+    )
+    teacher_target_logits, teacher_target_ids = forward_target_logits(
+        teacher_model, teacher_inputs, teacher_prompt_len, max_model_len
+    )
+    return score_logits_pair(
+        student_processor=student_processor,
+        student_prompt_len=student_prompt_len,
+        student_response_ids=student_response_ids,
+        student_prompt_text=student_prompt_text,
+        teacher_prompt_text=teacher_prompt_text,
+        student_target_logits=student_target_logits,
+        teacher_target_logits=teacher_target_logits,
+        student_target_ids=student_target_ids,
+        teacher_target_ids=teacher_target_ids,
+        kl_chunk_size=kl_chunk_size,
+        topk=topk,
+    )
+
+
+def score_pair_batch(
+    *,
+    student_model,
+    student_processor,
+    student_device,
+    teacher_model,
+    teacher_processor,
+    teacher_device,
+    student_images,
+    teacher_images,
+    prompt,
+    response_texts,
+    max_model_len,
+    kl_chunk_size,
+    topk,
+):
+    student_inputs, student_prompt_lens, student_response_ids, student_prompt_texts = tensorize_inputs_batch(
+        student_processor, student_images, prompt, response_texts, student_device
+    )
+    teacher_inputs, teacher_prompt_lens, teacher_response_ids, teacher_prompt_texts = tensorize_inputs_batch(
+        teacher_processor, teacher_images, prompt, response_texts, teacher_device
+    )
+    for sample_idx, (student_ids, teacher_ids) in enumerate(zip(student_response_ids, teacher_response_ids)):
+        if student_ids.tolist() != teacher_ids.tolist():
+            raise ValueError(
+                "student/teacher response tokenization differs for batch item "
+                f"{sample_idx}; use matching model/tokenizer pair for this probe"
+            )
+
+    student_targets = forward_target_logits_batch(
+        student_model, student_inputs, student_prompt_lens, max_model_len
+    )
+    teacher_targets = forward_target_logits_batch(
+        teacher_model, teacher_inputs, teacher_prompt_lens, max_model_len
+    )
+    scored = []
+    for sample_idx in range(len(response_texts)):
+        student_target_logits, student_target_ids = student_targets[sample_idx]
+        teacher_target_logits, teacher_target_ids = teacher_targets[sample_idx]
+        scored.append(
+            score_logits_pair(
+                student_processor=student_processor,
+                student_prompt_len=student_prompt_lens[sample_idx],
+                student_response_ids=student_response_ids[sample_idx],
+                student_prompt_text=student_prompt_texts[sample_idx],
+                teacher_prompt_text=teacher_prompt_texts[sample_idx],
+                student_target_logits=student_target_logits,
+                teacher_target_logits=teacher_target_logits,
+                student_target_ids=student_target_ids,
+                teacher_target_ids=teacher_target_ids,
+                kl_chunk_size=kl_chunk_size,
+                topk=topk,
+            )
+        )
+    return scored
 
 
 def plural_variants(term):
@@ -948,64 +1112,118 @@ def run_scoring(args, output_jsonl):
     written = 0
     failures = 0
     with open(output_jsonl, "a", encoding="utf-8") as f:
-        for record in pending_records:
-            caption = record.get("generated_caption") or ""
-            caption_source = record_caption_source(args, record)
-            key = record_done_key(args, record)
-            if key in done_keys:
-                skipped += 1
+        for batch_start in range(0, len(pending_records), args.batch_size):
+            batch_records = pending_records[batch_start : batch_start + args.batch_size]
+            batch_items = []
+            for record in batch_records:
+                caption = record.get("generated_caption") or ""
+                caption_source = record_caption_source(args, record)
+                key = record_done_key(args, record)
+                if key in done_keys:
+                    skipped += 1
+                    continue
+                image_path = resolve_image_path(record, test_index, args.image_root)
+                if not image_path:
+                    print(f"WARNING: missing image path for image_id={record.get('image_id')}", file=sys.stderr)
+                    failures += 1
+                    continue
+                try:
+                    student_image = load_view_image(
+                        image_path,
+                        args.degradation_mode,
+                        args.student_px,
+                        args.target_px,
+                        args.student_ratio,
+                        blank_when_px_zero=False,
+                    )
+                    teacher_image = load_view_image(
+                        image_path,
+                        args.degradation_mode,
+                        args.teacher_px,
+                        args.target_px,
+                        args.teacher_ratio,
+                        blank_when_px_zero=True,
+                    )
+                except Exception as exc:
+                    print(
+                        f"WARNING: failed loading image_id={record.get('image_id')} "
+                        f"caption_source={caption_source}: {exc}",
+                        file=sys.stderr,
+                    )
+                    failures += 1
+                    continue
+                batch_items.append(
+                    {
+                        "record": record,
+                        "caption": caption,
+                        "caption_source": caption_source,
+                        "key": key,
+                        "student_image": student_image,
+                        "teacher_image": teacher_image,
+                    }
+                )
+            if not batch_items:
                 continue
-            image_path = resolve_image_path(record, test_index, args.image_root)
-            if not image_path:
-                print(f"WARNING: missing image path for image_id={record.get('image_id')}", file=sys.stderr)
-                failures += 1
-                continue
+
             try:
-                student_image = load_view_image(
-                    image_path,
-                    args.degradation_mode,
-                    args.student_px,
-                    args.target_px,
-                    args.student_ratio,
-                    blank_when_px_zero=False,
-                )
-                teacher_image = load_view_image(
-                    image_path,
-                    args.degradation_mode,
-                    args.teacher_px,
-                    args.target_px,
-                    args.teacher_ratio,
-                    blank_when_px_zero=True,
-                )
-                scored = score_pair(
+                scored_batch = score_pair_batch(
                     student_model=student_model,
                     student_processor=student_processor,
                     student_device=student_device,
                     teacher_model=teacher_model,
                     teacher_processor=teacher_processor,
                     teacher_device=teacher_device,
-                    student_image=student_image,
-                    teacher_image=teacher_image,
+                    student_images=[item["student_image"] for item in batch_items],
+                    teacher_images=[item["teacher_image"] for item in batch_items],
                     prompt=args.prompt,
-                    response_text=caption,
+                    response_texts=[item["caption"] for item in batch_items],
                     max_model_len=args.max_model_len,
                     kl_chunk_size=args.kl_chunk_size,
                     topk=args.topk,
                 )
-                out = build_trace_record(args, record, caption, scored)
-            except Exception as exc:
+            except Exception as batch_exc:
                 print(
-                    f"WARNING: failed scoring image_id={record.get('image_id')} "
-                    f"caption_source={caption_source}: {exc}",
+                    f"WARNING: batch scoring failed for shard {args.shard_index} "
+                    f"batch_start={batch_start}: {batch_exc}; falling back to per-sample scoring",
                     file=sys.stderr,
                 )
-                failures += 1
-                continue
-            f.write(json.dumps(out, ensure_ascii=False) + "\n")
+                scored_batch = []
+                for item in batch_items:
+                    try:
+                        scored = score_pair(
+                            student_model=student_model,
+                            student_processor=student_processor,
+                            student_device=student_device,
+                            teacher_model=teacher_model,
+                            teacher_processor=teacher_processor,
+                            teacher_device=teacher_device,
+                            student_image=item["student_image"],
+                            teacher_image=item["teacher_image"],
+                            prompt=args.prompt,
+                            response_text=item["caption"],
+                            max_model_len=args.max_model_len,
+                            kl_chunk_size=args.kl_chunk_size,
+                            topk=args.topk,
+                        )
+                    except Exception as exc:
+                        print(
+                            f"WARNING: failed scoring image_id={item['record'].get('image_id')} "
+                            f"caption_source={item['caption_source']}: {exc}",
+                            file=sys.stderr,
+                        )
+                        failures += 1
+                        scored = None
+                    scored_batch.append(scored)
+
+            for item, scored in zip(batch_items, scored_batch):
+                if scored is None:
+                    continue
+                out = build_trace_record(args, item["record"], item["caption"], scored)
+                f.write(json.dumps(out, ensure_ascii=False) + "\n")
+                done_keys.add(item["key"])
+                written += 1
             f.flush()
-            done_keys.add(key)
-            written += 1
-            if written % 10 == 0:
+            if written and written % 10 == 0:
                 elapsed = time.time() - started
                 print(f"Scored {written} records ({elapsed:.0f}s, skipped={skipped}, failures={failures})")
     print(f"Scoring complete: written={written} skipped={skipped} failures={failures}")

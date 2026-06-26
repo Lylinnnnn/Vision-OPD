@@ -9,12 +9,16 @@
 # Optional overrides:
 #   BASE_MODEL, BASE_SR10, BASE_SR075_DIR
 #   OSS_BASE, TR10_CKPT_EXP, TR10_STEP, TR10_EVAL_EXP, TR10_EVAL, TR10_LOCAL
-#   PYTHON_BIN, MAX_SAMPLES, KL_CHUNK_SIZE, TOPK, TORCH_DTYPE
+#   PYTHON_BIN, MAX_SAMPLES, BATCH_SIZE, KL_CHUNK_SIZE, TOPK, TORCH_DTYPE
 #   PARALLEL_PROBES=True|False, GPU_IDS=0,1,2,3,4,5,6,7, NUM_SHARDS=8
 #   OVERWRITE=True|False, PROBE_OUTPUT_ROOT
 #   RUN_BASE_SR075_EVAL=True|False|auto
+#   GENERATE_CAPTIONS_WITH_VLLM=True|False
+#   VLLM_GPU_IDS, VLLM_TENSOR_PARALLEL_SIZE, VLLM_PORT, VLLM_PARALLEL_WORKERS
+#   RUN_BASE_SR10_EVAL=True|False|auto
 #   RUN_DUPLICATE_SR075=True|False
 #   RUN_TR10=True|False
+#   RUN_TR10_EVAL_IF_MISSING=True|False|auto
 #   RUN_TR10_BASE_CAPTIONS=True|False
 #   RUN_EVAL_COMPARE=True|False
 #   CLEANUP_AFTER=True|False
@@ -140,6 +144,7 @@ get_oss_name() {
 BASE_MODEL="${BASE_MODEL:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct}"
 BASE_DIR="${BASE_DIR:-/home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD/res-opd/eval_results/latest/full/Qwen3VL-2B-Instruct}"
 BASE_SR10="${BASE_SR10:-${BASE_DIR}/train5000_test1000_original_sr1p0/eval_results.jsonl}"
+BASE_SR10_DIR="${BASE_SR10_DIR:-$(dirname "$BASE_SR10")}"
 BASE_SR075_DIR="${BASE_SR075_DIR:-${BASE_DIR}/train5000_test1000_original_sr0p75}"
 BASE_SR075="${BASE_SR075:-${BASE_SR075_DIR}/eval_results.jsonl}"
 
@@ -154,7 +159,8 @@ TR10_OSS="${TR10_OSS:-${OSS_BASE%/}/${TR10_OSS_NAME}/${TR10_STEP}}"
 
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 BASE_EVAL_MAX_SAMPLES="${BASE_EVAL_MAX_SAMPLES:-0}"
-KL_CHUNK_SIZE="${KL_CHUNK_SIZE:-16}"
+BATCH_SIZE="${BATCH_SIZE:-4}"
+KL_CHUNK_SIZE="${KL_CHUNK_SIZE:-64}"
 TOPK="${TOPK:-20}"
 TORCH_DTYPE="${TORCH_DTYPE:-bfloat16}"
 CLEANUP_AFTER="${CLEANUP_AFTER:-True}"
@@ -168,14 +174,189 @@ if [[ "$NUM_GPUS" -le 0 ]]; then
   exit 1
 fi
 NUM_SHARDS="${NUM_SHARDS:-$NUM_GPUS}"
+GENERATE_CAPTIONS_WITH_VLLM="${GENERATE_CAPTIONS_WITH_VLLM:-True}"
+VLLM_GPU_IDS="${VLLM_GPU_IDS:-$GPU_IDS}"
+IFS=',' read -r -a VLLM_GPU_LIST <<< "$VLLM_GPU_IDS"
+VLLM_NUM_GPUS="${#VLLM_GPU_LIST[@]}"
+if [[ "$VLLM_NUM_GPUS" -le 0 ]]; then
+  VLLM_NUM_GPUS=1
+fi
+VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-$VLLM_NUM_GPUS}"
+VLLM_PORT="${VLLM_PORT:-8017}"
+VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.90}"
+VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-9728}"
+VLLM_MAX_NEW_TOKENS="${VLLM_MAX_NEW_TOKENS:-384}"
+VLLM_PARALLEL_WORKERS="${VLLM_PARALLEL_WORKERS:-64}"
 PROBE_OUTPUT_ROOT="${PROBE_OUTPUT_ROOT:-${RES_OPD_ROOT}/probes/results/same_image_rkl_signal}"
+RUN_BASE_SR10_EVAL="${RUN_BASE_SR10_EVAL:-auto}"
 RUN_BASE_SR075_EVAL="${RUN_BASE_SR075_EVAL:-auto}"
 RUN_DUPLICATE_SR075="${RUN_DUPLICATE_SR075:-True}"
 RUN_TR10="${RUN_TR10:-True}"
+RUN_TR10_EVAL_IF_MISSING="${RUN_TR10_EVAL_IF_MISSING:-auto}"
 RUN_TR10_BASE_CAPTIONS="${RUN_TR10_BASE_CAPTIONS:-True}"
 RUN_EVAL_COMPARE="${RUN_EVAL_COMPARE:-True}"
 
 mkdir -p "${RES_OPD_ROOT}/logs" "${RES_OPD_ROOT}/tmp_checkpoints"
+
+VLLM_PID=""
+cleanup_vllm_server() {
+  if [[ -n "${VLLM_PID:-}" ]] && kill -0 "$VLLM_PID" 2>/dev/null; then
+    echo "[vLLM] Shutting down server pid=${VLLM_PID}"
+    kill "$VLLM_PID" 2>/dev/null || true
+    wait "$VLLM_PID" 2>/dev/null || true
+  fi
+  VLLM_PID=""
+}
+trap cleanup_vllm_server EXIT
+
+start_vllm_server() {
+  local model_path="$1"
+  local served_model_name="$2"
+  local log_path="$3"
+
+  cleanup_vllm_server
+  mkdir -p "$(dirname "$log_path")"
+  if curl -s "http://localhost:${VLLM_PORT}/health" >/dev/null 2>&1; then
+    echo "ERROR: vLLM port ${VLLM_PORT} is already serving /health; set VLLM_PORT to a free port." >&2
+    exit 1
+  fi
+
+  echo "[vLLM] Starting caption server"
+  echo "       model=${model_path}"
+  echo "       served_model_name=${served_model_name}"
+  echo "       port=${VLLM_PORT} gpu_ids=${VLLM_GPU_IDS} tensor_parallel=${VLLM_TENSOR_PARALLEL_SIZE}"
+  export VLLM_DISABLE_PROMETHEUS=1
+  export VLLM_USE_V1=1
+  unset VLLM_ATTENTION_BACKEND
+  (
+    export CUDA_VISIBLE_DEVICES="$VLLM_GPU_IDS"
+    "$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
+      --model "$model_path" \
+      --served-model-name "$served_model_name" \
+      --trust-remote-code \
+      --port "$VLLM_PORT" \
+      --max-model-len "$VLLM_MAX_MODEL_LEN" \
+      --gpu-memory-utilization "$VLLM_GPU_MEMORY_UTILIZATION" \
+      --tensor-parallel-size "$VLLM_TENSOR_PARALLEL_SIZE" \
+      --disable-frontend-multiprocessing
+  ) > "$log_path" 2>&1 &
+  VLLM_PID=$!
+
+  echo "[vLLM] Waiting for server pid=${VLLM_PID} ..."
+  for i in $(seq 1 300); do
+    if curl -s "http://localhost:${VLLM_PORT}/health" >/dev/null 2>&1; then
+      echo "[vLLM] Ready after ${i}s"
+      return
+    fi
+    if ! kill -0 "$VLLM_PID" 2>/dev/null; then
+      echo "ERROR: vLLM exited unexpectedly. Last log lines:" >&2
+      tail -n 120 "$log_path" >&2 || true
+      exit 1
+    fi
+    sleep 1
+  done
+
+  echo "ERROR: vLLM failed to become ready within 300s. Last log lines:" >&2
+  tail -n 120 "$log_path" >&2 || true
+  exit 1
+}
+
+generate_chair_eval_results() {
+  local model_path="$1"
+  local model_name="$2"
+  local output_dir="$3"
+  local student_ratio="$4"
+  local label="$5"
+
+  mkdir -p "$output_dir"
+  local eval_results_path="${output_dir}/eval_results.jsonl"
+  if chair_eval_complete "$eval_results_path" "$BASE_EVAL_MAX_SAMPLES"; then
+    echo "[caption] Reusing complete eval_results: ${eval_results_path}"
+    return
+  fi
+  if [[ -f "$eval_results_path" ]]; then
+    echo "[caption] Existing eval_results is incomplete; resuming: ${eval_results_path}"
+  else
+    echo "[caption] Generating eval_results: ${eval_results_path}"
+  fi
+
+  if truthy "$GENERATE_CAPTIONS_WITH_VLLM"; then
+    local vllm_log="${RES_OPD_ROOT}/logs/vllm_caption_${label}.log"
+    start_vllm_server "$model_path" "$model_name" "$vllm_log"
+    "$PYTHON_BIN" -u "${RES_OPD_ROOT}/eval/eval_chair.py" \
+      --api-base "http://localhost:${VLLM_PORT}/v1/" \
+      --model-name "$model_name" \
+      --test-json "${RES_OPD_ROOT}/data/test_1000.json" \
+      --output-dir "$output_dir" \
+      --degradation-mode original \
+      --student-ratio "$student_ratio" \
+      --max-samples "$BASE_EVAL_MAX_SAMPLES" \
+      --max-new-tokens "$VLLM_MAX_NEW_TOKENS" \
+      --parallel-workers "$VLLM_PARALLEL_WORKERS"
+    cleanup_vllm_server
+  else
+    echo "[caption] GENERATE_CAPTIONS_WITH_VLLM=False; using direct HF fallback."
+    "$PYTHON_BIN" -u "${RES_OPD_ROOT}/eval/eval_chair.py" \
+      --model-path "$model_path" \
+      --test-json "${RES_OPD_ROOT}/data/test_1000.json" \
+      --output-dir "$output_dir" \
+      --degradation-mode original \
+      --student-ratio "$student_ratio" \
+      --max-samples "$BASE_EVAL_MAX_SAMPLES"
+  fi
+
+  if ! chair_eval_complete "$eval_results_path" "$BASE_EVAL_MAX_SAMPLES"; then
+    echo "ERROR: eval_results is still incomplete after generation: ${eval_results_path}" >&2
+    exit 1
+  fi
+}
+
+chair_eval_complete() {
+  local eval_path="$1"
+  local max_samples="$2"
+  "$PYTHON_BIN" - "$eval_path" "${RES_OPD_ROOT}/data/test_1000.json" "$max_samples" <<'PY'
+import json
+import os
+import sys
+
+eval_path, test_json, max_samples = sys.argv[1], sys.argv[2], int(sys.argv[3])
+with open(test_json, "r", encoding="utf-8") as f:
+    samples = json.load(f)
+if max_samples > 0:
+    samples = samples[:max_samples]
+expected_ids = {sample.get("image_id") for sample in samples}
+expected_ids.discard(None)
+
+valid = {}
+errors = 0
+malformed = 0
+if os.path.exists(eval_path):
+    with open(eval_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                malformed += 1
+                continue
+            image_id = record.get("image_id")
+            caption = str(record.get("generated_caption", "") or "")
+            if image_id in expected_ids and caption and not caption.startswith("[ERROR]"):
+                valid[image_id] = record
+            elif image_id in expected_ids:
+                errors += 1
+
+missing = len(expected_ids - set(valid))
+print(
+    f"[caption] completeness path={eval_path} "
+    f"valid={len(valid)}/{len(expected_ids)} missing={missing} "
+    f"errors={errors} malformed={malformed}"
+)
+sys.exit(0 if missing == 0 else 1)
+PY
+}
 
 overwrite_arg=()
 if truthy "$OVERWRITE"; then
@@ -186,6 +367,7 @@ common_probe_args=(
   --test-json "${RES_OPD_ROOT}/data/test_1000.json"
   --degradation-mode original
   --max-samples "$MAX_SAMPLES"
+  --batch-size "$BATCH_SIZE"
   --kl-chunk-size "$KL_CHUNK_SIZE"
   --topk "$TOPK"
   --torch-dtype "$TORCH_DTYPE"
@@ -301,6 +483,9 @@ echo "CONDA_CUDNN_LIB=${CONDA_CUDNN_LIB:-<unset>}"
 echo "BASE_MODEL=$BASE_MODEL"
 echo "BASE_SR10=$BASE_SR10"
 echo "BASE_SR075=$BASE_SR075"
+echo "GENERATE_CAPTIONS_WITH_VLLM=$GENERATE_CAPTIONS_WITH_VLLM"
+echo "VLLM_GPU_IDS=$VLLM_GPU_IDS VLLM_TENSOR_PARALLEL_SIZE=$VLLM_TENSOR_PARALLEL_SIZE VLLM_PORT=$VLLM_PORT"
+echo "VLLM_PARALLEL_WORKERS=$VLLM_PARALLEL_WORKERS VLLM_MAX_NEW_TOKENS=$VLLM_MAX_NEW_TOKENS VLLM_GPU_MEMORY_UTILIZATION=$VLLM_GPU_MEMORY_UTILIZATION"
 echo "OSS_BASE=$OSS_BASE"
 echo "TR10_CKPT_EXP=$TR10_CKPT_EXP"
 echo "TR10_STEP=$TR10_STEP"
@@ -309,27 +494,37 @@ echo "TR10_OSS_NAME=$TR10_OSS_NAME"
 echo "TR10_EVAL=$TR10_EVAL"
 echo "TR10_LOCAL=$TR10_LOCAL"
 echo "TR10_OSS=$TR10_OSS"
-echo "MAX_SAMPLES=$MAX_SAMPLES KL_CHUNK_SIZE=$KL_CHUNK_SIZE TOPK=$TOPK"
+echo "MAX_SAMPLES=$MAX_SAMPLES BATCH_SIZE=$BATCH_SIZE KL_CHUNK_SIZE=$KL_CHUNK_SIZE TOPK=$TOPK"
 echo "OVERWRITE=$OVERWRITE PARALLEL_PROBES=$PARALLEL_PROBES GPU_IDS=$GPU_IDS NUM_SHARDS=$NUM_SHARDS"
 echo "PROBE_OUTPUT_ROOT=$PROBE_OUTPUT_ROOT"
 echo "RUN_TR10_BASE_CAPTIONS=$RUN_TR10_BASE_CAPTIONS"
+echo "RUN_BASE_SR10_EVAL=$RUN_BASE_SR10_EVAL RUN_BASE_SR075_EVAL=$RUN_BASE_SR075_EVAL"
+echo "RUN_TR10_EVAL_IF_MISSING=$RUN_TR10_EVAL_IF_MISSING"
 echo "RUN_EVAL_COMPARE=$RUN_EVAL_COMPARE"
 echo
 
-echo "[0/5] Ensure base sr0.75 eval_results exists"
+echo "[0a/5] Ensure base sr1.0 eval_results exists"
+need_sr10_eval=False
+if [[ ! -f "$BASE_SR10" ]]; then
+  need_sr10_eval=True
+fi
+if [[ "$RUN_BASE_SR10_EVAL" == "auto" && "$need_sr10_eval" == "True" ]] || truthy "$RUN_BASE_SR10_EVAL"; then
+  generate_chair_eval_results "$BASE_MODEL" "Qwen3VL-2B-Instruct" "$BASE_SR10_DIR" "1.0" "base_sr10"
+else
+  echo "Found or skipped sr1.0 eval: $BASE_SR10"
+fi
+if [[ ! -f "$BASE_SR10" ]]; then
+  echo "ERROR: base sr1.0 eval_results missing: $BASE_SR10" >&2
+  exit 1
+fi
+
+echo "[0b/5] Ensure base sr0.75 eval_results exists"
 need_sr075_eval=False
 if [[ ! -f "$BASE_SR075" ]]; then
   need_sr075_eval=True
 fi
 if [[ "$RUN_BASE_SR075_EVAL" == "auto" && "$need_sr075_eval" == "True" ]] || truthy "$RUN_BASE_SR075_EVAL"; then
-  mkdir -p "$BASE_SR075_DIR"
-  "$PYTHON_BIN" -u "${RES_OPD_ROOT}/eval/eval_chair.py" \
-    --model-path "$BASE_MODEL" \
-    --test-json "${RES_OPD_ROOT}/data/test_1000.json" \
-    --output-dir "$BASE_SR075_DIR" \
-    --degradation-mode original \
-    --student-ratio 0.75 \
-    --max-samples "$BASE_EVAL_MAX_SAMPLES"
+  generate_chair_eval_results "$BASE_MODEL" "Qwen3VL-2B-Instruct" "$BASE_SR075_DIR" "0.75" "base_sr075"
 else
   echo "Found or skipped sr0.75 eval: $BASE_SR075"
 fi
@@ -374,14 +569,22 @@ run_probe "dual_view_base_sr10_full_vs_lowres075" \
   --caption-source-label base_sr10_caption
 
 if truthy "$RUN_TR10"; then
-  if [[ ! -f "$TR10_EVAL" ]]; then
-    echo "ERROR: tr1.0 eval_results missing: $TR10_EVAL" >&2
-    exit 1
-  fi
-
   tr10_downloaded=False
   if download_checkpoint_from_oss "$TR10_OSS" "$TR10_LOCAL"; then
     tr10_downloaded=True
+  fi
+
+  if [[ ! -f "$TR10_EVAL" ]]; then
+    if [[ "$RUN_TR10_EVAL_IF_MISSING" == "auto" ]] || truthy "$RUN_TR10_EVAL_IF_MISSING"; then
+      generate_chair_eval_results "$TR10_LOCAL" "$TR10_EVAL_EXP" "$(dirname "$TR10_EVAL")" "1.0" "tr10_sr10"
+    else
+      echo "ERROR: tr1.0 eval_results missing: $TR10_EVAL" >&2
+      exit 1
+    fi
+  fi
+  if [[ ! -f "$TR10_EVAL" ]]; then
+    echo "ERROR: tr1.0 eval_results still missing after generation attempt: $TR10_EVAL" >&2
+    exit 1
   fi
 
   if truthy "$RUN_TR10_BASE_CAPTIONS"; then
