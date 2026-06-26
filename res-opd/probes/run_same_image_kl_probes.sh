@@ -371,7 +371,7 @@ common_probe_args=(
   --kl-chunk-size "$KL_CHUNK_SIZE"
   --topk "$TOPK"
   --torch-dtype "$TORCH_DTYPE"
-  "${overwrite_arg[@]}"
+  ${overwrite_arg[@]+"${overwrite_arg[@]}"}
 )
 
 run_probe() {
