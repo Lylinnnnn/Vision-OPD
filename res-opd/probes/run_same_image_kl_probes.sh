@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Run same-image / low-res KL probes for Res-OPD.
 #
-# Typical tmux launch:
+# Typical tmux launch from repo root:
 #
 #   TR10_OSS=oss://bucket/path/to/global_step_39 \
 #   tmux new-session -d -s probe_same_image_kl \
-#     "bash res-opd/scripts/run_same_image_kl_probes.sh 2>&1 | tee res-opd/logs/probe_same_image_kl.log"
+#     "bash res-opd/probes/run_same_image_kl_probes.sh 2>&1 | tee res-opd/logs/probe_same_image_kl.log"
 #
 # Required for the tr1.0 dual-model probe:
 #   TR10_OSS: OSS path to the merged sr1.0+tr1.0 RKL checkpoint.
@@ -22,8 +22,20 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RES_OPD_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-REPO_ROOT="$(cd "${RES_OPD_ROOT}/.." && pwd)"
-cd "$REPO_ROOT"
+VISION_OPD_ROOT="$(cd "${RES_OPD_ROOT}/.." && pwd)"
+
+cd "$VISION_OPD_ROOT"
+
+export PYTHONPATH="$VISION_OPD_ROOT:${PYTHONPATH:-}"
+export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
+
+PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
+
+# Match the training launcher: prefer conda-bundled cuDNN over system /lib64.
+CONDA_CUDNN_LIB="$("$PYTHON_BIN" -c "import nvidia.cudnn; import os; print(os.path.join(os.path.dirname(nvidia.cudnn.__file__), 'lib'))" 2>/dev/null || true)"
+if [[ -n "$CONDA_CUDNN_LIB" && -d "$CONDA_CUDNN_LIB" ]]; then
+  export LD_LIBRARY_PATH="${CONDA_CUDNN_LIB}:${LD_LIBRARY_PATH:-}"
+fi
 
 truthy() {
   case "${1:-}" in
@@ -32,7 +44,6 @@ truthy() {
   esac
 }
 
-PYTHON_BIN="${PYTHON_BIN:-python}"
 BASE_MODEL="${BASE_MODEL:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct}"
 BASE_DIR="${BASE_DIR:-/home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD/res-opd/eval_results/latest/full/Qwen3VL-2B-Instruct}"
 BASE_SR10="${BASE_SR10:-${BASE_DIR}/train5000_test1000_original_sr1p0/eval_results.jsonl}"
@@ -72,6 +83,10 @@ common_probe_args=(
 )
 
 echo "=== Same-image KL probe config ==="
+echo "VISION_OPD_ROOT=$VISION_OPD_ROOT"
+echo "PYTHON_BIN=$PYTHON_BIN"
+echo "PYTHONPATH=$PYTHONPATH"
+echo "CONDA_CUDNN_LIB=${CONDA_CUDNN_LIB:-<unset>}"
 echo "BASE_MODEL=$BASE_MODEL"
 echo "BASE_SR10=$BASE_SR10"
 echo "BASE_SR075=$BASE_SR075"
