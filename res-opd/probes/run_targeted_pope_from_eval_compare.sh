@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run targeted POPE over object changes from compare_eval_result_objects.py.
 #
-# Typical launch:
+# Typical launch for the default base vs tr1.0 RKL comparison:
 #
 #   tmux new-session -d -s targeted_pope_tr10 \
 #     "GPU_IDS=0,1,2,3,4,5,6,7 bash res-opd/probes/run_targeted_pope_from_eval_compare.sh 2>&1 | tee res-opd/logs/targeted_pope_tr10.log"
@@ -9,6 +9,12 @@
 # Resume only tr1.0 RKL and summary after base is complete:
 #
 #   TARGETED_TASKS=tr10,summary bash res-opd/probes/run_targeted_pope_from_eval_compare.sh
+#
+# Generic variant launch:
+#
+#   OTHER_RUN_NAME=tr075_rkl \
+#   OTHER_CKPT_EXP=Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-full5k-e1 \
+#   TARGETED_TASKS=all bash res-opd/probes/run_targeted_pope_from_eval_compare.sh
 
 set -euo pipefail
 
@@ -71,7 +77,7 @@ task_enabled() {
   local item
   for item in "${_targeted_tasks[@]}"; do
     item="${item//[[:space:]]/}"
-    if [[ "$item" == "$task" ]]; then
+    if [[ "$item" == "$task" || ( "$task" == "other" && "$item" == "${OTHER_TASK:-other}" ) ]]; then
       return 0
     fi
   done
@@ -138,15 +144,23 @@ get_oss_name() {
 
 BASE_MODEL="${BASE_MODEL:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct}"
 OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
-TR10_CKPT_EXP="${TR10_CKPT_EXP:-Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr1.0-a1.0-frozen-rkl-full5k-e1}"
-TR10_STEP="${TR10_STEP:-global_step_39}"
-TR10_EVAL_EXP="${TR10_EVAL_EXP:-${TR10_CKPT_EXP}_${TR10_STEP}}"
-TR10_LOCAL="${TR10_LOCAL:-${RES_OPD_ROOT}/tmp_checkpoints/${TR10_CKPT_EXP}/${TR10_STEP}}"
-TR10_OSS_NAME="${TR10_OSS_NAME:-$(get_oss_name "$TR10_CKPT_EXP")}"
-TR10_OSS="${TR10_OSS:-${OSS_BASE%/}/${TR10_OSS_NAME}/${TR10_STEP}}"
+BASE_RESULTS="${BASE_RESULTS:-/home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD/res-opd/eval_results/latest/full/Qwen3VL-2B-Instruct/train5000_test1000_original_sr1p0/eval_results.jsonl}"
 
-COMPARISON_JSON="${COMPARISON_JSON:-${RES_OPD_ROOT}/probes/results/same_image_rkl_signal/eval_compare_base_vs_tr10_rkl/eval_result_object_comparison.json}"
-OUTPUT_DIR="${OUTPUT_DIR:-${RES_OPD_ROOT}/probes/results/targeted_pope_base_vs_tr10_rkl}"
+OTHER_RUN_NAME="${OTHER_RUN_NAME:-${TR10_RUN_NAME:-tr10_rkl}}"
+OTHER_TASK="${OTHER_TASK:-${TR10_TASK:-tr10}}"
+OTHER_CKPT_EXP="${OTHER_CKPT_EXP:-${TR10_CKPT_EXP:-Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr1.0-a1.0-frozen-rkl-full5k-e1}}"
+OTHER_STEP="${OTHER_STEP:-${TR10_STEP:-global_step_39}}"
+OTHER_EVAL_EXP="${OTHER_EVAL_EXP:-${TR10_EVAL_EXP:-${OTHER_CKPT_EXP}_${OTHER_STEP}}}"
+OTHER_LOCAL="${OTHER_LOCAL:-${TR10_LOCAL:-${RES_OPD_ROOT}/tmp_checkpoints/${OTHER_CKPT_EXP}/${OTHER_STEP}}}"
+OTHER_OSS_NAME="${OTHER_OSS_NAME:-${TR10_OSS_NAME:-$(get_oss_name "$OTHER_CKPT_EXP")}}"
+OTHER_OSS="${OTHER_OSS:-${TR10_OSS:-${OSS_BASE%/}/${OTHER_OSS_NAME}/${OTHER_STEP}}}"
+OTHER_RESULTS="${OTHER_RESULTS:-/home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD/res-opd/eval_results/latest/full/${OTHER_EVAL_EXP}/train5000_test1000_original_sr1p0/eval_results.jsonl}"
+
+COMPARISON_DIR="${COMPARISON_DIR:-${RES_OPD_ROOT}/probes/results/same_image_rkl_signal/eval_compare_base_vs_${OTHER_RUN_NAME}}"
+COMPARISON_JSON="${COMPARISON_JSON:-${COMPARISON_DIR}/eval_result_object_comparison.json}"
+COMPARISON_MD="${COMPARISON_MD:-${COMPARISON_DIR}/eval_result_object_comparison.md}"
+BUILD_COMPARISON="${BUILD_COMPARISON:-auto}"
+OUTPUT_DIR="${OUTPUT_DIR:-${RES_OPD_ROOT}/probes/results/targeted_pope_base_vs_${OTHER_RUN_NAME}}"
 SAMPLES_JSONL="${SAMPLES_JSONL:-${OUTPUT_DIR}/targeted_pope_samples.jsonl}"
 TEST_JSON="${TEST_JSON:-${RES_OPD_ROOT}/data/test_1000.json}"
 TARGETED_BUCKETS="${TARGETED_BUCKETS:-removed_hallucinated,added_hallucinated,removed_correct,added_correct}"
@@ -161,7 +175,7 @@ if [[ "$VLLM_NUM_GPUS" -le 0 ]]; then
 fi
 VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-$VLLM_NUM_GPUS}"
 BASE_VLLM_PORT="${BASE_VLLM_PORT:-${VLLM_BASE_PORT:-${VLLM_PORT:-8027}}}"
-TR10_VLLM_PORT="${TR10_VLLM_PORT:-$((BASE_VLLM_PORT + 1))}"
+OTHER_VLLM_PORT="${OTHER_VLLM_PORT:-${TR10_VLLM_PORT:-$((BASE_VLLM_PORT + 1))}}"
 VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.90}"
 VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-9728}"
 VLLM_PARALLEL_WORKERS="${VLLM_PARALLEL_WORKERS:-64}"
@@ -215,7 +229,7 @@ start_vllm_server() {
 
   cleanup_vllm_server
   if curl -s "http://localhost:${port}/health" >/dev/null 2>&1; then
-    echo "ERROR: vLLM port ${port} is already serving /health; set BASE_VLLM_PORT/TR10_VLLM_PORT to a free port." >&2
+    echo "ERROR: vLLM port ${port} is already serving /health; set BASE_VLLM_PORT/OTHER_VLLM_PORT to a free port." >&2
     exit 1
   fi
 
@@ -337,10 +351,45 @@ ensure_complete_for_summary() {
   return 1
 }
 
+maybe_build_comparison() {
+  local should_build=False
+  if [[ "$BUILD_COMPARISON" == "auto" ]]; then
+    if [[ ! -s "$COMPARISON_JSON" ]]; then
+      should_build=True
+    fi
+  elif truthy "$BUILD_COMPARISON"; then
+    should_build=True
+  fi
+
+  if ! truthy "$should_build"; then
+    echo "[compare] Reusing comparison JSON: $COMPARISON_JSON"
+    return 0
+  fi
+
+  if [[ ! -f "$BASE_RESULTS" ]]; then
+    echo "ERROR: base eval_results missing: $BASE_RESULTS" >&2
+    exit 1
+  fi
+  if [[ ! -f "$OTHER_RESULTS" ]]; then
+    echo "ERROR: ${OTHER_RUN_NAME} eval_results missing: $OTHER_RESULTS" >&2
+    exit 1
+  fi
+
+  echo "[compare] Building base vs ${OTHER_RUN_NAME} object comparison"
+  "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/compare_eval_result_objects.py" \
+    --base-results "$BASE_RESULTS" \
+    --other-results "$OTHER_RESULTS" \
+    --base-name "base" \
+    --other-name "$OTHER_RUN_NAME" \
+    --test-json "$TEST_JSON" \
+    --output-json "$COMPARISON_JSON" \
+    --output-md "$COMPARISON_MD"
+}
+
 samples_path="$SAMPLES_JSONL"
 base_answers="${OUTPUT_DIR}/base_answers.jsonl"
-tr10_answers="${OUTPUT_DIR}/tr10_rkl_answers.jsonl"
-tr10_downloaded=False
+other_answers="${OUTPUT_DIR}/${OTHER_RUN_NAME}_answers.jsonl"
+other_downloaded=False
 
 common_args=(
   --comparison-json "$COMPARISON_JSON"
@@ -358,17 +407,26 @@ fi
 
 echo "=== Targeted POPE config ==="
 echo "BASE_MODEL=$BASE_MODEL"
-echo "TR10_LOCAL=$TR10_LOCAL"
-echo "TR10_OSS=$TR10_OSS"
+echo "BASE_RESULTS=$BASE_RESULTS"
+echo "OTHER_RUN_NAME=$OTHER_RUN_NAME"
+echo "OTHER_TASK=$OTHER_TASK"
+echo "OTHER_CKPT_EXP=$OTHER_CKPT_EXP"
+echo "OTHER_EVAL_EXP=$OTHER_EVAL_EXP"
+echo "OTHER_LOCAL=$OTHER_LOCAL"
+echo "OTHER_OSS=$OTHER_OSS"
+echo "OTHER_RESULTS=$OTHER_RESULTS"
 echo "COMPARISON_JSON=$COMPARISON_JSON"
+echo "BUILD_COMPARISON=$BUILD_COMPARISON"
 echo "OUTPUT_DIR=$OUTPUT_DIR"
 echo "SAMPLES_JSONL=$samples_path"
 echo "TEST_JSON=$TEST_JSON"
 echo "TARGETED_BUCKETS=$TARGETED_BUCKETS MAX_PER_BUCKET=$MAX_PER_BUCKET"
 echo "TARGETED_TASKS=$TARGETED_TASKS SKIP_COMPLETED=$SKIP_COMPLETED FORCE_TARGETED=$FORCE_TARGETED"
 echo "VLLM_GPU_IDS=$VLLM_GPU_IDS VLLM_TENSOR_PARALLEL_SIZE=$VLLM_TENSOR_PARALLEL_SIZE"
-echo "BASE_VLLM_PORT=$BASE_VLLM_PORT TR10_VLLM_PORT=$TR10_VLLM_PORT"
+echo "BASE_VLLM_PORT=$BASE_VLLM_PORT OTHER_VLLM_PORT=$OTHER_VLLM_PORT"
 echo
+
+maybe_build_comparison
 
 if task_enabled build || [[ ! -s "$samples_path" ]]; then
   echo "[0/3] Build targeted POPE samples"
@@ -402,22 +460,22 @@ else
   echo "[1/3] Skipping base because TARGETED_TASKS=$TARGETED_TASKS"
 fi
 
-if task_enabled tr10; then
+if task_enabled other; then
   echo
-  echo "[2/3] Targeted POPE for tr1.0 RKL"
-  if should_skip_answers "tr10" "$tr10_answers"; then
+  echo "[2/3] Targeted POPE for ${OTHER_RUN_NAME}"
+  if should_skip_answers "$OTHER_TASK" "$other_answers"; then
     :
   else
-    if download_checkpoint_from_oss "$TR10_OSS" "$TR10_LOCAL"; then
-      tr10_downloaded=True
+    if download_checkpoint_from_oss "$OTHER_OSS" "$OTHER_LOCAL"; then
+      other_downloaded=True
     fi
-    start_vllm_server "$TR10_LOCAL" "$TR10_EVAL_EXP" "${RES_OPD_ROOT}/logs/vllm_targeted_pope_tr10.log" "$TR10_VLLM_PORT"
+    start_vllm_server "$OTHER_LOCAL" "$OTHER_EVAL_EXP" "${RES_OPD_ROOT}/logs/vllm_targeted_pope_${OTHER_RUN_NAME}.log" "$OTHER_VLLM_PORT"
     "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/targeted_pope_from_eval_compare.py" \
       "${common_args[@]}" \
-      --api-base "http://localhost:${TR10_VLLM_PORT}/v1/" \
-      --model-name "$TR10_EVAL_EXP" \
-      --run-name "tr10_rkl" \
-      --answers-jsonl "$tr10_answers" \
+      --api-base "http://localhost:${OTHER_VLLM_PORT}/v1/" \
+      --model-name "$OTHER_EVAL_EXP" \
+      --run-name "$OTHER_RUN_NAME" \
+      --answers-jsonl "$other_answers" \
       --parallel-workers "$VLLM_PARALLEL_WORKERS" \
       --max-new-tokens "$TARGETED_MAX_NEW_TOKENS" \
       "${logprob_args[@]}"
@@ -425,20 +483,20 @@ if task_enabled tr10; then
   fi
 else
   echo
-  echo "[2/3] Skipping tr1.0 RKL because TARGETED_TASKS=$TARGETED_TASKS"
+  echo "[2/3] Skipping ${OTHER_RUN_NAME} because TARGETED_TASKS=$TARGETED_TASKS"
 fi
 
 if task_enabled summary; then
   echo
   echo "[3/3] Paired targeted POPE summary"
   ensure_complete_for_summary "base" "$base_answers"
-  ensure_complete_for_summary "tr10" "$tr10_answers"
+  ensure_complete_for_summary "$OTHER_TASK" "$other_answers"
   "$PYTHON_BIN" -u "${RES_OPD_ROOT}/probes/targeted_pope_from_eval_compare.py" \
     "${common_args[@]}" \
     --base-answers "$base_answers" \
-    --other-answers "$tr10_answers" \
+    --other-answers "$other_answers" \
     --base-name "base" \
-    --other-name "tr10_rkl" \
+    --other-name "$OTHER_RUN_NAME" \
     --summary-json "${OUTPUT_DIR}/targeted_pope_summary.json" \
     --summary-md "${OUTPUT_DIR}/targeted_pope_summary.md"
 else
@@ -446,14 +504,14 @@ else
   echo "[3/3] Skipping summary because TARGETED_TASKS=$TARGETED_TASKS"
 fi
 
-if truthy "$CLEANUP_AFTER" && truthy "$tr10_downloaded"; then
-  echo "[Cleanup] Removing checkpoint downloaded by this launcher: $TR10_LOCAL"
-  rm -rf "$TR10_LOCAL"
+if truthy "$CLEANUP_AFTER" && truthy "$other_downloaded"; then
+  echo "[Cleanup] Removing checkpoint downloaded by this launcher: $OTHER_LOCAL"
+  rm -rf "$OTHER_LOCAL"
 fi
 
 echo
 echo "Targeted POPE finished:"
 echo "  samples: $samples_path"
 echo "  base:    $base_answers"
-echo "  tr10:    $tr10_answers"
+echo "  other:   $other_answers"
 echo "  summary: ${OUTPUT_DIR}/targeted_pope_summary.md"
