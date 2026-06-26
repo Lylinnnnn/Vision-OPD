@@ -29,7 +29,35 @@ export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
 
 # Match the training launcher: prefer conda-bundled cuDNN over system /lib64.
-CONDA_CUDNN_LIB="$("$PYTHON_BIN" -c "import nvidia.cudnn; import os; print(os.path.join(os.path.dirname(nvidia.cudnn.__file__), 'lib'))" 2>/dev/null || true)"
+# nvidia.cudnn.__file__ can be None in some installs, so use multiple fallbacks.
+CONDA_CUDNN_LIB="$("$PYTHON_BIN" -c "
+import os, sys
+# Method 1: nvidia.cudnn.__file__
+try:
+    import nvidia.cudnn
+    p = getattr(nvidia.cudnn, '__file__', None)
+    if p:
+        d = os.path.join(os.path.dirname(p), 'lib')
+        if os.path.isdir(d):
+            print(d); sys.exit(0)
+except Exception:
+    pass
+# Method 2: derive from nvidia.__path__
+try:
+    import nvidia
+    d = os.path.join(nvidia.__path__[0], 'cudnn', 'lib')
+    if os.path.isdir(d):
+        print(d); sys.exit(0)
+except Exception:
+    pass
+" 2>/dev/null || true)"
+# Method 3: hardcode known conda env path as last resort
+if [[ -z "$CONDA_CUDNN_LIB" || ! -d "$CONDA_CUDNN_LIB" ]]; then
+  _FALLBACK="$(dirname "$PYTHON_BIN")/../lib/python3.12/site-packages/nvidia/cudnn/lib"
+  if [[ -d "$_FALLBACK" ]]; then
+    CONDA_CUDNN_LIB="$_FALLBACK"
+  fi
+fi
 if [[ -n "$CONDA_CUDNN_LIB" && -d "$CONDA_CUDNN_LIB" ]]; then
   export LD_LIBRARY_PATH="${CONDA_CUDNN_LIB}:${LD_LIBRARY_PATH:-}"
 fi

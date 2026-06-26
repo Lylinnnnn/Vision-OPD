@@ -74,8 +74,27 @@ export OPD_SELECTIVE_METRICS_VERBOSE="${OPD_SELECTIVE_METRICS_VERBOSE:-False}"
 # ENVIRONMENT FIXES
 # =============================================================================
 
-# Fix cuDNN version mismatch: prefer conda-bundled cuDNN over system /lib64
-CONDA_CUDNN_LIB="$(python3 -c "import nvidia.cudnn; import os; print(os.path.join(os.path.dirname(nvidia.cudnn.__file__), 'lib'))" 2>/dev/null || true)"
+# Fix cuDNN version mismatch: prefer conda-bundled cuDNN over system /lib64.
+# nvidia.cudnn.__file__ can be None in some installs, so use multiple fallbacks.
+CONDA_CUDNN_LIB="$(python3 -c "
+import os, sys
+try:
+    import nvidia.cudnn
+    p = getattr(nvidia.cudnn, '__file__', None)
+    if p:
+        d = os.path.join(os.path.dirname(p), 'lib')
+        if os.path.isdir(d):
+            print(d); sys.exit(0)
+except Exception:
+    pass
+try:
+    import nvidia
+    d = os.path.join(nvidia.__path__[0], 'cudnn', 'lib')
+    if os.path.isdir(d):
+        print(d); sys.exit(0)
+except Exception:
+    pass
+" 2>/dev/null || true)"
 if [[ -n "$CONDA_CUDNN_LIB" && -d "$CONDA_CUDNN_LIB" ]]; then
     export LD_LIBRARY_PATH="${CONDA_CUDNN_LIB}:${LD_LIBRARY_PATH:-}"
 fi
