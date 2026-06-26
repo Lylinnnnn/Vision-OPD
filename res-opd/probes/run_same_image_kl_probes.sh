@@ -3,15 +3,12 @@
 #
 # Typical tmux launch from repo root:
 #
-#   TR10_OSS=oss://bucket/path/to/global_step_39 \
 #   tmux new-session -d -s probe_same_image_kl \
 #     "bash res-opd/probes/run_same_image_kl_probes.sh 2>&1 | tee res-opd/logs/probe_same_image_kl.log"
 #
-# Required for the tr1.0 dual-model probe:
-#   TR10_OSS: OSS path to the merged sr1.0+tr1.0 RKL checkpoint.
-#
 # Optional overrides:
-#   BASE_MODEL, BASE_SR10, BASE_SR075_DIR, TR10_EXP, TR10_EVAL, TR10_LOCAL
+#   BASE_MODEL, BASE_SR10, BASE_SR075_DIR
+#   OSS_BASE, TR10_CKPT_EXP, TR10_STEP, TR10_EVAL_EXP, TR10_EVAL, TR10_LOCAL
 #   PYTHON_BIN, MAX_SAMPLES, KL_CHUNK_SIZE, TOPK, TORCH_DTYPE
 #   RUN_BASE_SR075_EVAL=True|False|auto
 #   RUN_DUPLICATE_SR075=True|False
@@ -44,16 +41,41 @@ truthy() {
   esac
 }
 
+# Same OSS naming convention as res-opd/scripts/eval_batch_from_oss.sh expects
+# and res-opd/scripts/ckpt_upload_watcher.sh writes:
+#   Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr1.0-a1.0-frozen-rkl-full5k-e1
+#   -> ResOPD_orig_sr1.0_tr1.0_a1.0_frozen_rkl_full5k-e1
+get_oss_name() {
+  local ckpt_dir_name="$1"
+  local suffix
+  suffix="${ckpt_dir_name#Res-OPD-Qwen3VL-2B-Instruct-}"
+  if [[ "$suffix" == "$ckpt_dir_name" ]]; then
+    suffix="$ckpt_dir_name"
+  fi
+
+  local epoch_tag=""
+  if [[ "$suffix" =~ ^(.+)-(e[0-9]+)$ ]]; then
+    suffix="${BASH_REMATCH[1]}"
+    epoch_tag="-${BASH_REMATCH[2]}"
+  fi
+
+  echo "ResOPD_${suffix//-/_}${epoch_tag}"
+}
+
 BASE_MODEL="${BASE_MODEL:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct}"
 BASE_DIR="${BASE_DIR:-/home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD/res-opd/eval_results/latest/full/Qwen3VL-2B-Instruct}"
 BASE_SR10="${BASE_SR10:-${BASE_DIR}/train5000_test1000_original_sr1p0/eval_results.jsonl}"
 BASE_SR075_DIR="${BASE_SR075_DIR:-${BASE_DIR}/train5000_test1000_original_sr0p75}"
 BASE_SR075="${BASE_SR075:-${BASE_SR075_DIR}/eval_results.jsonl}"
 
-TR10_EXP="${TR10_EXP:-Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr1.0-a1.0-frozen-rkl-full5k-e1_global_step_39}"
-TR10_EVAL="${TR10_EVAL:-/home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD/res-opd/eval_results/latest/full/${TR10_EXP}/train5000_test1000_original_sr1p0/eval_results.jsonl}"
-TR10_LOCAL="${TR10_LOCAL:-${RES_OPD_ROOT}/tmp_checkpoints/${TR10_EXP}}"
-TR10_OSS="${TR10_OSS:-}"
+OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
+TR10_CKPT_EXP="${TR10_CKPT_EXP:-Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr1.0-a1.0-frozen-rkl-full5k-e1}"
+TR10_STEP="${TR10_STEP:-global_step_39}"
+TR10_EVAL_EXP="${TR10_EVAL_EXP:-${TR10_CKPT_EXP}_${TR10_STEP}}"
+TR10_EVAL="${TR10_EVAL:-/home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD/res-opd/eval_results/latest/full/${TR10_EVAL_EXP}/train5000_test1000_original_sr1p0/eval_results.jsonl}"
+TR10_LOCAL="${TR10_LOCAL:-${RES_OPD_ROOT}/tmp_checkpoints/${TR10_CKPT_EXP}/${TR10_STEP}}"
+TR10_OSS_NAME="${TR10_OSS_NAME:-$(get_oss_name "$TR10_CKPT_EXP")}"
+TR10_OSS="${TR10_OSS:-${OSS_BASE%/}/${TR10_OSS_NAME}/${TR10_STEP}}"
 
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 BASE_EVAL_MAX_SAMPLES="${BASE_EVAL_MAX_SAMPLES:-0}"
@@ -90,10 +112,14 @@ echo "CONDA_CUDNN_LIB=${CONDA_CUDNN_LIB:-<unset>}"
 echo "BASE_MODEL=$BASE_MODEL"
 echo "BASE_SR10=$BASE_SR10"
 echo "BASE_SR075=$BASE_SR075"
-echo "TR10_EXP=$TR10_EXP"
+echo "OSS_BASE=$OSS_BASE"
+echo "TR10_CKPT_EXP=$TR10_CKPT_EXP"
+echo "TR10_STEP=$TR10_STEP"
+echo "TR10_EVAL_EXP=$TR10_EVAL_EXP"
+echo "TR10_OSS_NAME=$TR10_OSS_NAME"
 echo "TR10_EVAL=$TR10_EVAL"
 echo "TR10_LOCAL=$TR10_LOCAL"
-echo "TR10_OSS=${TR10_OSS:-<unset>}"
+echo "TR10_OSS=$TR10_OSS"
 echo "MAX_SAMPLES=$MAX_SAMPLES KL_CHUNK_SIZE=$KL_CHUNK_SIZE TOPK=$TOPK"
 echo
 
@@ -158,10 +184,6 @@ echo "[3/4] dual_view_same_model, base original captions, full vs lowres 0.75"
   "${common_probe_args[@]}"
 
 if truthy "$RUN_TR10"; then
-  if [[ -z "$TR10_OSS" ]]; then
-    echo "ERROR: RUN_TR10=True requires TR10_OSS=oss://... for the merged tr1.0 RKL checkpoint." >&2
-    exit 1
-  fi
   if [[ ! -f "$TR10_EVAL" ]]; then
     echo "ERROR: tr1.0 eval_results missing: $TR10_EVAL" >&2
     exit 1
