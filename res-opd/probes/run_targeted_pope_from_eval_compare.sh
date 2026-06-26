@@ -145,7 +145,7 @@ TR10_LOCAL="${TR10_LOCAL:-${RES_OPD_ROOT}/tmp_checkpoints/${TR10_CKPT_EXP}/${TR1
 TR10_OSS_NAME="${TR10_OSS_NAME:-$(get_oss_name "$TR10_CKPT_EXP")}"
 TR10_OSS="${TR10_OSS:-${OSS_BASE%/}/${TR10_OSS_NAME}/${TR10_STEP}}"
 
-COMPARISON_JSON="${COMPARISON_JSON:-${RES_OPD_ROOT}/probes/results/same_image_kl_probe_results/6_eval_compare_base_vs_tr10_rkl.json}"
+COMPARISON_JSON="${COMPARISON_JSON:-${RES_OPD_ROOT}/probes/results/same_image_rkl_signal/eval_compare_base_vs_tr10_rkl/eval_result_object_comparison.json}"
 OUTPUT_DIR="${OUTPUT_DIR:-${RES_OPD_ROOT}/probes/results/targeted_pope_base_vs_tr10_rkl}"
 SAMPLES_JSONL="${SAMPLES_JSONL:-${OUTPUT_DIR}/targeted_pope_samples.jsonl}"
 TEST_JSON="${TEST_JSON:-${RES_OPD_ROOT}/data/test_1000.json}"
