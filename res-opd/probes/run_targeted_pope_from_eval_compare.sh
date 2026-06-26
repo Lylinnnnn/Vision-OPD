@@ -596,6 +596,19 @@ if task_enabled base; then
       --max-new-tokens "$TARGETED_MAX_NEW_TOKENS" \
       "${logprob_args[@]}"
     cleanup_vllm_server
+    # Wait for GPU memory to be fully released before starting other model
+    echo "[Cooldown] Waiting for GPU memory release after base server..."
+    for _wait_i in $(seq 1 30); do
+      sleep 5
+      gpu_used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | awk '{s+=$1} END {print s+0}')
+      if [[ "$gpu_used" -lt 1000 ]]; then
+        echo "[Cooldown] GPUs clear after $((_wait_i * 5))s (used=${gpu_used}MB)"
+        break
+      fi
+      if [[ $_wait_i -eq 30 ]]; then
+        echo "[Cooldown] WARNING: GPUs may still be busy after 150s, proceeding anyway"
+      fi
+    done
   fi
 else
   echo
