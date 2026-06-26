@@ -247,12 +247,25 @@ cleanup_vllm_server() {
   local port="${CURRENT_VLLM_PORT:-}"
   if [[ -n "${VLLM_PID:-}" ]] && kill -0 "$VLLM_PID" 2>/dev/null; then
     echo "[vLLM] Shutting down server pid=${VLLM_PID}"
-    kill "$VLLM_PID" 2>/dev/null || true
+    # Kill the entire process group to catch all child processes (EngineCore, WorkerProc, etc.)
+    kill -- -"$VLLM_PID" 2>/dev/null || kill "$VLLM_PID" 2>/dev/null || true
     wait "$VLLM_PID" 2>/dev/null || true
-    if [[ -n "$port" ]]; then
-      if ! wait_port_released "$port" 60; then
-        echo "[vLLM] WARNING: port ${port} still responds after shutdown; continuing because later tasks use their own ports."
-      fi
+  fi
+  # Aggressively clean up any remaining vLLM processes on our GPUs
+  if [[ -n "${VLLM_GPU_IDS:-}" ]]; then
+    local remaining
+    remaining=$(ps aux | grep -E "vllm\.entrypoints|EngineCore|WorkerProc" | grep -v grep | awk '{print $2}' | tr '\n' ' ')
+    if [[ -n "$remaining" ]]; then
+      echo "[vLLM] Cleaning up residual processes: $remaining"
+      echo "$remaining" | xargs kill -9 2>/dev/null || true
+      sleep 3
+    fi
+  fi
+  # Clean up leaked shared memory objects
+  rm -f /dev/shm/vllm* 2>/dev/null || true
+  if [[ -n "$port" ]]; then
+    if ! wait_port_released "$port" 60; then
+      echo "[vLLM] WARNING: port ${port} still responds after shutdown; continuing because later tasks use their own ports."
     fi
   fi
   VLLM_PID=""
