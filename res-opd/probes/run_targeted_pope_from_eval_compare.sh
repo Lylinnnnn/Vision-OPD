@@ -287,7 +287,7 @@ start_vllm_server() {
   echo "[vLLM] Starting server model=${model_path} name=${served_model_name}"
   echo "[vLLM] port=${port} gpu_ids=${VLLM_GPU_IDS} tensor_parallel=${VLLM_TENSOR_PARALLEL_SIZE}"
   export VLLM_DISABLE_PROMETHEUS=1
-  export VLLM_USE_V1=1
+  export VLLM_USE_V1="${VLLM_USE_V1:-0}"
   unset VLLM_ATTENTION_BACKEND
   (
     export CUDA_VISIBLE_DEVICES="$VLLM_GPU_IDS"
