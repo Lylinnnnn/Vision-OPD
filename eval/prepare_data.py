@@ -27,7 +27,11 @@ BENCHMARK_JSON_MAP = {
     "visualprobe": "visualprobe.json",
 }
 
-MMSTAR_LETTER_PROMPT = "Answer with the option's letter from the given choices directly."
+MMSTAR_LETTER_PROMPT = "Please answer directly with only the letter of the correct option and nothing else."
+MMSTAR_KNOWN_PROMPTS = [
+    MMSTAR_LETTER_PROMPT,
+    "Answer with the option's letter from the given choices directly.",
+]
 
 
 def resolve_benchmark_json(benchmark):
@@ -48,6 +52,16 @@ def append_once(text, suffix):
     return (text + "\n" + suffix).strip() if text else suffix
 
 
+def normalize_mmstar_query(query):
+    query = (query or "").strip()
+    for prompt in MMSTAR_KNOWN_PROMPTS:
+        prompt = prompt.strip()
+        if query.endswith(prompt):
+            query = query[: -len(prompt)].rstrip()
+            break
+    return append_once(query, MMSTAR_LETTER_PROMPT)
+
+
 def refresh_existing_prompts(out_json, benchmark):
     if benchmark != "mmstar":
         print(f"Prompt refresh is not defined for {benchmark}; leaving JSON unchanged.")
@@ -63,7 +77,7 @@ def refresh_existing_prompts(out_json, benchmark):
         if not isinstance(item, dict):
             continue
         old_query = item.get("query", "")
-        new_query = append_once(old_query, MMSTAR_LETTER_PROMPT)
+        new_query = normalize_mmstar_query(old_query)
         if new_query != old_query:
             item["query"] = new_query
             changed += 1
@@ -294,7 +308,7 @@ def prepare_mmstar(out_dir):
             with open(img_path, "wb") as f:
                 f.write(img_bytes)
 
-        query = append_once(row.get("question") or "", MMSTAR_LETTER_PROMPT)
+        query = normalize_mmstar_query(row.get("question") or "")
 
         data.append({
             "index": idx,

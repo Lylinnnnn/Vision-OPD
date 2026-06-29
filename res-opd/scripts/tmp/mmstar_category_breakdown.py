@@ -128,13 +128,24 @@ def extract_pred_option_strict(text: str) -> tuple[str, str]:
     return "", "unresolved"
 
 
+def extract_pred_option_official(text: str) -> tuple[str, str]:
+    if not text:
+        return "", "empty"
+    token = text.strip().split()[0].rstrip(".:,").lstrip("(").rstrip(")").upper()
+    if re.fullmatch(r"[A-F]", token):
+        return token, "official_first_token"
+    return "", "unresolved"
+
+
 def rule_score_item(item: dict[str, Any], extract_mode: str) -> dict[str, Any]:
     raw_answer = item.get("model_answer")
     if not isinstance(raw_answer, str) or not raw_answer.strip():
         raw_answer = item.get("extracted_answer", "")
     answer_text = extract_answer_text(raw_answer)
     gt = extract_gt_option(item.get("response", ""))
-    if extract_mode == "strict":
+    if extract_mode == "official":
+        pred, source = extract_pred_option_official(answer_text)
+    elif extract_mode == "strict":
         pred, source = extract_pred_option_strict(answer_text)
     else:
         pred, source = extract_pred_option_legacy(answer_text)
@@ -421,9 +432,12 @@ def main() -> int:
     parser.add_argument("--base-label", default="base")
     parser.add_argument(
         "--extract-mode",
-        choices=("legacy", "strict"),
+        choices=("legacy", "strict", "official"),
         default="legacy",
-        help="legacy matches eval/judge_qwenlm.py's deterministic MCQ rule; strict avoids broad first-uppercase fallback.",
+        help=(
+            "legacy matches the old deterministic MCQ rule; strict avoids broad first-uppercase fallback; "
+            "official matches the first generated token only."
+        ),
     )
     parser.add_argument("--include-tr10", action="store_true", help="Also include tr1.0_rkl if its MMStar result exists.")
     parser.add_argument(

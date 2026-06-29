@@ -73,6 +73,15 @@ def extract_strict_option(text):
     return "", "unresolved"
 
 
+def extract_official_option(text):
+    if not text:
+        return "", "empty"
+    token = text.strip().split()[0].rstrip(".:,").lstrip("(").rstrip(")").upper()
+    if re.fullmatch(r"[A-F]", token):
+        return token, "official_first_token"
+    return "", "unresolved"
+
+
 def extract_mcq_option(answer):
     if not isinstance(answer, str) or not answer:
         return ""
@@ -117,7 +126,9 @@ def mmvp_extract(text):
 
 def mcq_option_match(gt, answer, extract_mode="legacy"):
     gt_val = extract_mcq_option(gt)
-    if extract_mode == "strict":
+    if extract_mode == "official":
+        pred_val, source = extract_official_option(answer)
+    elif extract_mode == "strict":
         pred_val, source = extract_strict_option(answer)
     else:
         pred_val = extract_first_option(answer)
@@ -222,9 +233,12 @@ def main():
     )
     parser.add_argument(
         "--mcq_extract_mode",
-        choices=["legacy", "strict"],
+        choices=["legacy", "strict", "official"],
         default="legacy",
-        help="MCQ option extraction mode. legacy preserves broad first-uppercase matching; strict requires explicit option syntax.",
+        help=(
+            "MCQ option extraction mode. legacy preserves broad first-uppercase matching; "
+            "strict allows explicit option syntax; official matches the first generated token only."
+        ),
     )
     args = parser.parse_args()
 
