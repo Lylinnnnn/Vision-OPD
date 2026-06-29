@@ -8,7 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 export VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar}"
-export VERSION_TAG="${VERSION_TAG:-latest_mmstar_letter}"
+export VERSION_TAG="${VERSION_TAG:-latest_mmstar_official}"
 export VISION_BENCHMARK_REFRESH_PROMPTS="${VISION_BENCHMARK_REFRESH_PROMPTS:-True}"
 export RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-True}"
 export MCQ_EXTRACT_MODE="${MCQ_EXTRACT_MODE:-official}"
