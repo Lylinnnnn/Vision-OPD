@@ -7,7 +7,7 @@
 #     "bash res-opd/probes/run_caption_object_decomposition.sh 2>&1 | tee res-opd/logs/caption_object_decomposition.log"
 #
 # Optional overrides:
-#   BASE_RESULTS, RUN_SPECS, RUNS_JSON, OUTPUT_DIR, TEST_JSON, PYTHON_BIN, STRICT
+#   BASE_RESULTS, RUN_SPECS, RUNS_JSON, OUTPUT_DIR, TEST_JSON, PYTHON_BIN, ALLOW_MISSING
 #
 # RUN_SPECS format:
 #   name=/path/eval_results.jsonl,name2=/path2/eval_results.jsonl
@@ -60,7 +60,7 @@ BASE_RESULTS="${BASE_RESULTS:-${BASE_DIR}/Qwen3VL-2B-Instruct/train5000_test1000
 TEST_JSON="${TEST_JSON:-${RES_OPD_ROOT}/data/test_1000.json}"
 OUTPUT_DIR="${OUTPUT_DIR:-${RES_OPD_ROOT}/probes/results/caption_object_decomposition/full5k_base_vs_variants}"
 TOP_EXAMPLES="${TOP_EXAMPLES:-25}"
-STRICT="${STRICT:-False}"
+ALLOW_MISSING="${ALLOW_MISSING:-False}"
 
 DEFAULT_RUN_SPECS="tr10_rkl=${BASE_DIR}/Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr1.0-a1.0-frozen-rkl-full5k-e1_global_step_39/train5000_test1000_original_sr1p0/eval_results.jsonl"
 DEFAULT_RUN_SPECS+=",tr075_rkl=${BASE_DIR}/Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-full5k-e1_global_step_39/train5000_test1000_original_sr1p0/eval_results.jsonl"
@@ -88,9 +88,9 @@ else
   done
 fi
 
-case "$STRICT" in
+case "$ALLOW_MISSING" in
   True|true|TRUE|1|yes|YES|y|Y)
-    ARGS+=(--strict)
+    ARGS+=(--allow-missing)
     ;;
 esac
 
@@ -102,7 +102,7 @@ echo "BASE_RESULTS = $BASE_RESULTS"
 echo "TEST_JSON = $TEST_JSON"
 echo "OUTPUT_DIR = $OUTPUT_DIR"
 echo "TOP_EXAMPLES = $TOP_EXAMPLES"
-echo "STRICT = $STRICT"
+echo "ALLOW_MISSING = $ALLOW_MISSING"
 if [[ -n "${RUNS_JSON:-}" ]]; then
   echo "RUNS_JSON = $RUNS_JSON"
 else

@@ -184,9 +184,17 @@ def parse_args():
     parser.add_argument("--changes-jsonl", default=None)
     parser.add_argument("--top-examples", type=int, default=25)
     parser.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help=(
+            "Skip missing model eval_results paths. By default all missing paths "
+            "are printed and the script exits so the experiment matrix is not partial."
+        ),
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
-        help="Fail if any default/provided run is missing. By default missing runs are skipped.",
+        help="Deprecated compatibility flag; strict fail-fast is now the default.",
     )
     return parser.parse_args()
 
@@ -576,15 +584,30 @@ def collect_run_specs(args):
 
 
 def prepare_runs(args):
-    warnings = []
     if not os.path.exists(args.base_results):
         raise SystemExit(f"Base eval_results missing: {args.base_results}")
+    specs = collect_run_specs(args)
+    missing = [(name, path) for name, path in specs if not os.path.exists(path)]
+    if missing and not args.allow_missing:
+        lines = [
+            "Missing model eval_results paths. Please locate or generate them, then rerun.",
+            "",
+        ]
+        for name, path in missing:
+            lines.append(f"- {name}: {path}")
+        lines.extend(
+            [
+                "",
+                "Set ALLOW_MISSING=True only for an intentionally partial diagnostic run.",
+            ]
+        )
+        raise SystemExit("\n".join(lines))
+
+    warnings = []
     runs = []
-    for name, path in collect_run_specs(args):
+    for name, path in specs:
         if not os.path.exists(path):
             message = f"Run '{name}' eval_results missing: {path}"
-            if args.strict:
-                raise SystemExit(message)
             warnings.append(message)
             continue
         runs.append((name, path))
