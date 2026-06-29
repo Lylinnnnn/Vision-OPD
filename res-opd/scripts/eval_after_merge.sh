@@ -200,11 +200,20 @@ has_vision_eval_task() {
 apply_official_aux_defaults() {
     local benches="$1"
     if [[ ",${benches}," == *",mmstar,"* || ",${benches}," == *",cv-bench,"* ]]; then
-        [[ -z "$VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET" ]] && VISION_BENCHMARK_REFRESH_PROMPTS="True" || true
-        [[ -z "$RULE_ONLY_JUDGE_WAS_SET" ]] && RULE_ONLY_JUDGE="True" || true
-        [[ -z "$MCQ_EXTRACT_MODE_WAS_SET" ]] && MCQ_EXTRACT_MODE="official" || true
-        [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]] && VISION_MAX_TOKENS="16" || true
+        if [[ -z "$VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET" ]]; then
+            VISION_BENCHMARK_REFRESH_PROMPTS="True"
+        fi
+        if [[ -z "$RULE_ONLY_JUDGE_WAS_SET" ]]; then
+            RULE_ONLY_JUDGE="True"
+        fi
+        if [[ -z "$MCQ_EXTRACT_MODE_WAS_SET" ]]; then
+            MCQ_EXTRACT_MODE="official"
+        fi
+        if [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]]; then
+            VISION_MAX_TOKENS="16"
+        fi
     fi
+    return 0
 }
 
 is_truthy() {
