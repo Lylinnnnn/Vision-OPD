@@ -49,25 +49,27 @@ def load_records(path):
         return records
 
 
-def find_judge_files(result_root, benchmark):
+def find_judge_files(result_root, output_benchmark):
     root = Path(result_root)
     candidates = []
-    direct_dir = root / benchmark / "judge"
+    direct_dir = root / output_benchmark / "judge"
     if direct_dir.exists():
         candidates.extend(direct_dir.glob("*_answer.jsonl"))
-    direct_dir = root / "vision_opd" / "judge" / benchmark
+    direct_dir = root / "vision_opd" / "judge" / output_benchmark
     if direct_dir.exists():
         candidates.extend(direct_dir.glob("*_answer.jsonl"))
-    candidates.extend(root.glob(f"*/{benchmark}/judge/*_answer.jsonl"))
-    candidates.extend(root.glob(f"*/vision_opd/judge/{benchmark}/*_answer.jsonl"))
+    candidates.extend(root.glob(f"*/{output_benchmark}/judge/*_answer.jsonl"))
+    candidates.extend(root.glob(f"*/vision_opd/judge/{output_benchmark}/*_answer.jsonl"))
     return sorted(set(candidates))
 
 
-def check_one(result_root, benchmark, benchmark_data_dir):
+def check_one(result_root, benchmark, benchmark_data_dir, output_suffix=""):
     bench_json = BENCHMARK_JSON_MAP.get(benchmark)
+    output_benchmark = f"{benchmark}{output_suffix}"
     if not bench_json:
         return {
             "benchmark": benchmark,
+            "output_benchmark": output_benchmark,
             "complete": False,
             "reason": f"unsupported benchmark: {benchmark}",
         }
@@ -76,18 +78,20 @@ def check_one(result_root, benchmark, benchmark_data_dir):
     if not benchmark_json.exists():
         return {
             "benchmark": benchmark,
+            "output_benchmark": output_benchmark,
             "complete": False,
             "reason": f"benchmark json missing: {benchmark_json}",
         }
 
     expected = len(load_records(benchmark_json))
     best = None
-    for path in find_judge_files(result_root, benchmark):
+    for path in find_judge_files(result_root, output_benchmark):
         try:
             records = load_records(path)
         except Exception as exc:  # noqa: BLE001 - report corrupt files as incomplete.
             current = {
                 "benchmark": benchmark,
+                "output_benchmark": output_benchmark,
                 "path": str(path),
                 "complete": False,
                 "records": 0,
@@ -100,6 +104,7 @@ def check_one(result_root, benchmark, benchmark_data_dir):
             complete = len(records) == expected and judged == expected
             current = {
                 "benchmark": benchmark,
+                "output_benchmark": output_benchmark,
                 "path": str(path),
                 "complete": complete,
                 "records": len(records),
@@ -116,11 +121,12 @@ def check_one(result_root, benchmark, benchmark_data_dir):
         return best
     return {
         "benchmark": benchmark,
+        "output_benchmark": output_benchmark,
         "complete": False,
         "records": 0,
         "expected": expected,
         "judged": 0,
-        "reason": f"judge output missing under {Path(result_root)}",
+        "reason": f"judge output missing under {Path(result_root) / output_benchmark / 'judge'}",
     }
 
 
@@ -129,11 +135,12 @@ def main():
     parser.add_argument("--result-root", required=True)
     parser.add_argument("--benchmarks", required=True, help="Comma-separated Vision-OPD benchmark names")
     parser.add_argument("--benchmark-data-dir", required=True)
+    parser.add_argument("--output-suffix", default="", help="Suffix appended to benchmark output folders.")
     parser.add_argument("--json", action="store_true", help="Print machine-readable status")
     args = parser.parse_args()
 
     statuses = [
-        check_one(args.result_root, benchmark, args.benchmark_data_dir)
+        check_one(args.result_root, benchmark, args.benchmark_data_dir, args.output_suffix)
         for benchmark in split_csv(args.benchmarks)
     ]
     all_complete = bool(statuses) and all(item["complete"] for item in statuses)
@@ -147,7 +154,8 @@ def main():
             counts = ""
             if "expected" in item:
                 counts = f" records={item.get('records', 0)}/{item.get('expected', 0)} judged={item.get('judged', 0)}"
-            print(f"{marker} {item['benchmark']}:{counts} {detail}")
+            output_name = item.get("output_benchmark") or item["benchmark"]
+            print(f"{marker} {item['benchmark']} -> {output_name}:{counts} {detail}")
 
     return 0 if all_complete else 1
 

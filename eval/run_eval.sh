@@ -31,6 +31,7 @@ MAX_TOKENS="${MAX_TOKENS:-32768}"
 OUT_DIR="${OUT_DIR:-model_answer}"
 JUDGE_DIR="${JUDGE_DIR:-judge}"
 BENCHMARK_OUTPUT_LAYOUT="${BENCHMARK_OUTPUT_LAYOUT:-legacy}"
+BENCHMARK_OUTPUT_SUFFIX="${BENCHMARK_OUTPUT_SUFFIX:-}"
 MAX_RETRIES="${MAX_RETRIES:-3}"
 PARALLEL_WORKERS="${PARALLEL_WORKERS:-256}"
 ENABLE_THINKING="${ENABLE_THINKING:-}"
@@ -93,9 +94,11 @@ run_single_benchmark() {
   echo "Auto download: ${BENCHMARK_AUTO_DOWNLOAD}"
   echo "Clean source: ${BENCHMARK_CLEAN_SOURCE}"
   echo "Refresh prompts: ${BENCHMARK_REFRESH_PROMPTS}"
+  echo "Output suffix: ${BENCHMARK_OUTPUT_SUFFIX}"
   echo "=========================================="
 
   local model_tag="${MODEL_NAME}_seed${SEED}"
+  local output_bench="${bench}${BENCHMARK_OUTPUT_SUFFIX}"
   local benchmark_json_path="${BENCHMARK_DATA_DIR}/${bench_json}"
   local out_dir_for_bench="${OUT_DIR}"
   local judge_dir_for_bench="${JUDGE_DIR}"
@@ -105,8 +108,8 @@ run_single_benchmark() {
     legacy)
       ;;
     per_benchmark)
-      out_dir_for_bench="${OUT_DIR}/${bench}/model_answer"
-      judge_dir_for_bench="${JUDGE_DIR}/${bench}/judge"
+      out_dir_for_bench="${OUT_DIR}/${output_bench}/model_answer"
+      judge_dir_for_bench="${JUDGE_DIR}/${output_bench}/judge"
       judge_json="${judge_dir_for_bench}/${model_tag}_answer.jsonl"
       output_layout_args+=(--no_benchmark_subdir)
       mkdir -p "${out_dir_for_bench}" "${judge_dir_for_bench}"

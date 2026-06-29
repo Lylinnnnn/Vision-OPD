@@ -3,13 +3,15 @@ set -euo pipefail
 
 # Clean MMStar rerun for base + tr0.75 variants.
 # This uses a letter-only MMStar prompt and strict deterministic MCQ extraction,
-# and writes to a fresh version tag by default so old MMStar outputs are not reused.
+# and writes under each checkpoint's normal eval_results/latest folder. The
+# output suffix keeps this rerun separate from older MMStar outputs.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 export VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar}"
-export VERSION_TAG="${VERSION_TAG:-latest_mmstar_official}"
+export VERSION_TAG="${VERSION_TAG:-latest}"
 export VISION_BENCHMARK_REFRESH_PROMPTS="${VISION_BENCHMARK_REFRESH_PROMPTS:-True}"
+export VISION_BENCHMARK_OUTPUT_SUFFIX="${VISION_BENCHMARK_OUTPUT_SUFFIX:-_official}"
 export RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-True}"
 export MCQ_EXTRACT_MODE="${MCQ_EXTRACT_MODE:-official}"
 export VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-16}"

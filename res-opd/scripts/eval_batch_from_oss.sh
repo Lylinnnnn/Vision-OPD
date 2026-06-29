@@ -95,6 +95,7 @@ VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-/h
 VISION_BENCHMARK_AUTO_DOWNLOAD="${VISION_BENCHMARK_AUTO_DOWNLOAD:-${BENCHMARK_AUTO_DOWNLOAD:-True}}"
 VISION_BENCHMARK_CLEAN_SOURCE="${VISION_BENCHMARK_CLEAN_SOURCE:-${BENCHMARK_CLEAN_SOURCE:-False}}"
 VISION_BENCHMARK_REFRESH_PROMPTS="${VISION_BENCHMARK_REFRESH_PROMPTS:-${BENCHMARK_REFRESH_PROMPTS:-False}}"
+VISION_BENCHMARK_OUTPUT_SUFFIX="${VISION_BENCHMARK_OUTPUT_SUFFIX:-${BENCHMARK_OUTPUT_SUFFIX:-}}"
 VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
 VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
@@ -159,6 +160,7 @@ while [[ $# -gt 0 ]]; do
         --vision-benchmark-auto-download|--benchmark-auto-download) VISION_BENCHMARK_AUTO_DOWNLOAD="$2"; shift 2 ;;
         --vision-benchmark-clean-source|--benchmark-clean-source) VISION_BENCHMARK_CLEAN_SOURCE="$2"; shift 2 ;;
         --vision-benchmark-refresh-prompts|--benchmark-refresh-prompts) VISION_BENCHMARK_REFRESH_PROMPTS="$2"; shift 2 ;;
+        --vision-benchmark-output-suffix|--benchmark-output-suffix) VISION_BENCHMARK_OUTPUT_SUFFIX="$2"; shift 2 ;;
         --vision-max-tokens) VISION_MAX_TOKENS="$2"; shift 2 ;;
         --vision-parallel-workers) VISION_PARALLEL_WORKERS="$2"; shift 2 ;;
         --vision-max-retries) VISION_MAX_RETRIES="$2"; shift 2 ;;
@@ -376,7 +378,8 @@ eval_results_exist() {
         if ! "$PYTHON_BIN" "$VISION_STATUS_SCRIPT" \
             --result-root "$result_dir" \
             --benchmarks "$VISION_BENCHMARK" \
-            --benchmark-data-dir "$VISION_BENCHMARK_DATA_DIR" >/dev/null 2>&1; then
+            --benchmark-data-dir "$VISION_BENCHMARK_DATA_DIR" \
+            --output-suffix "$VISION_BENCHMARK_OUTPUT_SUFFIX" >/dev/null 2>&1; then
             ok=1
         fi
     fi
@@ -402,6 +405,7 @@ if has_eval_task "$EVAL_MODE" "vision"; then
     echo " Vision auto download: ${VISION_BENCHMARK_AUTO_DOWNLOAD}"
     echo " Vision clean source: ${VISION_BENCHMARK_CLEAN_SOURCE}"
     echo " Vision refresh prompts: ${VISION_BENCHMARK_REFRESH_PROMPTS}"
+    echo " Vision output suffix: ${VISION_BENCHMARK_OUTPUT_SUFFIX}"
     echo " vLLM port cleanup: ${VLLM_PORT_CLEANUP}"
     echo " Rule-only judge: ${RULE_ONLY_JUDGE}"
     echo " MCQ extract mode: ${MCQ_EXTRACT_MODE}"
@@ -525,6 +529,7 @@ for idx in "${!OSS_NAMES[@]}"; do
             VISION_BENCHMARK_AUTO_DOWNLOAD="$VISION_BENCHMARK_AUTO_DOWNLOAD"
             VISION_BENCHMARK_CLEAN_SOURCE="$VISION_BENCHMARK_CLEAN_SOURCE"
             VISION_BENCHMARK_REFRESH_PROMPTS="$VISION_BENCHMARK_REFRESH_PROMPTS"
+            VISION_BENCHMARK_OUTPUT_SUFFIX="$VISION_BENCHMARK_OUTPUT_SUFFIX"
             VISION_MAX_TOKENS="$VISION_MAX_TOKENS"
             VISION_PARALLEL_WORKERS="$VISION_PARALLEL_WORKERS"
             VISION_MAX_RETRIES="$VISION_MAX_RETRIES"
@@ -578,7 +583,8 @@ for idx in "${!OSS_NAMES[@]}"; do
             "$PYTHON_BIN" "$VISION_STATUS_SCRIPT" \
                 --result-root "$result_dir" \
                 --benchmarks "$VISION_BENCHMARK" \
-                --benchmark-data-dir "$VISION_BENCHMARK_DATA_DIR" || true
+                --benchmark-data-dir "$VISION_BENCHMARK_DATA_DIR" \
+                --output-suffix "$VISION_BENCHMARK_OUTPUT_SUFFIX" || true
         fi
     fi
 
