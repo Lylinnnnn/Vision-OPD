@@ -45,6 +45,9 @@ RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-False}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 BENCHMARK_DATA_DIR="${BENCHMARK_DATA_DIR:-${SCRIPT_DIR}}"
+BENCHMARK_PREPARE_DATA="${BENCHMARK_PREPARE_DATA:-True}"
+BENCHMARK_AUTO_DOWNLOAD="${BENCHMARK_AUTO_DOWNLOAD:-True}"
+BENCHMARK_CLEAN_SOURCE="${BENCHMARK_CLEAN_SOURCE:-False}"
 mkdir -p "${BENCHMARK_DATA_DIR}"
 
 # Benchmark JSON mapping
@@ -82,6 +85,9 @@ run_single_benchmark() {
   echo "API base: ${API_BASE}"
   echo "Model: ${OPENAI_MODEL_ID}"
   echo "Data dir: ${BENCHMARK_DATA_DIR}"
+  echo "Prepare data: ${BENCHMARK_PREPARE_DATA}"
+  echo "Auto download: ${BENCHMARK_AUTO_DOWNLOAD}"
+  echo "Clean source: ${BENCHMARK_CLEAN_SOURCE}"
   echo "=========================================="
 
   local model_tag="${MODEL_NAME}_seed${SEED}"
@@ -108,7 +114,24 @@ run_single_benchmark() {
 
   # [1/4] Prepare data
   echo "[1/4] Preparing data..."
-  python3 prepare_data.py --benchmark "${bench}" --data_dir "${BENCHMARK_DATA_DIR}"
+  if [[ "${BENCHMARK_PREPARE_DATA}" == "False" || "${BENCHMARK_PREPARE_DATA}" == "false" || "${BENCHMARK_PREPARE_DATA}" == "0" ]]; then
+    echo "Skipping data preparation; expecting prebuilt JSON/images."
+  else
+    if [[ ! -s "${benchmark_json_path}" ]]; then
+      if [[ "${BENCHMARK_AUTO_DOWNLOAD}" == "False" || "${BENCHMARK_AUTO_DOWNLOAD}" == "false" || "${BENCHMARK_AUTO_DOWNLOAD}" == "0" ]]; then
+        echo "ERROR: Benchmark JSON is missing and BENCHMARK_AUTO_DOWNLOAD is disabled: ${benchmark_json_path}" >&2
+        exit 1
+      fi
+    fi
+    local -a PREPARE_ARGS=(
+      --benchmark "${bench}"
+      --data_dir "${BENCHMARK_DATA_DIR}"
+    )
+    if [[ "${BENCHMARK_CLEAN_SOURCE}" == "True" || "${BENCHMARK_CLEAN_SOURCE}" == "true" || "${BENCHMARK_CLEAN_SOURCE}" == "1" ]]; then
+      PREPARE_ARGS+=(--clean-source)
+    fi
+    python3 prepare_data.py "${PREPARE_ARGS[@]}"
+  fi
   if [[ ! -s "${benchmark_json_path}" ]]; then
     echo "ERROR: Prepared benchmark JSON is missing or empty: ${benchmark_json_path}" >&2
     exit 1

@@ -19,6 +19,8 @@ VERSION_TAG="${VERSION_TAG:-latest}"
 VLLM_BASE_PORT="${VLLM_BASE_PORT:-8020}"
 VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar,cv-bench}"
 VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}"
+VISION_BENCHMARK_AUTO_DOWNLOAD="${VISION_BENCHMARK_AUTO_DOWNLOAD:-True}"
+VISION_BENCHMARK_CLEAN_SOURCE="${VISION_BENCHMARK_CLEAN_SOURCE:-True}"
 RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-True}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
 VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
@@ -31,17 +33,85 @@ TR075_SW075_OSS="${TR075_SW075_OSS:-ResOPD_orig_sr1.0_tr0.75_a1.0_frozen_rkl_sw0
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
 export HF_HOME="${HF_HOME:-/home/liuyanlin.lyl/notebook/data/hf_cache}"
 
+benchmark_json_name() {
+    case "$1" in
+        mmstar) echo "mmstar.json" ;;
+        cv-bench) echo "cv_bench.json" ;;
+        *)
+            echo "Error: this temporary script only preflights mmstar/cv-bench. Got: $1" >&2
+            return 1
+            ;;
+    esac
+}
+
+is_truthy() {
+    [[ "$1" == "True" || "$1" == "true" || "$1" == "1" || "$1" == "yes" || "$1" == "Y" || "$1" == "y" ]]
+}
+
+preflight_benchmark_data() {
+    echo ""
+    echo "[data] Preparing benchmark data before starting any model server ..."
+    mkdir -p "$VISION_BENCHMARK_DATA_DIR"
+
+    local old_ifs="$IFS"
+    local benchmarks=()
+    local bench
+    IFS=',' read -r -a benchmarks <<< "$VISION_BENCHMARK"
+    IFS="$old_ifs"
+
+    for bench in "${benchmarks[@]}"; do
+        bench="$(echo "$bench" | xargs)"
+        [[ -z "$bench" ]] && continue
+
+        local json_name
+        json_name="$(benchmark_json_name "$bench")"
+        local json_path="${VISION_BENCHMARK_DATA_DIR}/${json_name}"
+        local prepare_args=(
+            --benchmark "$bench"
+            --data_dir "$VISION_BENCHMARK_DATA_DIR"
+        )
+        if is_truthy "$VISION_BENCHMARK_CLEAN_SOURCE"; then
+            prepare_args+=(--clean-source)
+        fi
+
+        if [[ -s "$json_path" ]]; then
+            echo "  Found ${bench}: ${json_path}"
+            if is_truthy "$VISION_BENCHMARK_CLEAN_SOURCE"; then
+                /home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3 eval/prepare_data.py "${prepare_args[@]}"
+            fi
+            continue
+        fi
+
+        if ! is_truthy "$VISION_BENCHMARK_AUTO_DOWNLOAD"; then
+            echo "Error: ${json_path} is missing and VISION_BENCHMARK_AUTO_DOWNLOAD=${VISION_BENCHMARK_AUTO_DOWNLOAD}" >&2
+            exit 1
+        fi
+
+        echo "  Preparing ${bench}: ${json_path}"
+        /home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3 eval/prepare_data.py "${prepare_args[@]}"
+
+        if [[ ! -s "$json_path" ]]; then
+            echo "Error: failed to prepare ${json_path}" >&2
+            exit 1
+        fi
+    done
+}
+
 echo "============================================================"
 echo " MMStar/CV-Bench batch eval"
 echo "============================================================"
 echo "Benchmarks:     ${VISION_BENCHMARK}"
 echo "Data dir:       ${VISION_BENCHMARK_DATA_DIR}"
+echo "Auto download:  ${VISION_BENCHMARK_AUTO_DOWNLOAD}"
+echo "Clean source:   ${VISION_BENCHMARK_CLEAN_SOURCE}"
 echo "Version tag:    ${VERSION_TAG}"
 echo "Step:           ${STEP}"
 echo "Rule-only:      ${RULE_ONLY_JUDGE}"
 echo "HF endpoint:    ${HF_ENDPOINT}"
 echo "HF home:        ${HF_HOME}"
 echo "============================================================"
+
+preflight_benchmark_data
 
 if [[ "$RUN_BASE" == "True" || "$RUN_BASE" == "true" || "$RUN_BASE" == "1" ]]; then
     if [[ ! -d "$BASE_MODEL_PATH" ]]; then
@@ -58,6 +128,8 @@ if [[ "$RUN_BASE" == "True" || "$RUN_BASE" == "true" || "$RUN_BASE" == "1" ]]; t
     STUDENT_RATIO=1.0 \
     VISION_BENCHMARK="$VISION_BENCHMARK" \
     VISION_BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR" \
+    VISION_BENCHMARK_AUTO_DOWNLOAD="$VISION_BENCHMARK_AUTO_DOWNLOAD" \
+    VISION_BENCHMARK_CLEAN_SOURCE="$VISION_BENCHMARK_CLEAN_SOURCE" \
     VISION_PARALLEL_WORKERS="$VISION_PARALLEL_WORKERS" \
     VISION_MAX_RETRIES="$VISION_MAX_RETRIES" \
     VISION_MAX_TOKENS="$VISION_MAX_TOKENS" \
@@ -73,6 +145,8 @@ echo "[variants] Evaluating OSS checkpoints"
 VLLM_BASE_PORT=$((VLLM_BASE_PORT + 1)) \
 VISION_BENCHMARK="$VISION_BENCHMARK" \
 VISION_BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR" \
+VISION_BENCHMARK_AUTO_DOWNLOAD="$VISION_BENCHMARK_AUTO_DOWNLOAD" \
+VISION_BENCHMARK_CLEAN_SOURCE="$VISION_BENCHMARK_CLEAN_SOURCE" \
 VISION_PARALLEL_WORKERS="$VISION_PARALLEL_WORKERS" \
 VISION_MAX_RETRIES="$VISION_MAX_RETRIES" \
 VISION_MAX_TOKENS="$VISION_MAX_TOKENS" \
@@ -83,6 +157,8 @@ RULE_ONLY_JUDGE="$RULE_ONLY_JUDGE" \
         --eval-mode vision \
         --vision-benchmark "$VISION_BENCHMARK" \
         --vision-benchmark-data-dir "$VISION_BENCHMARK_DATA_DIR" \
+        --vision-benchmark-auto-download "$VISION_BENCHMARK_AUTO_DOWNLOAD" \
+        --vision-benchmark-clean-source "$VISION_BENCHMARK_CLEAN_SOURCE" \
         --rule-only-judge "$RULE_ONLY_JUDGE" \
         --version-tag "$VERSION_TAG"
 

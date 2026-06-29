@@ -90,6 +90,8 @@ EVAL_OPD_TRACE_CASE_ANALYSIS="${EVAL_OPD_TRACE_CASE_ANALYSIS:-}"
 EVAL_OPD_TRACE_MAX_SAMPLES="${EVAL_OPD_TRACE_MAX_SAMPLES:-0}"
 VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar,cv-bench}"
 VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}}"
+VISION_BENCHMARK_AUTO_DOWNLOAD="${VISION_BENCHMARK_AUTO_DOWNLOAD:-${BENCHMARK_AUTO_DOWNLOAD:-True}}"
+VISION_BENCHMARK_CLEAN_SOURCE="${VISION_BENCHMARK_CLEAN_SOURCE:-${BENCHMARK_CLEAN_SOURCE:-False}}"
 VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
 VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
@@ -150,6 +152,8 @@ while [[ $# -gt 0 ]]; do
         --eval-opd-trace-max-samples) EVAL_OPD_TRACE_MAX_SAMPLES="$2"; shift 2 ;;
         --vision-benchmark) VISION_BENCHMARK="$2"; shift 2 ;;
         --vision-benchmark-data-dir|--benchmark-data-dir) VISION_BENCHMARK_DATA_DIR="$2"; shift 2 ;;
+        --vision-benchmark-auto-download|--benchmark-auto-download) VISION_BENCHMARK_AUTO_DOWNLOAD="$2"; shift 2 ;;
+        --vision-benchmark-clean-source|--benchmark-clean-source) VISION_BENCHMARK_CLEAN_SOURCE="$2"; shift 2 ;;
         --vision-max-tokens) VISION_MAX_TOKENS="$2"; shift 2 ;;
         --vision-parallel-workers) VISION_PARALLEL_WORKERS="$2"; shift 2 ;;
         --vision-max-retries) VISION_MAX_RETRIES="$2"; shift 2 ;;
@@ -364,6 +368,8 @@ echo " Eval mode: ${EVAL_MODE}"
 if has_eval_task "$EVAL_MODE" "vision"; then
     echo " Vision benchmarks: ${VISION_BENCHMARK}"
     echo " Vision data dir: ${VISION_BENCHMARK_DATA_DIR}"
+    echo " Vision auto download: ${VISION_BENCHMARK_AUTO_DOWNLOAD}"
+    echo " Vision clean source: ${VISION_BENCHMARK_CLEAN_SOURCE}"
     echo " Rule-only judge: ${RULE_ONLY_JUDGE}"
 fi
 echo " CHAIR logprobs: ${CHAIR_SAVE_LOGPROBS} (top=${CHAIR_TOP_LOGPROBS})"
@@ -478,6 +484,8 @@ for idx in "${!OSS_NAMES[@]}"; do
             TARGET_PX="$effective_target_px"
             VISION_BENCHMARK="$VISION_BENCHMARK"
             VISION_BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR"
+            VISION_BENCHMARK_AUTO_DOWNLOAD="$VISION_BENCHMARK_AUTO_DOWNLOAD"
+            VISION_BENCHMARK_CLEAN_SOURCE="$VISION_BENCHMARK_CLEAN_SOURCE"
             VISION_MAX_TOKENS="$VISION_MAX_TOKENS"
             VISION_PARALLEL_WORKERS="$VISION_PARALLEL_WORKERS"
             VISION_MAX_RETRIES="$VISION_MAX_RETRIES"

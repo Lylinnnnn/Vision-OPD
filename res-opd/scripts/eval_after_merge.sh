@@ -95,6 +95,8 @@ EVAL_OPD_TRACE_CASE_ANALYSIS="${EVAL_OPD_TRACE_CASE_ANALYSIS:-}"
 EVAL_OPD_TRACE_MAX_SAMPLES="${EVAL_OPD_TRACE_MAX_SAMPLES:-0}"
 VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar}"
 VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}}"
+VISION_BENCHMARK_AUTO_DOWNLOAD="${VISION_BENCHMARK_AUTO_DOWNLOAD:-${BENCHMARK_AUTO_DOWNLOAD:-True}}"
+VISION_BENCHMARK_CLEAN_SOURCE="${VISION_BENCHMARK_CLEAN_SOURCE:-${BENCHMARK_CLEAN_SOURCE:-False}}"
 VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
 VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
@@ -117,6 +119,89 @@ has_eval_task() {
     local mode="$1"
     local task="$2"
     [[ ",${mode}," == *",${task},"* ]]
+}
+
+is_truthy() {
+    [[ "$1" == "True" || "$1" == "true" || "$1" == "1" || "$1" == "yes" || "$1" == "Y" || "$1" == "y" ]]
+}
+
+vision_benchmark_json_name() {
+    case "$1" in
+        zoombench) echo "zoombench.json" ;;
+        vstar) echo "vstar.json" ;;
+        hrbench-4k) echo "hr_bench_4k.json" ;;
+        hrbench-8k) echo "hr_bench_8k.json" ;;
+        mme-realworld) echo "MME_RealWorld.json" ;;
+        mme-realworld-cn) echo "MME_RealWorld_CN.json" ;;
+        mme-realworld-lite) echo "MME_RealWorld_Lite.json" ;;
+        mmstar) echo "mmstar.json" ;;
+        pope) echo "POPE.json" ;;
+        pope_adv) echo "POPE_adv.json" ;;
+        pope_pop) echo "POPE_pop.json" ;;
+        pope_random) echo "POPE_random.json" ;;
+        cv-bench) echo "cv_bench.json" ;;
+        mmvp) echo "mmvp.json" ;;
+        visualprobe) echo "visualprobe.json" ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
+prepare_vision_benchmark_data() {
+    if ! has_eval_task "$EVAL_MODE" "vision"; then
+        return 0
+    fi
+
+    echo ""
+    echo "[preflight] Preparing Vision-OPD benchmark data before vLLM ..."
+    mkdir -p "$VISION_BENCHMARK_DATA_DIR"
+
+    local old_ifs="$IFS"
+    local benchmarks=()
+    local bench
+    IFS=',' read -r -a benchmarks <<< "$VISION_BENCHMARK"
+    IFS="$old_ifs"
+
+    for bench in "${benchmarks[@]}"; do
+        bench="$(echo "$bench" | xargs)"
+        [[ -z "$bench" ]] && continue
+
+        local bench_json
+        bench_json="$(vision_benchmark_json_name "$bench")"
+        if [[ -z "$bench_json" ]]; then
+            echo "Error: unsupported Vision-OPD benchmark: $bench" >&2
+            exit 1
+        fi
+
+        local benchmark_json_path="${VISION_BENCHMARK_DATA_DIR}/${bench_json}"
+        local prepare_args=(
+            --benchmark "$bench"
+            --data_dir "$VISION_BENCHMARK_DATA_DIR"
+        )
+        if is_truthy "$VISION_BENCHMARK_CLEAN_SOURCE"; then
+            prepare_args+=(--clean-source)
+        fi
+
+        if [[ -s "$benchmark_json_path" ]]; then
+            echo "  Found ${bench}: ${benchmark_json_path}"
+            if is_truthy "$VISION_BENCHMARK_CLEAN_SOURCE"; then
+                "$PYTHON_BIN" "${VISION_OPD_ROOT}/eval/prepare_data.py" "${prepare_args[@]}"
+            fi
+        else
+            if ! is_truthy "$VISION_BENCHMARK_AUTO_DOWNLOAD"; then
+                echo "Error: benchmark JSON missing and auto-download is disabled: ${benchmark_json_path}" >&2
+                exit 1
+            fi
+            echo "  Preparing ${bench}: ${benchmark_json_path}"
+            "$PYTHON_BIN" "${VISION_OPD_ROOT}/eval/prepare_data.py" "${prepare_args[@]}"
+        fi
+
+        if [[ ! -s "$benchmark_json_path" ]]; then
+            echo "Error: prepared benchmark JSON is missing or empty: ${benchmark_json_path}" >&2
+            exit 1
+        fi
+    done
 }
 
 EVAL_MODE="$(normalize_eval_mode "$EVAL_MODE")"
@@ -234,11 +319,15 @@ fi
 if has_eval_task "$EVAL_MODE" "vision"; then
     echo "Vision-OPD:  $VISION_BENCHMARK"
     echo "Vision data: $VISION_BENCHMARK_DATA_DIR"
+    echo "Vision auto download: $VISION_BENCHMARK_AUTO_DOWNLOAD"
+    echo "Vision clean source:  $VISION_BENCHMARK_CLEAN_SOURCE"
 fi
 echo "Output:      $OUTPUT_DIR"
 echo "============================================================"
 
 mkdir -p "$OUTPUT_DIR"
+
+prepare_vision_benchmark_data
 
 # --- Step 1: Start vLLM server ---
 echo ""
@@ -360,6 +449,9 @@ if has_eval_task "$EVAL_MODE" "vision"; then
             BENCHMARK="$VISION_BENCHMARK"
             BENCHMARK_OUTPUT_LAYOUT="per_benchmark"
             BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR"
+            BENCHMARK_PREPARE_DATA=False
+            BENCHMARK_AUTO_DOWNLOAD="$VISION_BENCHMARK_AUTO_DOWNLOAD"
+            BENCHMARK_CLEAN_SOURCE="$VISION_BENCHMARK_CLEAN_SOURCE"
             OUT_DIR="$vision_out_dir"
             JUDGE_DIR="$vision_judge_dir"
             MAX_TOKENS="$VISION_MAX_TOKENS"

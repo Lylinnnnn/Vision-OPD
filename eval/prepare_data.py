@@ -1,6 +1,7 @@
 import argparse
 import base64
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -451,6 +452,11 @@ def main():
     parser = argparse.ArgumentParser(description="Prepare benchmark data from HuggingFace")
     parser.add_argument("--benchmark", required=True, type=str)
     parser.add_argument("--data_dir", default=None, type=str, help="Output directory (default: script dir)")
+    parser.add_argument(
+        "--clean-source",
+        action="store_true",
+        help="Delete downloaded source dataset files after converted JSON/images are ready.",
+    )
     args = parser.parse_args()
 
     benchmark = args.benchmark
@@ -461,6 +467,8 @@ def main():
 
     if out_json.exists():
         print(f"Already exists: {out_json}, skipping.")
+        if args.clean_source:
+            clean_source_dirs(out_dir, benchmark)
         return
 
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -532,6 +540,21 @@ def main():
         with open(out_json, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         print(f"Generated: {out_json} (records={len(data)})")
+
+    if args.clean_source:
+        clean_source_dirs(out_dir, benchmark)
+
+
+def clean_source_dirs(out_dir, benchmark):
+    source_dirs = {
+        "mmstar": ["MMStar_data"],
+        "cv-bench": ["CVBench_data"],
+    }.get(benchmark, [])
+    for name in source_dirs:
+        path = out_dir / name
+        if path.exists():
+            print(f"Cleaning downloaded source dataset: {path}")
+            shutil.rmtree(path)
 
 
 if __name__ == "__main__":
