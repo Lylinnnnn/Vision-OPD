@@ -210,7 +210,7 @@ def sample_key(item: dict[str, Any]) -> str:
     )
 
 
-def resolve_result_file(result_root: Path, dataset_tag: str, value: str) -> Path:
+def resolve_result_file(result_root: Path, dataset_tag: str, value: str, benchmark_folder: str) -> Path:
     candidate = Path(os.path.expanduser(value))
     if candidate.is_file():
         return candidate
@@ -224,14 +224,14 @@ def resolve_result_file(result_root: Path, dataset_tag: str, value: str) -> Path
 
     result_candidates: list[Path] = []
     for base in paths_to_try:
-        result_candidates.extend(base.glob("mmstar/judge/*_answer.jsonl"))
-        result_candidates.extend(base.glob("mmstar/model_answer/*_answer.jsonl"))
-        result_candidates.extend(base.glob("vision_opd/judge/mmstar/*_answer.jsonl"))
-        result_candidates.extend(base.glob("vision_opd/model_answer/mmstar/*_answer.jsonl"))
+        result_candidates.extend(base.glob(f"{benchmark_folder}/judge/*_answer.jsonl"))
+        result_candidates.extend(base.glob(f"{benchmark_folder}/model_answer/*_answer.jsonl"))
+        result_candidates.extend(base.glob(f"vision_opd/judge/{benchmark_folder}/*_answer.jsonl"))
+        result_candidates.extend(base.glob(f"vision_opd/model_answer/{benchmark_folder}/*_answer.jsonl"))
 
     if not result_candidates:
         raise FileNotFoundError(
-            f"No MMStar result file found for {value}. Tried: "
+            f"No MMStar result file found for {value} in folder {benchmark_folder}. Tried: "
             + ", ".join(str(x) for x in paths_to_try)
         )
 
@@ -428,6 +428,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--result-root", default="res-opd/eval_results/latest/full", type=Path)
     parser.add_argument("--dataset-tag", default=DEFAULT_DATASET_TAG)
+    parser.add_argument("--benchmark-folder", default="mmstar", help="Result subfolder to read, e.g. mmstar or mmstar_official.")
     parser.add_argument("--output-dir", default=None, type=Path)
     parser.add_argument("--base-label", default="base")
     parser.add_argument(
@@ -465,7 +466,7 @@ def main() -> int:
     missing: list[str] = []
     for label, value in experiment_specs:
         try:
-            result_file = resolve_result_file(result_root, args.dataset_tag, value)
+            result_file = resolve_result_file(result_root, args.dataset_tag, value, args.benchmark_folder)
         except FileNotFoundError as exc:
             missing.append(str(exc))
             continue

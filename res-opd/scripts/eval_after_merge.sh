@@ -100,31 +100,111 @@ VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar}"
 VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}}"
 VISION_BENCHMARK_AUTO_DOWNLOAD="${VISION_BENCHMARK_AUTO_DOWNLOAD:-${BENCHMARK_AUTO_DOWNLOAD:-True}}"
 VISION_BENCHMARK_CLEAN_SOURCE="${VISION_BENCHMARK_CLEAN_SOURCE:-${BENCHMARK_CLEAN_SOURCE:-False}}"
+VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET="${VISION_BENCHMARK_REFRESH_PROMPTS+x}${BENCHMARK_REFRESH_PROMPTS+x}"
 VISION_BENCHMARK_REFRESH_PROMPTS="${VISION_BENCHMARK_REFRESH_PROMPTS:-${BENCHMARK_REFRESH_PROMPTS:-False}}"
 VISION_BENCHMARK_OUTPUT_SUFFIX="${VISION_BENCHMARK_OUTPUT_SUFFIX:-${BENCHMARK_OUTPUT_SUFFIX:-}}"
+VISION_MAX_TOKENS_WAS_SET="${VISION_MAX_TOKENS+x}"
 VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
 VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
 VISION_ENABLE_THINKING="${VISION_ENABLE_THINKING:-}"
+RULE_ONLY_JUDGE_WAS_SET="${RULE_ONLY_JUDGE+x}"
 RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-False}"
+MCQ_EXTRACT_MODE_WAS_SET="${MCQ_EXTRACT_MODE+x}"
 MCQ_EXTRACT_MODE="${MCQ_EXTRACT_MODE:-legacy}"
 
 normalize_eval_mode() {
     local mode
+    local token
+    local normalized=()
     mode="$(echo "$1" | tr '[:upper:]' '[:lower:]' | tr -d ' ')"
-    if [[ "$mode" == "frequent" ]]; then
-        mode="chair,pope"
-    fi
-    if [[ "$mode" == "all" ]]; then
-        mode="chair,pope,vision"
-    fi
-    echo "$mode"
+    IFS=',' read -ra tokens <<< "$mode"
+    for token in "${tokens[@]}"; do
+        case "$token" in
+            frequent|coco)
+                normalized+=(chair pope)
+                ;;
+            all)
+                normalized+=(chair pope vision)
+                ;;
+            cvbench|cv_bench|cv-bench)
+                normalized+=(cv-bench)
+                ;;
+            mmstar|chair|pope|vision)
+                normalized+=("$token")
+                ;;
+            "")
+                ;;
+            *)
+                echo "Error: unsupported eval task '$token'. Use chair,pope,mmstar,cv-bench,vision,frequent,all." >&2
+                exit 1
+                ;;
+        esac
+    done
+
+    local seen=","
+    local unique=()
+    for token in "${normalized[@]}"; do
+        if [[ "$seen" != *",$token,"* ]]; then
+            unique+=("$token")
+            seen+="$token,"
+        fi
+    done
+    local joined
+    joined="$(IFS=','; echo "${unique[*]}")"
+    echo "$joined"
 }
 
 has_eval_task() {
     local mode="$1"
     local task="$2"
     [[ ",${mode}," == *",${task},"* ]]
+}
+
+append_csv_unique() {
+    local current="$1"
+    local item="$2"
+    [[ -z "$item" ]] && {
+        echo "$current"
+        return 0
+    }
+    if [[ ",${current}," == *",${item},"* ]]; then
+        echo "$current"
+    elif [[ -z "$current" ]]; then
+        echo "$item"
+    else
+        echo "${current},${item}"
+    fi
+}
+
+resolve_vision_benchmarks() {
+    local mode="$1"
+    local benches=""
+    if has_eval_task "$mode" "vision"; then
+        benches="$VISION_BENCHMARK"
+    fi
+    if has_eval_task "$mode" "mmstar"; then
+        benches="$(append_csv_unique "$benches" "mmstar")"
+    fi
+    if has_eval_task "$mode" "cv-bench"; then
+        benches="$(append_csv_unique "$benches" "cv-bench")"
+    fi
+    echo "$benches"
+}
+
+has_vision_eval_task() {
+    local mode="$1"
+    has_eval_task "$mode" "vision" || has_eval_task "$mode" "mmstar" || has_eval_task "$mode" "cv-bench"
+}
+
+apply_official_aux_defaults() {
+    local benches="$1"
+    if [[ ",${benches}," == *",mmstar,"* || ",${benches}," == *",cv-bench,"* ]]; then
+        [[ -z "$VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET" ]] && VISION_BENCHMARK_REFRESH_PROMPTS="True"
+        [[ -z "$RULE_ONLY_JUDGE_WAS_SET" ]] && RULE_ONLY_JUDGE="True"
+        [[ -z "$MCQ_EXTRACT_MODE_WAS_SET" ]] && MCQ_EXTRACT_MODE="official"
+        [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]] && VISION_MAX_TOKENS="16"
+    fi
 }
 
 is_truthy() {
@@ -271,7 +351,7 @@ vision_benchmark_json_name() {
 }
 
 prepare_vision_benchmark_data() {
-    if ! has_eval_task "$EVAL_MODE" "vision"; then
+    if ! has_vision_eval_task "$EVAL_MODE"; then
         return 0
     fi
 
@@ -282,7 +362,7 @@ prepare_vision_benchmark_data() {
     local old_ifs="$IFS"
     local benchmarks=()
     local bench
-    IFS=',' read -r -a benchmarks <<< "$VISION_BENCHMARK"
+    IFS=',' read -r -a benchmarks <<< "$EFFECTIVE_VISION_BENCHMARK"
     IFS="$old_ifs"
 
     for bench in "${benchmarks[@]}"; do
@@ -330,8 +410,10 @@ prepare_vision_benchmark_data() {
 }
 
 EVAL_MODE="$(normalize_eval_mode "$EVAL_MODE")"
-if ! has_eval_task "$EVAL_MODE" "chair" && ! has_eval_task "$EVAL_MODE" "pope" && ! has_eval_task "$EVAL_MODE" "vision"; then
-    echo "Error: eval_mode must include chair, pope, vision, frequent, or all. Got: $EVAL_MODE" >&2
+EFFECTIVE_VISION_BENCHMARK="$(resolve_vision_benchmarks "$EVAL_MODE")"
+apply_official_aux_defaults "$EFFECTIVE_VISION_BENCHMARK"
+if ! has_eval_task "$EVAL_MODE" "chair" && ! has_eval_task "$EVAL_MODE" "pope" && ! has_vision_eval_task "$EVAL_MODE"; then
+    echo "Error: eval_mode must include chair, pope, mmstar, cv-bench, vision, frequent, or all. Got: $EVAL_MODE" >&2
     exit 1
 fi
 
@@ -441,8 +523,8 @@ if has_eval_task "$EVAL_MODE" "pope"; then
     echo "POPE:        $POPE_BENCHMARK"
     echo "POPE source: $POPE_SOURCE"
 fi
-if has_eval_task "$EVAL_MODE" "vision"; then
-    echo "Vision-OPD:  $VISION_BENCHMARK"
+if has_vision_eval_task "$EVAL_MODE"; then
+    echo "Vision-OPD:  $EFFECTIVE_VISION_BENCHMARK"
     echo "Vision data: $VISION_BENCHMARK_DATA_DIR"
     echo "Vision auto download: $VISION_BENCHMARK_AUTO_DOWNLOAD"
     echo "Vision clean source:  $VISION_BENCHMARK_CLEAN_SOURCE"
@@ -562,7 +644,7 @@ if has_eval_task "$EVAL_MODE" "pope"; then
     fi
 fi
 
-if has_eval_task "$EVAL_MODE" "vision"; then
+if has_vision_eval_task "$EVAL_MODE"; then
     echo "  Running Vision-OPD benchmark(s) ..."
     if [[ "${RULE_ONLY_JUDGE}" != "True" && "${RULE_ONLY_JUDGE}" != "true" && -z "${JUDGE_API_BASE:-}" && -z "${JUDGE_MODEL_PATH:-}" ]]; then
         echo "  WARNING: Vision-OPD benchmarks require JUDGE_API_BASE/JUDGE_MODEL or JUDGE_MODEL_PATH. Skipping." >&2
@@ -575,7 +657,7 @@ if has_eval_task "$EVAL_MODE" "vision"; then
             API_BASE="http://localhost:$PORT/v1/"
             OPENAI_MODEL_ID="$MODEL_NAME"
             MODEL_NAME="${EXPERIMENT_NAME}"
-            BENCHMARK="$VISION_BENCHMARK"
+            BENCHMARK="$EFFECTIVE_VISION_BENCHMARK"
             BENCHMARK_OUTPUT_LAYOUT="per_benchmark"
             BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR"
             BENCHMARK_PREPARE_DATA=False

@@ -32,6 +32,7 @@ MMSTAR_KNOWN_PROMPTS = [
     MMSTAR_LETTER_PROMPT,
     "Answer with the option's letter from the given choices directly.",
 ]
+CVBENCH_LETTER_PROMPT = "Answer with the option's letter from the given choices directly."
 
 
 def resolve_benchmark_json(benchmark):
@@ -63,7 +64,7 @@ def normalize_mmstar_query(query):
 
 
 def refresh_existing_prompts(out_json, benchmark):
-    if benchmark != "mmstar":
+    if benchmark not in ("mmstar", "cv-bench"):
         print(f"Prompt refresh is not defined for {benchmark}; leaving JSON unchanged.")
         return
 
@@ -77,7 +78,10 @@ def refresh_existing_prompts(out_json, benchmark):
         if not isinstance(item, dict):
             continue
         old_query = item.get("query", "")
-        new_query = normalize_mmstar_query(old_query)
+        if benchmark == "mmstar":
+            new_query = normalize_mmstar_query(old_query)
+        else:
+            new_query = append_once(old_query, CVBENCH_LETTER_PROMPT)
         if new_query != old_query:
             item["query"] = new_query
             changed += 1
@@ -87,9 +91,9 @@ def refresh_existing_prompts(out_json, benchmark):
         with open(tmp_json, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         tmp_json.replace(out_json)
-        print(f"Refreshed MMStar letter-only prompt in {out_json} (updated={changed}, records={len(data)}).")
+        print(f"Refreshed {benchmark} letter-only prompt in {out_json} (updated={changed}, records={len(data)}).")
     else:
-        print(f"MMStar letter-only prompt already present in {out_json} (records={len(data)}).")
+        print(f"{benchmark} letter-only prompt already present in {out_json} (records={len(data)}).")
 
 
 def prepare_zoombench(out_dir):
@@ -403,7 +407,7 @@ def prepare_cvbench(out_dir):
                 "index": idx,
                 "question_id": idx,
                 "images": [str(img_path)],
-                "query": (row.get("prompt") or "").strip(),
+                "query": append_once(row.get("prompt") or "", CVBENCH_LETTER_PROMPT),
                 "response": (row.get("answer") or "").strip(),
                 "type": row.get("type") or dim,
                 "task": row.get("task") or "",

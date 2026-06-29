@@ -1,7 +1,9 @@
 import argparse
+import csv
 import json
 import sys
 from collections import defaultdict
+from pathlib import Path
 
 
 def is_correct(item):
@@ -176,6 +178,120 @@ def calc_cvbench(judge_json, benchmark):
     print(f"{benchmark}: {100*acc_avg:.2f}%")
 
 
+def _item_key(item):
+    for key in ("sample_uid", "index", "question_id", "id"):
+        value = item.get(key)
+        if value is not None and str(value) != "":
+            return f"{key}:{value}"
+    images = item.get("images") or []
+    image0 = images[0] if isinstance(images, list) and images else ""
+    return json.dumps({"image": image0, "query": item.get("query", "")}, ensure_ascii=False, sort_keys=True)
+
+
+def _load_benchmark_meta(benchmark_json):
+    if not benchmark_json:
+        return {}
+    path = Path(benchmark_json)
+    if not path.exists():
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        rows = json.load(f)
+    if not isinstance(rows, list):
+        return {}
+    return {_item_key(item): item for item in rows if isinstance(item, dict)}
+
+
+def _safe_group(item, meta, key):
+    value = item.get(key)
+    if value is None or str(value).strip() == "":
+        value = meta.get(key) if isinstance(meta, dict) else None
+    if value is None or str(value).strip() == "":
+        return "unknown"
+    return str(value).strip()
+
+
+def _write_rows_csv(path, rows):
+    if not rows:
+        return
+    fieldnames = list(rows[0].keys())
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _write_breakdown_md(path, title, rows):
+    lines = [
+        f"# {title}",
+        "",
+        "| Group | N | Correct | Accuracy |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for row in rows:
+        lines.append(
+            f"| {row['group']} | {row['n']} | {row['correct']} | {100.0 * row['accuracy']:.2f}% |"
+        )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _summarize_groups(records, meta_by_key, group_key):
+    stats = defaultdict(lambda: {"correct": 0, "total": 0})
+    for item in records:
+        meta = meta_by_key.get(_item_key(item), {})
+        group = _safe_group(item, meta, group_key)
+        stats[group]["total"] += 1
+        if is_correct(item):
+            stats[group]["correct"] += 1
+    rows = []
+    for group, stat in sorted(stats.items(), key=lambda kv: (-kv[1]["total"], kv[0])):
+        total = stat["total"]
+        correct = stat["correct"]
+        rows.append(
+            {
+                "group_key": group_key,
+                "group": group,
+                "n": total,
+                "correct": correct,
+                "accuracy": correct / total if total else 0.0,
+            }
+        )
+    return rows
+
+
+def calc_mmstar(judge_json, benchmark, benchmark_json):
+    with open(judge_json, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    total = len(data)
+    correct = sum(1 for item in data if is_correct(item))
+    acc = correct / total if total else 0.0
+    print(f"{benchmark} Acc: {correct}/{total} = {100 * acc:.2f}%")
+
+    meta_by_key = _load_benchmark_meta(benchmark_json)
+    category_rows = _summarize_groups(data, meta_by_key, "category")
+    l2_rows = _summarize_groups(data, meta_by_key, "l2_category")
+
+    output_dir = Path(judge_json).parent.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    summary = {
+        "benchmark": benchmark,
+        "accuracy": acc,
+        "correct": correct,
+        "num_samples": total,
+        "source_path": str(judge_json),
+        "category": category_rows,
+        "l2_category": l2_rows,
+    }
+    summary_path = output_dir / "mmstar_breakdown.json"
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2)
+    _write_rows_csv(output_dir / "mmstar_category_breakdown.csv", category_rows)
+    _write_rows_csv(output_dir / "mmstar_l2_category_breakdown.csv", l2_rows)
+    _write_breakdown_md(output_dir / "mmstar_category_breakdown.md", "MMStar Category Breakdown", category_rows)
+    _write_breakdown_md(output_dir / "mmstar_l2_category_breakdown.md", "MMStar L2 Category Breakdown", l2_rows)
+    print(f"Saved MMStar breakdown: {summary_path}")
+
+
 def calc_visualprobe(judge_json, benchmark):
     with open(judge_json, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -215,6 +331,8 @@ def main():
 
     if args.benchmark == "visualprobe":
         calc_visualprobe(args.judge_json, args.benchmark)
+    elif args.benchmark == "mmstar":
+        calc_mmstar(args.judge_json, args.benchmark, args.benchmark_json)
     elif args.benchmark == "cv-bench":
         calc_cvbench(args.judge_json, args.benchmark)
     elif args.benchmark in ("pope", "pope_adv", "pope_pop", "pope_random"):

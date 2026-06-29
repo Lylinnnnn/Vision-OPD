@@ -94,14 +94,19 @@ VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar,cv-bench}"
 VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}}"
 VISION_BENCHMARK_AUTO_DOWNLOAD="${VISION_BENCHMARK_AUTO_DOWNLOAD:-${BENCHMARK_AUTO_DOWNLOAD:-True}}"
 VISION_BENCHMARK_CLEAN_SOURCE="${VISION_BENCHMARK_CLEAN_SOURCE:-${BENCHMARK_CLEAN_SOURCE:-False}}"
+VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET="${VISION_BENCHMARK_REFRESH_PROMPTS+x}${BENCHMARK_REFRESH_PROMPTS+x}"
 VISION_BENCHMARK_REFRESH_PROMPTS="${VISION_BENCHMARK_REFRESH_PROMPTS:-${BENCHMARK_REFRESH_PROMPTS:-False}}"
 VISION_BENCHMARK_OUTPUT_SUFFIX="${VISION_BENCHMARK_OUTPUT_SUFFIX:-${BENCHMARK_OUTPUT_SUFFIX:-}}"
+VISION_MAX_TOKENS_WAS_SET="${VISION_MAX_TOKENS+x}"
 VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
 VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
 VISION_ENABLE_THINKING="${VISION_ENABLE_THINKING:-}"
+RULE_ONLY_JUDGE_WAS_SET="${RULE_ONLY_JUDGE+x}"
 RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-True}"
+MCQ_EXTRACT_MODE_WAS_SET="${MCQ_EXTRACT_MODE+x}"
 MCQ_EXTRACT_MODE="${MCQ_EXTRACT_MODE:-legacy}"
+FORCE_VISION_EVAL="${FORCE_VISION_EVAL:-False}"
 JUDGE_API_BASE="${JUDGE_API_BASE:-}"
 JUDGE_API_KEY="${JUDGE_API_KEY:-}"
 JUDGE_MODEL="${JUDGE_MODEL:-}"
@@ -167,6 +172,7 @@ while [[ $# -gt 0 ]]; do
         --vision-enable-thinking) VISION_ENABLE_THINKING="$2"; shift 2 ;;
         --vision-rule-only-judge|--rule-only-judge) RULE_ONLY_JUDGE="$2"; shift 2 ;;
         --mcq-extract-mode) MCQ_EXTRACT_MODE="$2"; shift 2 ;;
+        --force-vision-eval) FORCE_VISION_EVAL="$2"; shift 2 ;;
         --judge-api-base) JUDGE_API_BASE="$2"; shift 2 ;;
         --judge-api-key) JUDGE_API_KEY="$2"; shift 2 ;;
         --judge-model) JUDGE_MODEL="$2"; shift 2 ;;
@@ -211,13 +217,19 @@ normalize_eval_mode() {
             vision|vision-opd|aux|auxiliary)
                 normalized+=(vision)
                 ;;
+            mmstar)
+                normalized+=(mmstar)
+                ;;
+            cvbench|cv_bench|cv-bench)
+                normalized+=(cv-bench)
+                ;;
             chair|pope|amber|mme)
                 normalized+=("$token")
                 ;;
             "")
                 ;;
             *)
-                echo "Error: unsupported eval task '$token'. Use chair,pope,coco,vision,amber,mme,final,all." >&2
+                echo "Error: unsupported eval task '$token'. Use chair,pope,coco,mmstar,cv-bench,vision,amber,mme,final,all." >&2
                 exit 1
                 ;;
         esac
@@ -240,6 +252,52 @@ has_eval_task() {
     local mode="$1"
     local task="$2"
     [[ ",${mode}," == *",${task},"* ]]
+}
+
+append_csv_unique() {
+    local current="$1"
+    local item="$2"
+    [[ -z "$item" ]] && {
+        echo "$current"
+        return 0
+    }
+    if [[ ",${current}," == *",${item},"* ]]; then
+        echo "$current"
+    elif [[ -z "$current" ]]; then
+        echo "$item"
+    else
+        echo "${current},${item}"
+    fi
+}
+
+resolve_vision_benchmarks() {
+    local mode="$1"
+    local benches=""
+    if has_eval_task "$mode" "vision"; then
+        benches="$VISION_BENCHMARK"
+    fi
+    if has_eval_task "$mode" "mmstar"; then
+        benches="$(append_csv_unique "$benches" "mmstar")"
+    fi
+    if has_eval_task "$mode" "cv-bench"; then
+        benches="$(append_csv_unique "$benches" "cv-bench")"
+    fi
+    echo "$benches"
+}
+
+has_vision_eval_task() {
+    local mode="$1"
+    has_eval_task "$mode" "vision" || has_eval_task "$mode" "mmstar" || has_eval_task "$mode" "cv-bench"
+}
+
+apply_official_aux_defaults() {
+    local benches="$1"
+    if [[ ",${benches}," == *",mmstar,"* || ",${benches}," == *",cv-bench,"* ]]; then
+        [[ -z "$VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET" ]] && VISION_BENCHMARK_REFRESH_PROMPTS="True"
+        [[ -z "$RULE_ONLY_JUDGE_WAS_SET" ]] && RULE_ONLY_JUDGE="True"
+        [[ -z "$MCQ_EXTRACT_MODE_WAS_SET" ]] && MCQ_EXTRACT_MODE="official"
+        [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]] && VISION_MAX_TOKENS="16"
+    fi
 }
 
 realpath_for_cleanup() {
@@ -374,21 +432,27 @@ eval_results_exist() {
             ok=1
         fi
     fi
-    if has_eval_task "$EVAL_MODE" "vision"; then
-        if ! "$PYTHON_BIN" "$VISION_STATUS_SCRIPT" \
-            --result-root "$result_dir" \
-            --benchmarks "$VISION_BENCHMARK" \
-            --benchmark-data-dir "$VISION_BENCHMARK_DATA_DIR" \
-            --output-suffix "$VISION_BENCHMARK_OUTPUT_SUFFIX" >/dev/null 2>&1; then
+    if has_vision_eval_task "$EVAL_MODE"; then
+        if [[ "$FORCE_VISION_EVAL" == "True" || "$FORCE_VISION_EVAL" == "true" || "$FORCE_VISION_EVAL" == "1" ]]; then
             ok=1
+        else
+            if ! "$PYTHON_BIN" "$VISION_STATUS_SCRIPT" \
+                --result-root "$result_dir" \
+                --benchmarks "$EFFECTIVE_VISION_BENCHMARK" \
+                --benchmark-data-dir "$VISION_BENCHMARK_DATA_DIR" \
+                --output-suffix "$VISION_BENCHMARK_OUTPUT_SUFFIX" >/dev/null 2>&1; then
+                ok=1
+            fi
         fi
     fi
     return $ok
 }
 
 EVAL_MODE="$(normalize_eval_mode "$EVAL_MODE")"
+EFFECTIVE_VISION_BENCHMARK="$(resolve_vision_benchmarks "$EVAL_MODE")"
+apply_official_aux_defaults "$EFFECTIVE_VISION_BENCHMARK"
 if [[ -z "$EVAL_MODE" ]]; then
-    echo "Error: --eval-mode expanded to empty. Use chair,pope,coco,vision,amber,mme,final,all." >&2
+    echo "Error: --eval-mode expanded to empty. Use chair,pope,coco,mmstar,cv-bench,vision,amber,mme,final,all." >&2
     exit 1
 fi
 
@@ -399,8 +463,8 @@ echo " Student spec: auto from experiment name unless overridden"
 echo " Target PX: ${TARGET_PX}"
 echo " Version tag: ${VERSION_TAG}"
 echo " Eval mode: ${EVAL_MODE}"
-if has_eval_task "$EVAL_MODE" "vision"; then
-    echo " Vision benchmarks: ${VISION_BENCHMARK}"
+if has_vision_eval_task "$EVAL_MODE"; then
+    echo " Vision benchmarks: ${EFFECTIVE_VISION_BENCHMARK}"
     echo " Vision data dir: ${VISION_BENCHMARK_DATA_DIR}"
     echo " Vision auto download: ${VISION_BENCHMARK_AUTO_DOWNLOAD}"
     echo " Vision clean source: ${VISION_BENCHMARK_CLEAN_SOURCE}"
@@ -409,6 +473,7 @@ if has_eval_task "$EVAL_MODE" "vision"; then
     echo " vLLM port cleanup: ${VLLM_PORT_CLEANUP}"
     echo " Rule-only judge: ${RULE_ONLY_JUDGE}"
     echo " MCQ extract mode: ${MCQ_EXTRACT_MODE}"
+    echo " Force vision eval: ${FORCE_VISION_EVAL}"
 fi
 echo " CHAIR logprobs: ${CHAIR_SAVE_LOGPROBS} (top=${CHAIR_TOP_LOGPROBS})"
 echo " OPD eval trace: ${EVAL_OPD_TRACE} (topk=${EVAL_OPD_TRACE_TOPK}, entropy=${EVAL_OPD_TRACE_ENTROPY})"
@@ -512,8 +577,8 @@ for idx in "${!OSS_NAMES[@]}"; do
         EVAL_OPD_TRACE_MAX_SAMPLES="$EVAL_OPD_TRACE_MAX_SAMPLES" \
             bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "$coco_mode"
     fi
-    if has_eval_task "$EVAL_MODE" "vision"; then
-        echo "  Running Vision-OPD auxiliary eval (${VISION_BENCHMARK}) ..."
+    if has_vision_eval_task "$EVAL_MODE"; then
+        echo "  Running Vision-OPD auxiliary eval (${EFFECTIVE_VISION_BENCHMARK}) ..."
         vision_env=(
             DATASET_VERSION="$DATASET_VERSION"
             CLEANUP_LOCAL_CKPT=False
@@ -524,7 +589,7 @@ for idx in "${!OSS_NAMES[@]}"; do
             TEACHER_RATIO="$effective_teacher_ratio"
             TEACHER_PX="$effective_teacher_px"
             TARGET_PX="$effective_target_px"
-            VISION_BENCHMARK="$VISION_BENCHMARK"
+            VISION_BENCHMARK="$EFFECTIVE_VISION_BENCHMARK"
             VISION_BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR"
             VISION_BENCHMARK_AUTO_DOWNLOAD="$VISION_BENCHMARK_AUTO_DOWNLOAD"
             VISION_BENCHMARK_CLEAN_SOURCE="$VISION_BENCHMARK_CLEAN_SOURCE"
@@ -582,7 +647,7 @@ for idx in "${!OSS_NAMES[@]}"; do
         if has_eval_task "$EVAL_MODE" "vision"; then
             "$PYTHON_BIN" "$VISION_STATUS_SCRIPT" \
                 --result-root "$result_dir" \
-                --benchmarks "$VISION_BENCHMARK" \
+                --benchmarks "$EFFECTIVE_VISION_BENCHMARK" \
                 --benchmark-data-dir "$VISION_BENCHMARK_DATA_DIR" \
                 --output-suffix "$VISION_BENCHMARK_OUTPUT_SUFFIX" || true
         fi
