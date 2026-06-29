@@ -153,7 +153,9 @@ if [[ "$RUN_BASE" == "True" || "$RUN_BASE" == "true" || "$RUN_BASE" == "1" ]]; t
     VISION_MAX_TOKENS="$VISION_MAX_TOKENS" \
     RULE_ONLY_JUDGE="$RULE_ONLY_JUDGE" \
     MCQ_EXTRACT_MODE="$MCQ_EXTRACT_MODE" \
-        bash res-opd/scripts/eval_after_merge.sh "$BASE_MODEL_PATH" 0 "$VERSION_TAG" vision
+        bash res-opd/scripts/eval_after_merge.sh "$BASE_MODEL_PATH" 0 "$VERSION_TAG" vision || {
+            echo "Warning: base eval exited with non-zero status, continuing to variants..." >&2
+        }
 else
     echo ""
     echo "[base] Skipped because RUN_BASE=${RUN_BASE}"

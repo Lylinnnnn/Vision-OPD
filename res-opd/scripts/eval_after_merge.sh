@@ -200,10 +200,10 @@ has_vision_eval_task() {
 apply_official_aux_defaults() {
     local benches="$1"
     if [[ ",${benches}," == *",mmstar,"* || ",${benches}," == *",cv-bench,"* ]]; then
-        [[ -z "$VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET" ]] && VISION_BENCHMARK_REFRESH_PROMPTS="True"
-        [[ -z "$RULE_ONLY_JUDGE_WAS_SET" ]] && RULE_ONLY_JUDGE="True"
-        [[ -z "$MCQ_EXTRACT_MODE_WAS_SET" ]] && MCQ_EXTRACT_MODE="official"
-        [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]] && VISION_MAX_TOKENS="16"
+        [[ -z "$VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET" ]] && VISION_BENCHMARK_REFRESH_PROMPTS="True" || true
+        [[ -z "$RULE_ONLY_JUDGE_WAS_SET" ]] && RULE_ONLY_JUDGE="True" || true
+        [[ -z "$MCQ_EXTRACT_MODE_WAS_SET" ]] && MCQ_EXTRACT_MODE="official" || true
+        [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]] && VISION_MAX_TOKENS="16" || true
     fi
 }
 
