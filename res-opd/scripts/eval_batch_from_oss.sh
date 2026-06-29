@@ -14,11 +14,13 @@
 #   bash scripts/eval_batch_from_oss.sh --oss-names <name1> [name2] ... \
 #       [--step global_step_92] [--student-px 448] [--target-px 448] [--degradation-mode square] \
 #       [--student-ratio 1.0] [--version-tag v5] [--eval-mode chair,pope] \
+#       [--vision-benchmark mmstar,cv-bench] [--vision-benchmark-data-dir /home/liuyanlin.lyl/notebook/data] \
 #       [--chair-save-logprobs true] [--chair-top-logprobs 5]
 #
 # eval-mode:
 #   chair,pope       Default local COCO eval.
 #   chair / pope     Run one local COCO eval.
+#   vision           Run Vision-OPD auxiliary eval; controlled by --vision-benchmark.
 #   amber / mme      Optional final hallucination benchmarks; off by default.
 #   all              Run chair,pope,amber,mme.
 #
@@ -45,6 +47,7 @@ CKPT_BASE="${RES_OPD_ROOT}/checkpoints"
 EVAL_SCRIPT="${RES_OPD_ROOT}/scripts/eval_after_merge.sh"
 AMBER_SCRIPT="${RES_OPD_ROOT}/scripts/archive/val_amber.sh"
 MME_SCRIPT="${RES_OPD_ROOT}/scripts/archive/val_mme_perception.sh"
+VISION_STATUS_SCRIPT="${RES_OPD_ROOT}/eval/check_vision_opd_eval.py"
 HF_FILES=(
     config.json
     tokenizer_config.json
@@ -73,6 +76,7 @@ TEACHER_RATIO="${TEACHER_RATIO:-}"
 VERSION_TAG="latest"
 DATASET_VERSION="${DATASET_VERSION:-full}"
 EVAL_MODE="${EVAL_MODE:-chair,pope}"
+PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
 CHAIR_MAX_NEW_TOKENS="${CHAIR_MAX_NEW_TOKENS:-384}"
 CHAIR_PARALLEL_WORKERS="${CHAIR_PARALLEL_WORKERS:-8}"
 CHAIR_MAX_SAMPLES="${CHAIR_MAX_SAMPLES:-0}"
@@ -84,6 +88,18 @@ EVAL_OPD_TRACE_ENTROPY="${EVAL_OPD_TRACE_ENTROPY:-True}"
 EVAL_OPD_TRACE_SCORE_BASELINE="${EVAL_OPD_TRACE_SCORE_BASELINE:-False}"
 EVAL_OPD_TRACE_CASE_ANALYSIS="${EVAL_OPD_TRACE_CASE_ANALYSIS:-}"
 EVAL_OPD_TRACE_MAX_SAMPLES="${EVAL_OPD_TRACE_MAX_SAMPLES:-0}"
+VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar,cv-bench}"
+VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}}"
+VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
+VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
+VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
+VISION_ENABLE_THINKING="${VISION_ENABLE_THINKING:-}"
+RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-True}"
+JUDGE_API_BASE="${JUDGE_API_BASE:-}"
+JUDGE_API_KEY="${JUDGE_API_KEY:-}"
+JUDGE_MODEL="${JUDGE_MODEL:-}"
+JUDGE_MODEL_PATH="${JUDGE_MODEL_PATH:-}"
+JUDGE_MAX_TOKENS="${JUDGE_MAX_TOKENS:-2048}"
 OSS_NAMES=()
 LOCAL_NAMES=()
 STUDENT_RATIOS=()
@@ -132,6 +148,18 @@ while [[ $# -gt 0 ]]; do
         --eval-opd-trace-score-baseline) EVAL_OPD_TRACE_SCORE_BASELINE="$2"; shift 2 ;;
         --eval-opd-trace-case-analysis) EVAL_OPD_TRACE_CASE_ANALYSIS="$2"; shift 2 ;;
         --eval-opd-trace-max-samples) EVAL_OPD_TRACE_MAX_SAMPLES="$2"; shift 2 ;;
+        --vision-benchmark) VISION_BENCHMARK="$2"; shift 2 ;;
+        --vision-benchmark-data-dir|--benchmark-data-dir) VISION_BENCHMARK_DATA_DIR="$2"; shift 2 ;;
+        --vision-max-tokens) VISION_MAX_TOKENS="$2"; shift 2 ;;
+        --vision-parallel-workers) VISION_PARALLEL_WORKERS="$2"; shift 2 ;;
+        --vision-max-retries) VISION_MAX_RETRIES="$2"; shift 2 ;;
+        --vision-enable-thinking) VISION_ENABLE_THINKING="$2"; shift 2 ;;
+        --vision-rule-only-judge|--rule-only-judge) RULE_ONLY_JUDGE="$2"; shift 2 ;;
+        --judge-api-base) JUDGE_API_BASE="$2"; shift 2 ;;
+        --judge-api-key) JUDGE_API_KEY="$2"; shift 2 ;;
+        --judge-model) JUDGE_MODEL="$2"; shift 2 ;;
+        --judge-model-path) JUDGE_MODEL_PATH="$2"; shift 2 ;;
+        --judge-max-tokens) JUDGE_MAX_TOKENS="$2"; shift 2 ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
@@ -168,13 +196,16 @@ normalize_eval_mode() {
             final|external)
                 normalized+=(amber mme)
                 ;;
+            vision|vision-opd|aux|auxiliary)
+                normalized+=(vision)
+                ;;
             chair|pope|amber|mme)
                 normalized+=("$token")
                 ;;
             "")
                 ;;
             *)
-                echo "Error: unsupported eval task '$token'. Use chair,pope,coco,amber,mme,final,all." >&2
+                echo "Error: unsupported eval task '$token'. Use chair,pope,coco,vision,amber,mme,final,all." >&2
                 exit 1
                 ;;
         esac
@@ -306,12 +337,20 @@ eval_results_exist() {
             ok=1
         fi
     fi
+    if has_eval_task "$EVAL_MODE" "vision"; then
+        if ! "$PYTHON_BIN" "$VISION_STATUS_SCRIPT" \
+            --result-root "$result_dir" \
+            --benchmarks "$VISION_BENCHMARK" \
+            --benchmark-data-dir "$VISION_BENCHMARK_DATA_DIR" >/dev/null 2>&1; then
+            ok=1
+        fi
+    fi
     return $ok
 }
 
 EVAL_MODE="$(normalize_eval_mode "$EVAL_MODE")"
 if [[ -z "$EVAL_MODE" ]]; then
-    echo "Error: --eval-mode expanded to empty. Use chair,pope,coco,amber,mme,final,all." >&2
+    echo "Error: --eval-mode expanded to empty. Use chair,pope,coco,vision,amber,mme,final,all." >&2
     exit 1
 fi
 
@@ -322,6 +361,11 @@ echo " Student spec: auto from experiment name unless overridden"
 echo " Target PX: ${TARGET_PX}"
 echo " Version tag: ${VERSION_TAG}"
 echo " Eval mode: ${EVAL_MODE}"
+if has_eval_task "$EVAL_MODE" "vision"; then
+    echo " Vision benchmarks: ${VISION_BENCHMARK}"
+    echo " Vision data dir: ${VISION_BENCHMARK_DATA_DIR}"
+    echo " Rule-only judge: ${RULE_ONLY_JUDGE}"
+fi
 echo " CHAIR logprobs: ${CHAIR_SAVE_LOGPROBS} (top=${CHAIR_TOP_LOGPROBS})"
 echo " OPD eval trace: ${EVAL_OPD_TRACE} (topk=${EVAL_OPD_TRACE_TOPK}, entropy=${EVAL_OPD_TRACE_ENTROPY})"
 echo " Experiments: ${#OSS_NAMES[@]}"
@@ -402,6 +446,8 @@ for idx in "${!OSS_NAMES[@]}"; do
     if [[ ${#coco_tasks[@]} -gt 0 ]]; then
         coco_mode="$(IFS=','; echo "${coco_tasks[*]}")"
         echo "  Running local COCO eval (${coco_mode}) ..."
+        DATASET_VERSION="$DATASET_VERSION" \
+        CLEANUP_LOCAL_CKPT=False \
         DEGRADATION_MODE="$effective_degradation_mode" \
         STUDENT_RATIO="$effective_student_ratio" \
         TEACHER_RATIO="$effective_teacher_ratio" \
@@ -419,6 +465,31 @@ for idx in "${!OSS_NAMES[@]}"; do
         EVAL_OPD_TRACE_CASE_ANALYSIS="$EVAL_OPD_TRACE_CASE_ANALYSIS" \
         EVAL_OPD_TRACE_MAX_SAMPLES="$EVAL_OPD_TRACE_MAX_SAMPLES" \
             bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "$coco_mode"
+    fi
+    if has_eval_task "$EVAL_MODE" "vision"; then
+        echo "  Running Vision-OPD auxiliary eval (${VISION_BENCHMARK}) ..."
+        vision_env=(
+            DATASET_VERSION="$DATASET_VERSION"
+            CLEANUP_LOCAL_CKPT=False
+            DEGRADATION_MODE="$effective_degradation_mode"
+            STUDENT_RATIO="$effective_student_ratio"
+            TEACHER_RATIO="$effective_teacher_ratio"
+            TEACHER_PX="$effective_teacher_px"
+            TARGET_PX="$effective_target_px"
+            VISION_BENCHMARK="$VISION_BENCHMARK"
+            VISION_BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR"
+            VISION_MAX_TOKENS="$VISION_MAX_TOKENS"
+            VISION_PARALLEL_WORKERS="$VISION_PARALLEL_WORKERS"
+            VISION_MAX_RETRIES="$VISION_MAX_RETRIES"
+            RULE_ONLY_JUDGE="$RULE_ONLY_JUDGE"
+            JUDGE_MAX_TOKENS="$JUDGE_MAX_TOKENS"
+        )
+        [[ -n "$VISION_ENABLE_THINKING" ]] && vision_env+=(VISION_ENABLE_THINKING="$VISION_ENABLE_THINKING")
+        [[ -n "${JUDGE_API_BASE:-}" ]] && vision_env+=(JUDGE_API_BASE="$JUDGE_API_BASE")
+        [[ -n "${JUDGE_API_KEY:-}" ]] && vision_env+=(JUDGE_API_KEY="$JUDGE_API_KEY")
+        [[ -n "${JUDGE_MODEL:-}" ]] && vision_env+=(JUDGE_MODEL="$JUDGE_MODEL")
+        [[ -n "${JUDGE_MODEL_PATH:-}" ]] && vision_env+=(JUDGE_MODEL_PATH="$JUDGE_MODEL_PATH")
+        env "${vision_env[@]}" bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "vision"
     fi
     if has_eval_task "$EVAL_MODE" "amber"; then
         echo "  Running AMBER ..."
@@ -452,9 +523,15 @@ for idx in "${!OSS_NAMES[@]}"; do
     fi
     if eval_results_exist "$result_dir"; then
         echo "  ✅ Eval results saved:"
-        find "${result_dir}" \( -name "chair_metrics.json" -o -name "pope_summary.json" -o -name "amber_metrics.json" -o -name "mme_metrics.json" \) -exec echo "    {}" \;
+        find "${result_dir}" \( -name "chair_metrics.json" -o -name "pope_summary.json" -o -name "amber_metrics.json" -o -name "mme_metrics.json" -o -name "*_answer.jsonl" \) -exec echo "    {}" \;
     else
         echo "  ⚠️  No eval results found!"
+        if has_eval_task "$EVAL_MODE" "vision"; then
+            "$PYTHON_BIN" "$VISION_STATUS_SCRIPT" \
+                --result-root "$result_dir" \
+                --benchmarks "$VISION_BENCHMARK" \
+                --benchmark-data-dir "$VISION_BENCHMARK_DATA_DIR" || true
+        fi
     fi
 
     echo ""
