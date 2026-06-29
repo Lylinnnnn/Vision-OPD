@@ -34,6 +34,7 @@ BENCHMARK_OUTPUT_LAYOUT="${BENCHMARK_OUTPUT_LAYOUT:-legacy}"
 MAX_RETRIES="${MAX_RETRIES:-3}"
 PARALLEL_WORKERS="${PARALLEL_WORKERS:-256}"
 ENABLE_THINKING="${ENABLE_THINKING:-}"
+BENCHMARK_REFRESH_PROMPTS="${BENCHMARK_REFRESH_PROMPTS:-False}"
 
 JUDGE_API_BASE="${JUDGE_API_BASE:-}"
 JUDGE_API_KEY="${JUDGE_API_KEY:-}"
@@ -41,6 +42,7 @@ JUDGE_MODEL="${JUDGE_MODEL:-}"
 JUDGE_MODEL_PATH="${JUDGE_MODEL_PATH:-}"
 JUDGE_MAX_TOKENS="${JUDGE_MAX_TOKENS:-2048}"
 RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-False}"
+MCQ_EXTRACT_MODE="${MCQ_EXTRACT_MODE:-legacy}"
 
 PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
 
@@ -90,6 +92,7 @@ run_single_benchmark() {
   echo "Prepare data: ${BENCHMARK_PREPARE_DATA}"
   echo "Auto download: ${BENCHMARK_AUTO_DOWNLOAD}"
   echo "Clean source: ${BENCHMARK_CLEAN_SOURCE}"
+  echo "Refresh prompts: ${BENCHMARK_REFRESH_PROMPTS}"
   echo "=========================================="
 
   local model_tag="${MODEL_NAME}_seed${SEED}"
@@ -129,6 +132,9 @@ run_single_benchmark() {
       --benchmark "${bench}"
       --data_dir "${BENCHMARK_DATA_DIR}"
     )
+    if [[ "${BENCHMARK_REFRESH_PROMPTS}" == "True" || "${BENCHMARK_REFRESH_PROMPTS}" == "true" || "${BENCHMARK_REFRESH_PROMPTS}" == "1" ]]; then
+      PREPARE_ARGS+=(--refresh-prompts)
+    fi
     if [[ "${BENCHMARK_CLEAN_SOURCE}" == "True" || "${BENCHMARK_CLEAN_SOURCE}" == "true" || "${BENCHMARK_CLEAN_SOURCE}" == "1" ]]; then
       PREPARE_ARGS+=(--clean-source)
     fi
@@ -176,6 +182,7 @@ run_single_benchmark() {
     --model "${judge_model_tag}" \
     --answer_dir "${out_dir_for_bench}" \
     --judge_dir "${judge_dir_for_bench}" \
+    --mcq_extract_mode "${MCQ_EXTRACT_MODE}" \
     "${output_layout_args[@]}" \
     "${JUDGE_ARGS[@]}"
 

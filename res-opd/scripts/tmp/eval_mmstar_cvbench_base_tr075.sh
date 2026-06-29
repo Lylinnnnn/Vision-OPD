@@ -23,7 +23,9 @@ VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar,cv-bench}"
 VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}"
 VISION_BENCHMARK_AUTO_DOWNLOAD="${VISION_BENCHMARK_AUTO_DOWNLOAD:-True}"
 VISION_BENCHMARK_CLEAN_SOURCE="${VISION_BENCHMARK_CLEAN_SOURCE:-True}"
+VISION_BENCHMARK_REFRESH_PROMPTS="${VISION_BENCHMARK_REFRESH_PROMPTS:-False}"
 RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-True}"
+MCQ_EXTRACT_MODE="${MCQ_EXTRACT_MODE:-legacy}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
 VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
 VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-8192}"
@@ -72,6 +74,9 @@ preflight_benchmark_data() {
             --benchmark "$bench"
             --data_dir "$VISION_BENCHMARK_DATA_DIR"
         )
+        if is_truthy "$VISION_BENCHMARK_REFRESH_PROMPTS"; then
+            prepare_args+=(--refresh-prompts)
+        fi
         if is_truthy "$VISION_BENCHMARK_CLEAN_SOURCE"; then
             prepare_args+=(--clean-source)
         fi
@@ -106,10 +111,12 @@ echo "Benchmarks:     ${VISION_BENCHMARK}"
 echo "Data dir:       ${VISION_BENCHMARK_DATA_DIR}"
 echo "Auto download:  ${VISION_BENCHMARK_AUTO_DOWNLOAD}"
 echo "Clean source:   ${VISION_BENCHMARK_CLEAN_SOURCE}"
+echo "Refresh prompts:${VISION_BENCHMARK_REFRESH_PROMPTS}"
 echo "Version tag:    ${VERSION_TAG}"
 echo "Step:           ${STEP}"
 echo "vLLM cleanup:   ${VLLM_PORT_CLEANUP}"
 echo "Rule-only:      ${RULE_ONLY_JUDGE}"
+echo "MCQ extract:    ${MCQ_EXTRACT_MODE}"
 echo "HF endpoint:    ${HF_ENDPOINT}"
 echo "HF home:        ${HF_HOME}"
 echo "============================================================"
@@ -135,10 +142,12 @@ if [[ "$RUN_BASE" == "True" || "$RUN_BASE" == "true" || "$RUN_BASE" == "1" ]]; t
     VISION_BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR" \
     VISION_BENCHMARK_AUTO_DOWNLOAD="$VISION_BENCHMARK_AUTO_DOWNLOAD" \
     VISION_BENCHMARK_CLEAN_SOURCE="$VISION_BENCHMARK_CLEAN_SOURCE" \
+    VISION_BENCHMARK_REFRESH_PROMPTS="$VISION_BENCHMARK_REFRESH_PROMPTS" \
     VISION_PARALLEL_WORKERS="$VISION_PARALLEL_WORKERS" \
     VISION_MAX_RETRIES="$VISION_MAX_RETRIES" \
     VISION_MAX_TOKENS="$VISION_MAX_TOKENS" \
     RULE_ONLY_JUDGE="$RULE_ONLY_JUDGE" \
+    MCQ_EXTRACT_MODE="$MCQ_EXTRACT_MODE" \
         bash res-opd/scripts/eval_after_merge.sh "$BASE_MODEL_PATH" 0 "$VERSION_TAG" vision
 else
     echo ""
@@ -154,10 +163,12 @@ VISION_BENCHMARK="$VISION_BENCHMARK" \
 VISION_BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR" \
 VISION_BENCHMARK_AUTO_DOWNLOAD="$VISION_BENCHMARK_AUTO_DOWNLOAD" \
 VISION_BENCHMARK_CLEAN_SOURCE="$VISION_BENCHMARK_CLEAN_SOURCE" \
+VISION_BENCHMARK_REFRESH_PROMPTS="$VISION_BENCHMARK_REFRESH_PROMPTS" \
 VISION_PARALLEL_WORKERS="$VISION_PARALLEL_WORKERS" \
 VISION_MAX_RETRIES="$VISION_MAX_RETRIES" \
 VISION_MAX_TOKENS="$VISION_MAX_TOKENS" \
 RULE_ONLY_JUDGE="$RULE_ONLY_JUDGE" \
+MCQ_EXTRACT_MODE="$MCQ_EXTRACT_MODE" \
     bash res-opd/scripts/eval_batch_from_oss.sh \
         --oss-names "$TR075_RKL_OSS" "$TR075_SW_OSS" "$TR075_SW075_OSS" \
         --step "$STEP" \
@@ -166,7 +177,9 @@ RULE_ONLY_JUDGE="$RULE_ONLY_JUDGE" \
         --vision-benchmark-data-dir "$VISION_BENCHMARK_DATA_DIR" \
         --vision-benchmark-auto-download "$VISION_BENCHMARK_AUTO_DOWNLOAD" \
         --vision-benchmark-clean-source "$VISION_BENCHMARK_CLEAN_SOURCE" \
+        --vision-benchmark-refresh-prompts "$VISION_BENCHMARK_REFRESH_PROMPTS" \
         --rule-only-judge "$RULE_ONLY_JUDGE" \
+        --mcq-extract-mode "$MCQ_EXTRACT_MODE" \
         --version-tag "$VERSION_TAG"
 
 echo ""

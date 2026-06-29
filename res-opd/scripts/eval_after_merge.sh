@@ -100,11 +100,13 @@ VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar}"
 VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}}"
 VISION_BENCHMARK_AUTO_DOWNLOAD="${VISION_BENCHMARK_AUTO_DOWNLOAD:-${BENCHMARK_AUTO_DOWNLOAD:-True}}"
 VISION_BENCHMARK_CLEAN_SOURCE="${VISION_BENCHMARK_CLEAN_SOURCE:-${BENCHMARK_CLEAN_SOURCE:-False}}"
+VISION_BENCHMARK_REFRESH_PROMPTS="${VISION_BENCHMARK_REFRESH_PROMPTS:-${BENCHMARK_REFRESH_PROMPTS:-False}}"
 VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
 VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
 VISION_ENABLE_THINKING="${VISION_ENABLE_THINKING:-}"
 RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-False}"
+MCQ_EXTRACT_MODE="${MCQ_EXTRACT_MODE:-legacy}"
 
 normalize_eval_mode() {
     local mode
@@ -298,6 +300,9 @@ prepare_vision_benchmark_data() {
             --benchmark "$bench"
             --data_dir "$VISION_BENCHMARK_DATA_DIR"
         )
+        if is_truthy "$VISION_BENCHMARK_REFRESH_PROMPTS"; then
+            prepare_args+=(--refresh-prompts)
+        fi
         if is_truthy "$VISION_BENCHMARK_CLEAN_SOURCE"; then
             prepare_args+=(--clean-source)
         fi
@@ -440,6 +445,8 @@ if has_eval_task "$EVAL_MODE" "vision"; then
     echo "Vision data: $VISION_BENCHMARK_DATA_DIR"
     echo "Vision auto download: $VISION_BENCHMARK_AUTO_DOWNLOAD"
     echo "Vision clean source:  $VISION_BENCHMARK_CLEAN_SOURCE"
+    echo "Vision refresh prompts: $VISION_BENCHMARK_REFRESH_PROMPTS"
+    echo "MCQ extract mode: $MCQ_EXTRACT_MODE"
 fi
 echo "Output:      $OUTPUT_DIR"
 echo "============================================================"
@@ -572,12 +579,14 @@ if has_eval_task "$EVAL_MODE" "vision"; then
             BENCHMARK_PREPARE_DATA=False
             BENCHMARK_AUTO_DOWNLOAD="$VISION_BENCHMARK_AUTO_DOWNLOAD"
             BENCHMARK_CLEAN_SOURCE="$VISION_BENCHMARK_CLEAN_SOURCE"
+            BENCHMARK_REFRESH_PROMPTS="$VISION_BENCHMARK_REFRESH_PROMPTS"
             OUT_DIR="$vision_out_dir"
             JUDGE_DIR="$vision_judge_dir"
             MAX_TOKENS="$VISION_MAX_TOKENS"
             MAX_RETRIES="$VISION_MAX_RETRIES"
             PARALLEL_WORKERS="$VISION_PARALLEL_WORKERS"
             RULE_ONLY_JUDGE="$RULE_ONLY_JUDGE"
+            MCQ_EXTRACT_MODE="$MCQ_EXTRACT_MODE"
         )
         [[ -n "${OPENAI_API_KEY:-}" ]] && vision_args+=(OPENAI_API_KEY="$OPENAI_API_KEY")
         [[ -n "${JUDGE_API_BASE:-}" ]] && vision_args+=(JUDGE_API_BASE="$JUDGE_API_BASE")

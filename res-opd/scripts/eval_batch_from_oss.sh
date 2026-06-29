@@ -94,11 +94,13 @@ VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar,cv-bench}"
 VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}}"
 VISION_BENCHMARK_AUTO_DOWNLOAD="${VISION_BENCHMARK_AUTO_DOWNLOAD:-${BENCHMARK_AUTO_DOWNLOAD:-True}}"
 VISION_BENCHMARK_CLEAN_SOURCE="${VISION_BENCHMARK_CLEAN_SOURCE:-${BENCHMARK_CLEAN_SOURCE:-False}}"
+VISION_BENCHMARK_REFRESH_PROMPTS="${VISION_BENCHMARK_REFRESH_PROMPTS:-${BENCHMARK_REFRESH_PROMPTS:-False}}"
 VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
 VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
 VISION_ENABLE_THINKING="${VISION_ENABLE_THINKING:-}"
 RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-True}"
+MCQ_EXTRACT_MODE="${MCQ_EXTRACT_MODE:-legacy}"
 JUDGE_API_BASE="${JUDGE_API_BASE:-}"
 JUDGE_API_KEY="${JUDGE_API_KEY:-}"
 JUDGE_MODEL="${JUDGE_MODEL:-}"
@@ -156,11 +158,13 @@ while [[ $# -gt 0 ]]; do
         --vision-benchmark-data-dir|--benchmark-data-dir) VISION_BENCHMARK_DATA_DIR="$2"; shift 2 ;;
         --vision-benchmark-auto-download|--benchmark-auto-download) VISION_BENCHMARK_AUTO_DOWNLOAD="$2"; shift 2 ;;
         --vision-benchmark-clean-source|--benchmark-clean-source) VISION_BENCHMARK_CLEAN_SOURCE="$2"; shift 2 ;;
+        --vision-benchmark-refresh-prompts|--benchmark-refresh-prompts) VISION_BENCHMARK_REFRESH_PROMPTS="$2"; shift 2 ;;
         --vision-max-tokens) VISION_MAX_TOKENS="$2"; shift 2 ;;
         --vision-parallel-workers) VISION_PARALLEL_WORKERS="$2"; shift 2 ;;
         --vision-max-retries) VISION_MAX_RETRIES="$2"; shift 2 ;;
         --vision-enable-thinking) VISION_ENABLE_THINKING="$2"; shift 2 ;;
         --vision-rule-only-judge|--rule-only-judge) RULE_ONLY_JUDGE="$2"; shift 2 ;;
+        --mcq-extract-mode) MCQ_EXTRACT_MODE="$2"; shift 2 ;;
         --judge-api-base) JUDGE_API_BASE="$2"; shift 2 ;;
         --judge-api-key) JUDGE_API_KEY="$2"; shift 2 ;;
         --judge-model) JUDGE_MODEL="$2"; shift 2 ;;
@@ -397,8 +401,10 @@ if has_eval_task "$EVAL_MODE" "vision"; then
     echo " Vision data dir: ${VISION_BENCHMARK_DATA_DIR}"
     echo " Vision auto download: ${VISION_BENCHMARK_AUTO_DOWNLOAD}"
     echo " Vision clean source: ${VISION_BENCHMARK_CLEAN_SOURCE}"
+    echo " Vision refresh prompts: ${VISION_BENCHMARK_REFRESH_PROMPTS}"
     echo " vLLM port cleanup: ${VLLM_PORT_CLEANUP}"
     echo " Rule-only judge: ${RULE_ONLY_JUDGE}"
+    echo " MCQ extract mode: ${MCQ_EXTRACT_MODE}"
 fi
 echo " CHAIR logprobs: ${CHAIR_SAVE_LOGPROBS} (top=${CHAIR_TOP_LOGPROBS})"
 echo " OPD eval trace: ${EVAL_OPD_TRACE} (topk=${EVAL_OPD_TRACE_TOPK}, entropy=${EVAL_OPD_TRACE_ENTROPY})"
@@ -518,10 +524,12 @@ for idx in "${!OSS_NAMES[@]}"; do
             VISION_BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR"
             VISION_BENCHMARK_AUTO_DOWNLOAD="$VISION_BENCHMARK_AUTO_DOWNLOAD"
             VISION_BENCHMARK_CLEAN_SOURCE="$VISION_BENCHMARK_CLEAN_SOURCE"
+            VISION_BENCHMARK_REFRESH_PROMPTS="$VISION_BENCHMARK_REFRESH_PROMPTS"
             VISION_MAX_TOKENS="$VISION_MAX_TOKENS"
             VISION_PARALLEL_WORKERS="$VISION_PARALLEL_WORKERS"
             VISION_MAX_RETRIES="$VISION_MAX_RETRIES"
             RULE_ONLY_JUDGE="$RULE_ONLY_JUDGE"
+            MCQ_EXTRACT_MODE="$MCQ_EXTRACT_MODE"
             JUDGE_MAX_TOKENS="$JUDGE_MAX_TOKENS"
         )
         [[ -n "$VISION_ENABLE_THINKING" ]] && vision_env+=(VISION_ENABLE_THINKING="$VISION_ENABLE_THINKING")

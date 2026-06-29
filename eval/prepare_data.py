@@ -27,6 +27,8 @@ BENCHMARK_JSON_MAP = {
     "visualprobe": "visualprobe.json",
 }
 
+MMSTAR_LETTER_PROMPT = "Answer with the option's letter from the given choices directly."
+
 
 def resolve_benchmark_json(benchmark):
     if benchmark not in BENCHMARK_JSON_MAP:
@@ -34,6 +36,46 @@ def resolve_benchmark_json(benchmark):
         print(f"Supported: {', '.join(BENCHMARK_JSON_MAP.keys())}", file=sys.stderr)
         sys.exit(1)
     return BENCHMARK_JSON_MAP[benchmark]
+
+
+def append_once(text, suffix):
+    text = (text or "").strip()
+    suffix = (suffix or "").strip()
+    if not suffix:
+        return text
+    if text.endswith(suffix):
+        return text
+    return (text + "\n" + suffix).strip() if text else suffix
+
+
+def refresh_existing_prompts(out_json, benchmark):
+    if benchmark != "mmstar":
+        print(f"Prompt refresh is not defined for {benchmark}; leaving JSON unchanged.")
+        return
+
+    with open(out_json, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        raise ValueError(f"Expected a list in {out_json}, got {type(data).__name__}")
+
+    changed = 0
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        old_query = item.get("query", "")
+        new_query = append_once(old_query, MMSTAR_LETTER_PROMPT)
+        if new_query != old_query:
+            item["query"] = new_query
+            changed += 1
+
+    if changed:
+        tmp_json = out_json.with_suffix(out_json.suffix + ".tmp")
+        with open(tmp_json, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        tmp_json.replace(out_json)
+        print(f"Refreshed MMStar letter-only prompt in {out_json} (updated={changed}, records={len(data)}).")
+    else:
+        print(f"MMStar letter-only prompt already present in {out_json} (records={len(data)}).")
 
 
 def prepare_zoombench(out_dir):
@@ -252,7 +294,7 @@ def prepare_mmstar(out_dir):
             with open(img_path, "wb") as f:
                 f.write(img_bytes)
 
-        query = (row.get("question") or "").strip()
+        query = append_once(row.get("question") or "", MMSTAR_LETTER_PROMPT)
 
         data.append({
             "index": idx,
@@ -457,6 +499,11 @@ def main():
         action="store_true",
         help="Delete downloaded source dataset files after converted JSON/images are ready.",
     )
+    parser.add_argument(
+        "--refresh-prompts",
+        action="store_true",
+        help="Update prompt text in an existing converted JSON without re-downloading the source dataset.",
+    )
     args = parser.parse_args()
 
     benchmark = args.benchmark
@@ -466,6 +513,8 @@ def main():
     out_json = out_dir / benchmark_json
 
     if out_json.exists():
+        if args.refresh_prompts:
+            refresh_existing_prompts(out_json, benchmark)
         print(f"Already exists: {out_json}, skipping.")
         if args.clean_source:
             clean_source_dirs(out_dir, benchmark)

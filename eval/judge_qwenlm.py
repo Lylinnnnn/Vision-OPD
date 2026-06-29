@@ -57,6 +57,22 @@ def extract_first_option(text):
     return ""
 
 
+def extract_strict_option(text):
+    if not text:
+        return "", "empty"
+    patterns = [
+        (r"^[\s\(\[]*([A-F])(?:[\.\)\]\:\-]|$|\s)", "leading_letter"),
+        (r"\b(?:answer|option|choice)\s*(?:is|:)?\s*\(?([A-F])\)?\b", "answer_phrase"),
+        (r"\(([A-F])\)", "paren"),
+        (r"\b([A-F])\b(?:\s*[\.\)]\s*)?$", "final_letter"),
+    ]
+    for pattern, source in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).upper(), source
+    return "", "unresolved"
+
+
 def extract_mcq_option(answer):
     if not isinstance(answer, str) or not answer:
         return ""
@@ -99,10 +115,14 @@ def mmvp_extract(text):
     return ""
 
 
-def first_letter_match(gt, answer):
+def mcq_option_match(gt, answer, extract_mode="legacy"):
     gt_val = extract_mcq_option(gt)
-    pred_val = extract_first_option(answer)
-    return bool(gt_val and pred_val and gt_val == pred_val)
+    if extract_mode == "strict":
+        pred_val, source = extract_strict_option(answer)
+    else:
+        pred_val = extract_first_option(answer)
+        source = "first_letter"
+    return bool(gt_val and pred_val and gt_val == pred_val), pred_val, source
 
 
 def extract_answer(model_answer_raw):
@@ -200,6 +220,12 @@ def main():
         action="store_true",
         help="Use deterministic answer extraction only; mark unresolved cases as No instead of calling an LLM judge.",
     )
+    parser.add_argument(
+        "--mcq_extract_mode",
+        choices=["legacy", "strict"],
+        default="legacy",
+        help="MCQ option extraction mode. legacy preserves broad first-uppercase matching; strict requires explicit option syntax.",
+    )
     args = parser.parse_args()
 
     if not args.rule_only and not args.api_base and not args.judge_model_path:
@@ -267,9 +293,13 @@ def main():
                 is_correct = False
 
         is_letter_correct = False
+        letter_pred = ""
+        letter_source = ""
         if not is_correct and is_mcq:
             try:
-                is_letter_correct = first_letter_match(gt, extracted_answer)
+                is_letter_correct, letter_pred, letter_source = mcq_option_match(
+                    gt, extracted_answer, args.mcq_extract_mode
+                )
             except Exception:
                 is_letter_correct = False
 
@@ -278,7 +308,8 @@ def main():
             item["judge_source"] = "mathruler"
         elif is_letter_correct:
             item["judge"] = "Yes"
-            item["judge_source"] = "first letter"
+            item["judge_source"] = f"mcq_{letter_source}"
+            item["mcq_pred"] = letter_pred
         else:
             prompt = PROMPT_TEMPLATE.format(gt=gt, response=extracted_answer, question=question)
             to_llm_indices.append(i)
