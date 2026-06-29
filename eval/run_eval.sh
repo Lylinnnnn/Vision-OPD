@@ -42,6 +42,8 @@ JUDGE_MODEL_PATH="${JUDGE_MODEL_PATH:-}"
 JUDGE_MAX_TOKENS="${JUDGE_MAX_TOKENS:-2048}"
 RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-False}"
 
+PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 BENCHMARK_DATA_DIR="${BENCHMARK_DATA_DIR:-${SCRIPT_DIR}}"
@@ -130,7 +132,7 @@ run_single_benchmark() {
     if [[ "${BENCHMARK_CLEAN_SOURCE}" == "True" || "${BENCHMARK_CLEAN_SOURCE}" == "true" || "${BENCHMARK_CLEAN_SOURCE}" == "1" ]]; then
       PREPARE_ARGS+=(--clean-source)
     fi
-    python3 prepare_data.py "${PREPARE_ARGS[@]}"
+    "$PYTHON_BIN" prepare_data.py "${PREPARE_ARGS[@]}"
   fi
   if [[ ! -s "${benchmark_json_path}" ]]; then
     echo "ERROR: Prepared benchmark JSON is missing or empty: ${benchmark_json_path}" >&2
@@ -155,7 +157,7 @@ run_single_benchmark() {
   [[ -n "${ENABLE_THINKING}" ]] && INFER_ARGS+=(--enable_thinking "${ENABLE_THINKING}")
   INFER_ARGS+=("${output_layout_args[@]}")
 
-  python3 infer.py "${INFER_ARGS[@]}"
+  "$PYTHON_BIN" infer.py "${INFER_ARGS[@]}"
 
   # [3/4] Judge
   echo "[3/4] Running judge..."
@@ -169,7 +171,7 @@ run_single_benchmark() {
 
   local judge_model_tag="${model_tag}"
 
-  python3 judge_qwenlm.py \
+  "$PYTHON_BIN" judge_qwenlm.py \
     --benchmark "${bench}" \
     --model "${judge_model_tag}" \
     --answer_dir "${out_dir_for_bench}" \
@@ -179,7 +181,7 @@ run_single_benchmark() {
 
   # [4/4] Accuracy
   echo "[4/4] Calculating accuracy..."
-  python3 cal_acc.py \
+  "$PYTHON_BIN" cal_acc.py \
     --benchmark "${bench}" \
     --judge_json "${judge_json}" \
     --benchmark_json "${benchmark_json_path}"

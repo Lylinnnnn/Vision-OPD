@@ -247,25 +247,12 @@ cleanup_vllm_server() {
   local port="${CURRENT_VLLM_PORT:-}"
   if [[ -n "${VLLM_PID:-}" ]] && kill -0 "$VLLM_PID" 2>/dev/null; then
     echo "[vLLM] Shutting down server pid=${VLLM_PID}"
-    # Kill the entire process group to catch all child processes (EngineCore, WorkerProc, etc.)
-    kill -- -"$VLLM_PID" 2>/dev/null || kill "$VLLM_PID" 2>/dev/null || true
+    kill "$VLLM_PID" 2>/dev/null || true
     wait "$VLLM_PID" 2>/dev/null || true
-  fi
-  # Aggressively clean up any remaining vLLM processes on our GPUs
-  if [[ -n "${VLLM_GPU_IDS:-}" ]]; then
-    local remaining
-    remaining=$(ps aux | grep -E "vllm\.entrypoints|EngineCore|WorkerProc" | grep -v grep | awk '{print $2}' | tr '\n' ' ')
-    if [[ -n "$remaining" ]]; then
-      echo "[vLLM] Cleaning up residual processes: $remaining"
-      echo "$remaining" | xargs kill -9 2>/dev/null || true
-      sleep 3
-    fi
-  fi
-  # Clean up leaked shared memory objects
-  rm -f /dev/shm/vllm* 2>/dev/null || true
-  if [[ -n "$port" ]]; then
-    if ! wait_port_released "$port" 60; then
-      echo "[vLLM] WARNING: port ${port} still responds after shutdown; continuing because later tasks use their own ports."
+    if [[ -n "$port" ]]; then
+      if ! wait_port_released "$port" 60; then
+        echo "[vLLM] WARNING: port ${port} still responds after shutdown; continuing because later tasks use their own ports."
+      fi
     fi
   fi
   VLLM_PID=""
@@ -300,7 +287,7 @@ start_vllm_server() {
   echo "[vLLM] Starting server model=${model_path} name=${served_model_name}"
   echo "[vLLM] port=${port} gpu_ids=${VLLM_GPU_IDS} tensor_parallel=${VLLM_TENSOR_PARALLEL_SIZE}"
   export VLLM_DISABLE_PROMETHEUS=1
-  export VLLM_USE_V1="${VLLM_USE_V1:-0}"
+  export VLLM_USE_V1=1
   unset VLLM_ATTENTION_BACKEND
   (
     export CUDA_VISIBLE_DEVICES="$VLLM_GPU_IDS"
@@ -609,19 +596,6 @@ if task_enabled base; then
       --max-new-tokens "$TARGETED_MAX_NEW_TOKENS" \
       "${logprob_args[@]}"
     cleanup_vllm_server
-    # Wait for GPU memory to be fully released before starting other model
-    echo "[Cooldown] Waiting for GPU memory release after base server..."
-    for _wait_i in $(seq 1 30); do
-      sleep 5
-      gpu_used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | awk '{s+=$1} END {print s+0}')
-      if [[ "$gpu_used" -lt 1000 ]]; then
-        echo "[Cooldown] GPUs clear after $((_wait_i * 5))s (used=${gpu_used}MB)"
-        break
-      fi
-      if [[ $_wait_i -eq 30 ]]; then
-        echo "[Cooldown] WARNING: GPUs may still be busy after 150s, proceeding anyway"
-      fi
-    done
   fi
 else
   echo
