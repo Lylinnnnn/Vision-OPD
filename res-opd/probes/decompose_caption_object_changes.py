@@ -79,10 +79,15 @@ TEXT_OR_GRAPHIC_RE = re.compile(
     r"\b("
     r"sign|text|word|words|read|reads|says|written|letter|letters|number|numbers|"
     r"logo|brand|emblem|icon|symbol|label|sticker|banner|poster|advertisement|ad|"
-    r"screen|display|monitor|license plate|graphic|image|picture|photo|photograph|"
-    r"drawing|illustration|cartoon|painting|mural|print|printed|pattern|design|"
-    r"face on|depicts|depicted|shaped like"
+    r"license plate|graphic|caption|inscription|printed|face on|shaped like"
     r")\b",
+    re.IGNORECASE,
+)
+DEPICTION_RE = re.compile(
+    r"\b("
+    r"image|picture|photo|photograph|drawing|illustration|cartoon|painting|mural|print"
+    r")\s+(of|depicting|showing|featuring)\b|"
+    r"\b(depicts|depicted|portrays|showing|featuring|printed on)\b",
     re.IGNORECASE,
 )
 UNCERTAIN_SMALL_RE = re.compile(
@@ -289,10 +294,28 @@ def is_uppercase_mention(mention_text):
     return len(text) > 1 and text.upper() == text and any(ch.isalpha() for ch in text)
 
 
+def local_context_around_mention(context, mention_text, window=70):
+    context = str(context or "")
+    mention = str(mention_text or "")
+    if not context or not mention:
+        return context
+    idx = context.lower().find(mention.lower())
+    if idx < 0:
+        return context
+    left = max(0, idx - window)
+    right = min(len(context), idx + len(mention) + window)
+    return context[left:right]
+
+
 def classify_mention(obj, mention):
     context = mention.get("context") or ""
     mention_text = mention.get("mention_text") or ""
-    text_or_graphic = bool(TEXT_OR_GRAPHIC_RE.search(context)) or is_uppercase_mention(mention_text)
+    local_context = local_context_around_mention(context, mention_text)
+    text_or_graphic = (
+        bool(TEXT_OR_GRAPHIC_RE.search(local_context))
+        or bool(DEPICTION_RE.search(local_context))
+        or is_uppercase_mention(mention_text)
+    )
     uncertain_small = bool(UNCERTAIN_SMALL_RE.search(context))
     color_attribute = (
         obj == "orange"
