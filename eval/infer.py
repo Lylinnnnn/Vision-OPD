@@ -141,6 +141,11 @@ def main():
     parser.add_argument("--max_tokens", default=4096, type=int)
     parser.add_argument("--max_retries", default=3, type=int)
     parser.add_argument("--parallel_workers", default=32, type=int)
+    parser.add_argument(
+        "--no_benchmark_subdir",
+        action="store_true",
+        help="Write directly to out_dir instead of out_dir/<benchmark>.",
+    )
     parser.add_argument("--enable_thinking", type=str, default=None, choices=["True", "False"],
                         help="Set enable_thinking via chat_template_kwargs (True=on, False=off)")
     args = parser.parse_args()
@@ -150,7 +155,7 @@ def main():
     with open(data_path, "r", encoding="utf-8") as f:
         total_data = json.load(f)
 
-    out_dir = Path(args.out_dir) / benchmark
+    out_dir = Path(args.out_dir) if args.no_benchmark_subdir else Path(args.out_dir) / benchmark
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{args.model_name}_answer.jsonl"
 

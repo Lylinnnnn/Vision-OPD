@@ -191,6 +191,11 @@ def main():
     parser.add_argument("--answer_dir", default="model_answer", type=str)
     parser.add_argument("--judge_dir", default="judge", type=str)
     parser.add_argument(
+        "--no_benchmark_subdir",
+        action="store_true",
+        help="Read/write directly from answer_dir/judge_dir instead of <dir>/<benchmark>.",
+    )
+    parser.add_argument(
         "--rule_only",
         action="store_true",
         help="Use deterministic answer extraction only; mark unresolved cases as No instead of calling an LLM judge.",
@@ -205,8 +210,12 @@ def main():
         )
         sys.exit(1)
 
-    answer_path = os.path.join(args.answer_dir, args.benchmark, f"{args.model}_answer.jsonl")
-    save_path = os.path.join(args.judge_dir, args.benchmark, f"{args.model}_answer.jsonl")
+    if args.no_benchmark_subdir:
+        answer_path = os.path.join(args.answer_dir, f"{args.model}_answer.jsonl")
+        save_path = os.path.join(args.judge_dir, f"{args.model}_answer.jsonl")
+    else:
+        answer_path = os.path.join(args.answer_dir, args.benchmark, f"{args.model}_answer.jsonl")
+        save_path = os.path.join(args.judge_dir, args.benchmark, f"{args.model}_answer.jsonl")
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     is_mcq = args.benchmark in MCQ_BENCHMARKS
     is_pope = args.benchmark in POPE_BENCHMARKS

@@ -350,14 +350,15 @@ if has_eval_task "$EVAL_MODE" "vision"; then
         echo "  WARNING: Vision-OPD benchmarks require JUDGE_API_BASE/JUDGE_MODEL or JUDGE_MODEL_PATH. Skipping." >&2
         EVAL_FAILURES=$((EVAL_FAILURES + 1))
     else
-        vision_out_dir="${OUTPUT_DIR}/vision_opd/model_answer"
-        vision_judge_dir="${OUTPUT_DIR}/vision_opd/judge"
+        vision_out_dir="${OUTPUT_DIR}"
+        vision_judge_dir="${OUTPUT_DIR}"
         mkdir -p "$vision_out_dir" "$vision_judge_dir"
         vision_args=(
             API_BASE="http://localhost:$PORT/v1/"
             OPENAI_MODEL_ID="$MODEL_NAME"
             MODEL_NAME="${EXPERIMENT_NAME}"
             BENCHMARK="$VISION_BENCHMARK"
+            BENCHMARK_OUTPUT_LAYOUT="per_benchmark"
             BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR"
             OUT_DIR="$vision_out_dir"
             JUDGE_DIR="$vision_judge_dir"

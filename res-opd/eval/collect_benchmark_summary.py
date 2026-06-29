@@ -147,6 +147,10 @@ def collect_res_opd_metrics(output_dir: Path) -> dict:
 
 def collect_vision_opd_metrics(output_dir: Path) -> dict:
     metrics = {}
+    for judge_file in sorted(output_dir.glob("*/judge/*_answer.jsonl")):
+        benchmark = judge_file.parent.parent.name
+        metrics[f"aux/{benchmark}"] = summarize_judge_file(judge_file, benchmark)
+
     judge_root = output_dir / "vision_opd" / "judge"
     if not judge_root.exists():
         return metrics

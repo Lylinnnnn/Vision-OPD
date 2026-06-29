@@ -30,6 +30,7 @@ SEED="${SEED:-42}"
 MAX_TOKENS="${MAX_TOKENS:-32768}"
 OUT_DIR="${OUT_DIR:-model_answer}"
 JUDGE_DIR="${JUDGE_DIR:-judge}"
+BENCHMARK_OUTPUT_LAYOUT="${BENCHMARK_OUTPUT_LAYOUT:-legacy}"
 MAX_RETRIES="${MAX_RETRIES:-3}"
 PARALLEL_WORKERS="${PARALLEL_WORKERS:-256}"
 ENABLE_THINKING="${ENABLE_THINKING:-}"
@@ -85,6 +86,25 @@ run_single_benchmark() {
 
   local model_tag="${MODEL_NAME}_seed${SEED}"
   local benchmark_json_path="${BENCHMARK_DATA_DIR}/${bench_json}"
+  local out_dir_for_bench="${OUT_DIR}"
+  local judge_dir_for_bench="${JUDGE_DIR}"
+  local judge_json="${JUDGE_DIR}/${bench}/${model_tag}_answer.jsonl"
+  local -a output_layout_args=()
+  case "${BENCHMARK_OUTPUT_LAYOUT}" in
+    legacy)
+      ;;
+    per_benchmark)
+      out_dir_for_bench="${OUT_DIR}/${bench}/model_answer"
+      judge_dir_for_bench="${JUDGE_DIR}/${bench}/judge"
+      judge_json="${judge_dir_for_bench}/${model_tag}_answer.jsonl"
+      output_layout_args+=(--no_benchmark_subdir)
+      mkdir -p "${out_dir_for_bench}" "${judge_dir_for_bench}"
+      ;;
+    *)
+      echo "ERROR: Unsupported BENCHMARK_OUTPUT_LAYOUT=${BENCHMARK_OUTPUT_LAYOUT}. Use legacy or per_benchmark." >&2
+      exit 1
+      ;;
+  esac
 
   # [1/4] Prepare data
   echo "[1/4] Preparing data..."
@@ -99,7 +119,7 @@ run_single_benchmark() {
   local -a INFER_ARGS=(
     --benchmark "${bench}"
     --benchmark_json "${benchmark_json_path}"
-    --out_dir "${OUT_DIR}"
+    --out_dir "${out_dir_for_bench}"
     --model_name "${model_tag}"
     --seed "${SEED}"
     --api_base "${API_BASE}"
@@ -110,6 +130,7 @@ run_single_benchmark() {
     --parallel_workers "${PARALLEL_WORKERS}"
   )
   [[ -n "${ENABLE_THINKING}" ]] && INFER_ARGS+=(--enable_thinking "${ENABLE_THINKING}")
+  INFER_ARGS+=("${output_layout_args[@]}")
 
   python3 infer.py "${INFER_ARGS[@]}"
 
@@ -123,20 +144,18 @@ run_single_benchmark() {
   [[ -n "${JUDGE_MAX_TOKENS}" ]] && JUDGE_ARGS+=(--judge_max_tokens "${JUDGE_MAX_TOKENS}")
   [[ "${RULE_ONLY_JUDGE}" == "True" || "${RULE_ONLY_JUDGE}" == "true" ]] && JUDGE_ARGS+=(--rule_only)
 
-  local judge_benchmark="${bench}"
   local judge_model_tag="${model_tag}"
-  local judge_json="judge/${bench}/${model_tag}_answer.jsonl"
 
   python3 judge_qwenlm.py \
-    --benchmark "${judge_benchmark}" \
+    --benchmark "${bench}" \
     --model "${judge_model_tag}" \
-    --answer_dir "${OUT_DIR}" \
-    --judge_dir "${JUDGE_DIR}" \
+    --answer_dir "${out_dir_for_bench}" \
+    --judge_dir "${judge_dir_for_bench}" \
+    "${output_layout_args[@]}" \
     "${JUDGE_ARGS[@]}"
 
   # [4/4] Accuracy
   echo "[4/4] Calculating accuracy..."
-  judge_json="${JUDGE_DIR}/${bench}/${model_tag}_answer.jsonl"
   python3 cal_acc.py \
     --benchmark "${bench}" \
     --judge_json "${judge_json}" \

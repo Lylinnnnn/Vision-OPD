@@ -52,9 +52,13 @@ def load_records(path):
 def find_judge_files(result_root, benchmark):
     root = Path(result_root)
     candidates = []
+    direct_dir = root / benchmark / "judge"
+    if direct_dir.exists():
+        candidates.extend(direct_dir.glob("*_answer.jsonl"))
     direct_dir = root / "vision_opd" / "judge" / benchmark
     if direct_dir.exists():
         candidates.extend(direct_dir.glob("*_answer.jsonl"))
+    candidates.extend(root.glob(f"*/{benchmark}/judge/*_answer.jsonl"))
     candidates.extend(root.glob(f"*/vision_opd/judge/{benchmark}/*_answer.jsonl"))
     return sorted(set(candidates))
 
