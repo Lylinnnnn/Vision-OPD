@@ -7,7 +7,11 @@
 #     "bash res-opd/probes/run_conservative_veto_gate_sweep.sh 2>&1 | tee res-opd/logs/veto_gate_sweep.log"
 #
 # Optional overrides:
-#   TRACE_JSONL, OUTPUT_DIR, PYTHON_BIN, MAX_EXAMPLES_PER_GATE
+#   TRACE_JSONL, OUTPUT_ROOT, OUTPUT_DIR, PYTHON_BIN, MAX_EXAMPLES_PER_GATE
+#
+# By default, different MAX_EXAMPLES_PER_GATE values write to separate
+# directories under OUTPUT_ROOT, e.g. max_examples_20 and max_examples_100.
+# Set OUTPUT_DIR explicitly only when you intentionally want a fixed path.
 
 set -euo pipefail
 
@@ -53,8 +57,11 @@ if [[ -n "$CONDA_CUDNN_LIB" && -d "$CONDA_CUDNN_LIB" ]]; then
 fi
 
 TRACE_JSONL="${TRACE_JSONL:-/home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD/res-opd/probes/results/same_image_rkl_signal/dual_view_base_sr10_full_vs_lowres075/pair_kl_trace.jsonl}"
-OUTPUT_DIR="${OUTPUT_DIR:-${RES_OPD_ROOT}/probes/results/conservative_veto_gate_sweep/dual_view_base_sr10_full_vs_lowres075}"
 MAX_EXAMPLES_PER_GATE="${MAX_EXAMPLES_PER_GATE:-20}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-${RES_OPD_ROOT}/probes/results/conservative_veto_gate_sweep/dual_view_base_sr10_full_vs_lowres075}"
+if [[ -z "${OUTPUT_DIR:-}" ]]; then
+  OUTPUT_DIR="${OUTPUT_ROOT}/max_examples_${MAX_EXAMPLES_PER_GATE}"
+fi
 
 mkdir -p "${RES_OPD_ROOT}/logs" "$OUTPUT_DIR"
 
@@ -69,6 +76,7 @@ echo " Conservative Veto Gate Sweep"
 echo "============================================================"
 echo "PYTHON_BIN            = $PYTHON_BIN"
 echo "TRACE_JSONL           = $TRACE_JSONL"
+echo "OUTPUT_ROOT           = $OUTPUT_ROOT"
 echo "OUTPUT_DIR            = $OUTPUT_DIR"
 echo "MAX_EXAMPLES_PER_GATE = $MAX_EXAMPLES_PER_GATE"
 echo "============================================================"

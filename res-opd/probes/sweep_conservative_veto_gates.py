@@ -36,7 +36,7 @@ DEFAULT_TRACE_JSONL = (
     "res-opd/probes/results/same_image_rkl_signal/"
     "dual_view_base_sr10_full_vs_lowres075/pair_kl_trace.jsonl"
 )
-DEFAULT_OUTPUT_DIR = os.path.join(
+DEFAULT_OUTPUT_ROOT = os.path.join(
     PROBE_DIR,
     "results",
     "conservative_veto_gate_sweep",
@@ -76,7 +76,15 @@ def parse_args():
         )
     )
     parser.add_argument("--trace-jsonl", default=DEFAULT_TRACE_JSONL)
-    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help=(
+            "Output directory. Defaults to "
+            "res-opd/probes/results/conservative_veto_gate_sweep/"
+            "dual_view_base_sr10_full_vs_lowres075/max_examples_<N>."
+        ),
+    )
     parser.add_argument("--summary-json", default=None)
     parser.add_argument("--summary-md", default=None)
     parser.add_argument("--examples-jsonl", default=None)
@@ -700,7 +708,10 @@ def run_sweep(args):
 
 def main():
     args = parse_args()
-    output_dir = args.output_dir
+    output_dir = args.output_dir or os.path.join(
+        DEFAULT_OUTPUT_ROOT,
+        f"max_examples_{args.max_examples_per_gate}",
+    )
     summary_json = args.summary_json or os.path.join(output_dir, "gate_sweep_summary.json")
     summary_md = args.summary_md or os.path.join(output_dir, "gate_sweep_summary.md")
     examples_jsonl = args.examples_jsonl or os.path.join(output_dir, "gate_sweep_examples.jsonl")
