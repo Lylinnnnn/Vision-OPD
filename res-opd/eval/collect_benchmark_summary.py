@@ -49,6 +49,45 @@ def summarize_judge_file(path: Path, benchmark: str) -> dict:
         "source_path": str(path),
     }
 
+    if benchmark == "cv-bench":
+        breakdown_path = path.parent.parent / "cvbench_breakdown.json"
+        if breakdown_path.exists():
+            breakdown = load_json(breakdown_path)
+            summary.update(
+                {
+                    "accuracy": breakdown.get("accuracy"),
+                    "sample_accuracy": breakdown.get("sample_accuracy"),
+                    "accuracy_2d": breakdown.get("accuracy_2d"),
+                    "accuracy_3d": breakdown.get("accuracy_3d"),
+                    "breakdown_path": str(breakdown_path),
+                }
+            )
+        else:
+            type_stats = {}
+            for item in data:
+                dim = str(item.get("type", "unknown") or "unknown")
+                stat = type_stats.setdefault(dim, {"correct": 0, "total": 0})
+                stat["total"] += 1
+                stat["correct"] += int(is_correct(item))
+            acc_2d = (
+                type_stats.get("2D", {}).get("correct", 0) / type_stats.get("2D", {}).get("total", 1)
+                if type_stats.get("2D", {}).get("total", 0)
+                else 0.0
+            )
+            acc_3d = (
+                type_stats.get("3D", {}).get("correct", 0) / type_stats.get("3D", {}).get("total", 1)
+                if type_stats.get("3D", {}).get("total", 0)
+                else 0.0
+            )
+            summary.update(
+                {
+                    "accuracy": (acc_2d + acc_3d) / 2.0,
+                    "sample_accuracy": correct / total if total else 0.0,
+                    "accuracy_2d": acc_2d,
+                    "accuracy_3d": acc_3d,
+                }
+            )
+
     if benchmark in POPE_BENCHMARKS:
         tp = fp = tn = fn = pred_yes = 0
         for item in data:

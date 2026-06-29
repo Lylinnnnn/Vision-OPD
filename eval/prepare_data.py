@@ -1,6 +1,7 @@
 import argparse
 import base64
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -51,6 +52,23 @@ def append_once(text, suffix):
     if text.endswith(suffix):
         return text
     return (text + "\n" + suffix).strip() if text else suffix
+
+
+def extract_mcq_options_from_prompt(text):
+    options = {}
+    if not isinstance(text, str):
+        return options
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        match = re.match(r"^(?:\(([A-F])\)|([A-F])[\.\):])\s*(.+?)\s*$", line, flags=re.IGNORECASE)
+        if match:
+            letter = (match.group(1) or match.group(2)).upper()
+            option = match.group(3).strip()
+            if option:
+                options[letter] = option
+    return options
 
 
 def normalize_mmstar_query(query):
@@ -403,15 +421,19 @@ def prepare_cvbench(out_dir):
                 with open(img_path, "wb") as f:
                     f.write(img_bytes)
 
+            prompt = row.get("prompt") or ""
+            options_map = extract_mcq_options_from_prompt(prompt)
             data.append({
                 "index": idx,
                 "question_id": idx,
                 "images": [str(img_path)],
-                "query": append_once(row.get("prompt") or "", CVBENCH_LETTER_PROMPT),
+                "query": append_once(prompt, CVBENCH_LETTER_PROMPT),
                 "response": (row.get("answer") or "").strip(),
                 "type": row.get("type") or dim,
                 "task": row.get("task") or "",
                 "source": row.get("source") or "",
+                "options": [options_map.get(letter, "") for letter in ["A", "B", "C", "D", "E", "F"]],
+                "options_map": options_map,
             })
     return data
 

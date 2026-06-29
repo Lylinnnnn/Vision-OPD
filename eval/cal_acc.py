@@ -174,8 +174,43 @@ def calc_cvbench(judge_json, benchmark):
     acc_2d = type_stats["2D"]["correct"] / type_stats["2D"]["total"] if type_stats["2D"]["total"] else 0.0
     acc_3d = type_stats["3D"]["correct"] / type_stats["3D"]["total"] if type_stats["3D"]["total"] else 0.0
     acc_avg = (acc_2d + acc_3d) / 2.0
+    sample_correct = sum(is_correct(item) for item in data)
+    sample_acc = sample_correct / len(data) if data else 0.0
 
-    print(f"{benchmark}: {100*acc_avg:.2f}%")
+    output_dir = Path(judge_json).parent.parent
+    type_rows = _summarize_groups(data, {}, "type")
+    task_rows = _summarize_groups(data, {}, "task")
+    source_rows = _summarize_groups(data, {}, "source")
+    summary = {
+        "benchmark": benchmark,
+        "accuracy": acc_avg,
+        "sample_accuracy": sample_acc,
+        "num_samples": len(data),
+        "correct": sample_correct,
+        "accuracy_2d": acc_2d,
+        "accuracy_3d": acc_3d,
+        "type": type_rows,
+        "task": task_rows,
+        "source": source_rows,
+        "source_path": str(judge_json),
+        "scoring": "cvbench_avg_2d_3d_with_cambrian_style_mcq_extraction",
+    }
+    summary_path = output_dir / "cvbench_breakdown.json"
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2)
+    _write_rows_csv(output_dir / "cvbench_type_breakdown.csv", type_rows)
+    _write_rows_csv(output_dir / "cvbench_task_breakdown.csv", task_rows)
+    _write_rows_csv(output_dir / "cvbench_source_breakdown.csv", source_rows)
+    _write_breakdown_md(output_dir / "cvbench_type_breakdown.md", "CV-Bench Type Breakdown", type_rows)
+    _write_breakdown_md(output_dir / "cvbench_task_breakdown.md", "CV-Bench Task Breakdown", task_rows)
+    _write_breakdown_md(output_dir / "cvbench_source_breakdown.md", "CV-Bench Source Breakdown", source_rows)
+
+    print(
+        f"{benchmark}: avg={100*acc_avg:.2f}% "
+        f"2D={100*acc_2d:.2f}% 3D={100*acc_3d:.2f}% "
+        f"sample_acc={100*sample_acc:.2f}%"
+    )
+    print(f"Saved CV-Bench breakdown: {summary_path}")
 
 
 def _item_key(item):

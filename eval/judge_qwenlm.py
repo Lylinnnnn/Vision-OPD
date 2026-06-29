@@ -82,10 +82,71 @@ def extract_official_option(text):
     return "", "unresolved"
 
 
+def clean_cvbench_answer(text):
+    if not isinstance(text, str) or not text:
+        return ""
+    text = text.lower().strip()
+    for marker in ("answer is:", "answer is", "answer:"):
+        if marker in text:
+            text = text.split(marker, 1)[-1]
+    return text.strip().rstrip(".:,").lstrip("(").rstrip(")").strip()
+
+
+def extract_cvbench_option(text):
+    cleaned = clean_cvbench_answer(text)
+    if not cleaned:
+        return "", "empty"
+    token = cleaned.split()[0].rstrip(".:,").lstrip("(").rstrip(")").upper()
+    if re.fullmatch(r"[A-F]", token):
+        return token, "cvbench_letter"
+    first_char = cleaned[0].upper()
+    if re.fullmatch(r"[A-F]", first_char):
+        return first_char, "cvbench_first_char"
+    return "", "unresolved"
+
+
+def normalize_option_text(text):
+    if not isinstance(text, str):
+        return ""
+    return re.sub(r"\s+", " ", text.strip().lower().rstrip(".:,"))
+
+
+def extract_options_from_query(text):
+    options = {}
+    if not isinstance(text, str):
+        return options
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        match = re.match(r"^(?:\(([A-F])\)|([A-F])[\.\):])\s*(.+?)\s*$", line, flags=re.IGNORECASE)
+        if match:
+            letter = (match.group(1) or match.group(2)).upper()
+            option = match.group(3).strip()
+            if option:
+                options[letter] = option
+    return options
+
+
+def item_options_map(item):
+    raw_map = item.get("options_map")
+    if isinstance(raw_map, dict):
+        return {str(k).upper(): str(v) for k, v in raw_map.items() if str(v).strip()}
+    raw_options = item.get("options")
+    if isinstance(raw_options, list):
+        options = {}
+        for idx, value in enumerate(raw_options[:6]):
+            if isinstance(value, str) and value.strip():
+                options[chr(ord("A") + idx)] = value.strip()
+        if options:
+            return options
+    return extract_options_from_query(item.get("query", ""))
+
+
 def extract_mcq_option(answer):
     if not isinstance(answer, str) or not answer:
         return ""
-    text = answer.strip()
+    text = answer.strip().upper()
     pattern = r"^[ (\[]*([A-F])(?:(?=$)|[\.\)\]]|(?:[\:\-]\s+))"
     match = re.match(pattern, text)
     if match:
@@ -124,8 +185,24 @@ def mmvp_extract(text):
     return ""
 
 
-def mcq_option_match(gt, answer, extract_mode="legacy"):
+def cvbench_option_match(gt, answer, item):
     gt_val = extract_mcq_option(gt)
+    pred_val, source = extract_cvbench_option(answer)
+    if gt_val and pred_val and gt_val == pred_val:
+        return True, pred_val, source
+
+    options = item_options_map(item)
+    gt_text = normalize_option_text(options.get(gt_val, "")) if gt_val else ""
+    answer_text = normalize_option_text(clean_cvbench_answer(answer))
+    if gt_text and answer_text == gt_text:
+        return True, pred_val, "cvbench_option_text"
+    return False, pred_val, source
+
+
+def mcq_option_match(gt, answer, extract_mode="legacy", benchmark="", item=None):
+    gt_val = extract_mcq_option(gt)
+    if extract_mode == "official" and benchmark == "cv-bench":
+        return cvbench_option_match(gt, answer, item or {})
     if extract_mode == "official":
         pred_val, source = extract_official_option(answer)
     elif extract_mode == "strict":
@@ -237,7 +314,8 @@ def main():
         default="legacy",
         help=(
             "MCQ option extraction mode. legacy preserves broad first-uppercase matching; "
-            "strict allows explicit option syntax; official matches the first generated token only."
+            "strict allows explicit option syntax; official is benchmark-aware "
+            "(MMStar first token; CV-Bench Cambrian-style option/text matching)."
         ),
     )
     args = parser.parse_args()
@@ -312,7 +390,7 @@ def main():
         if not is_correct and is_mcq:
             try:
                 is_letter_correct, letter_pred, letter_source = mcq_option_match(
-                    gt, extracted_answer, args.mcq_extract_mode
+                    gt, extracted_answer, args.mcq_extract_mode, args.benchmark, item
                 )
             except Exception:
                 is_letter_correct = False
