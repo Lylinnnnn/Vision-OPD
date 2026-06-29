@@ -456,6 +456,7 @@ def main():
     benchmark = args.benchmark
     benchmark_json = resolve_benchmark_json(benchmark)
     out_dir = Path(args.data_dir) if args.data_dir else Path(__file__).resolve().parent
+    out_dir.mkdir(parents=True, exist_ok=True)
     out_json = out_dir / benchmark_json
 
     if out_json.exists():

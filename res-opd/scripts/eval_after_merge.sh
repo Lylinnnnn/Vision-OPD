@@ -94,6 +94,7 @@ EVAL_OPD_TRACE_SCORE_BASELINE="${EVAL_OPD_TRACE_SCORE_BASELINE:-False}"
 EVAL_OPD_TRACE_CASE_ANALYSIS="${EVAL_OPD_TRACE_CASE_ANALYSIS:-}"
 EVAL_OPD_TRACE_MAX_SAMPLES="${EVAL_OPD_TRACE_MAX_SAMPLES:-0}"
 VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar}"
+VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}}"
 VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
 VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
@@ -232,6 +233,7 @@ if has_eval_task "$EVAL_MODE" "pope"; then
 fi
 if has_eval_task "$EVAL_MODE" "vision"; then
     echo "Vision-OPD:  $VISION_BENCHMARK"
+    echo "Vision data: $VISION_BENCHMARK_DATA_DIR"
 fi
 echo "Output:      $OUTPUT_DIR"
 echo "============================================================"
@@ -356,6 +358,7 @@ if has_eval_task "$EVAL_MODE" "vision"; then
             OPENAI_MODEL_ID="$MODEL_NAME"
             MODEL_NAME="${EXPERIMENT_NAME}"
             BENCHMARK="$VISION_BENCHMARK"
+            BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR"
             OUT_DIR="$vision_out_dir"
             JUDGE_DIR="$vision_judge_dir"
             MAX_TOKENS="$VISION_MAX_TOKENS"

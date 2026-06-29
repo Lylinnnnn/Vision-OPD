@@ -11,6 +11,7 @@ set -euo pipefail
 # Usage:
 #   API_BASE="http://localhost:8000/v1/" \
 #   OPENAI_MODEL_ID="Vision-OPD-4B" \
+#   BENCHMARK_DATA_DIR="/home/liuyanlin.lyl/notebook/data" \
 #   BENCHMARK="vstar,zoombench,hrbench-4k,hrbench-8k,mme-realworld,mme-realworld-cn" \
 #   bash eval/run_eval.sh
 # =============================================================================
@@ -42,6 +43,8 @@ RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-False}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
+BENCHMARK_DATA_DIR="${BENCHMARK_DATA_DIR:-${SCRIPT_DIR}}"
+mkdir -p "${BENCHMARK_DATA_DIR}"
 
 # Benchmark JSON mapping
 declare -A BENCHMARK_JSON_MAP=(
@@ -77,19 +80,25 @@ run_single_benchmark() {
   echo "Benchmark: ${bench}"
   echo "API base: ${API_BASE}"
   echo "Model: ${OPENAI_MODEL_ID}"
+  echo "Data dir: ${BENCHMARK_DATA_DIR}"
   echo "=========================================="
 
   local model_tag="${MODEL_NAME}_seed${SEED}"
+  local benchmark_json_path="${BENCHMARK_DATA_DIR}/${bench_json}"
 
   # [1/4] Prepare data
   echo "[1/4] Preparing data..."
-  python3 prepare_data.py --benchmark "${bench}" --data_dir "${SCRIPT_DIR}"
+  python3 prepare_data.py --benchmark "${bench}" --data_dir "${BENCHMARK_DATA_DIR}"
+  if [[ ! -s "${benchmark_json_path}" ]]; then
+    echo "ERROR: Prepared benchmark JSON is missing or empty: ${benchmark_json_path}" >&2
+    exit 1
+  fi
 
   # [2/4] Inference
   echo "[2/4] Running inference..."
   local -a INFER_ARGS=(
     --benchmark "${bench}"
-    --benchmark_json "${SCRIPT_DIR}/${bench_json}"
+    --benchmark_json "${benchmark_json_path}"
     --out_dir "${OUT_DIR}"
     --model_name "${model_tag}"
     --seed "${SEED}"
@@ -131,7 +140,7 @@ run_single_benchmark() {
   python3 cal_acc.py \
     --benchmark "${bench}" \
     --judge_json "${judge_json}" \
-    --benchmark_json "${SCRIPT_DIR}/${bench_json}"
+    --benchmark_json "${benchmark_json_path}"
 
   echo "Done: ${bench}"
 }
