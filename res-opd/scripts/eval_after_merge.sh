@@ -63,10 +63,13 @@ DATASET_VERSION="${DATASET_VERSION:-full}"
 EVAL_MODE="${4:-${EVAL_MODE:-chair}}"
 OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
 CLEANUP_LOCAL_CKPT="${CLEANUP_LOCAL_CKPT:-True}"
+ALLOW_CLEANUP_OUTSIDE_CKPT_BASE="${ALLOW_CLEANUP_OUTSIDE_CKPT_BASE:-False}"
 DEGRADATION_MODE="${DEGRADATION_MODE:-}"
 STUDENT_RATIO="${STUDENT_RATIO:-}"
 TARGET_PX="${TARGET_PX:-448}"
 PORT="${VLLM_PORT:-8000}"
+VLLM_PORT_CLEANUP="${VLLM_PORT_CLEANUP:-True}"
+VLLM_PORT_CLEANUP_WAIT="${VLLM_PORT_CLEANUP_WAIT:-20}"
 MODEL_NAME="Res-OPD"
 if [[ "$DATASET_VERSION" == "full" ]]; then
     TEST_JSON="${RES_OPD_ROOT}/data/test_1000.json"
@@ -123,6 +126,122 @@ has_eval_task() {
 
 is_truthy() {
     [[ "$1" == "True" || "$1" == "true" || "$1" == "1" || "$1" == "yes" || "$1" == "Y" || "$1" == "y" ]]
+}
+
+realpath_for_cleanup() {
+    "$PYTHON_BIN" - "$1" <<'PY'
+import os
+import sys
+
+print(os.path.realpath(sys.argv[1]))
+PY
+}
+
+safe_remove_checkpoint_dir() {
+    local target="$1"
+    local base_dir="${RES_OPD_ROOT}/checkpoints"
+    local target_real
+    local base_real
+    target_real="$(realpath_for_cleanup "$target")"
+    base_real="$(realpath_for_cleanup "$base_dir")"
+
+    if [[ "$target_real" == "$base_real"/* ]]; then
+        rm -rf "$target"
+        return 0
+    fi
+
+    if is_truthy "$ALLOW_CLEANUP_OUTSIDE_CKPT_BASE"; then
+        echo "  WARNING: removing checkpoint outside ${base_real}: ${target_real}" >&2
+        rm -rf "$target"
+        return 0
+    fi
+
+    echo "  WARNING: refusing to remove path outside ${base_real}: ${target_real}" >&2
+    echo "  Set ALLOW_CLEANUP_OUTSIDE_CKPT_BASE=True only if this is intentional." >&2
+    return 1
+}
+
+port_listener_pids() {
+    local pids=""
+    if command -v lsof >/dev/null 2>&1; then
+        pids="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)"
+    elif command -v fuser >/dev/null 2>&1; then
+        pids="$(fuser -n tcp "$PORT" 2>/dev/null || true)"
+    elif command -v ss >/dev/null 2>&1; then
+        pids="$(ss -ltnp "sport = :${PORT}" 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' || true)"
+    fi
+    for pid in $pids; do
+        [[ -n "$pid" ]] && echo "$pid"
+    done | sort -u
+}
+
+pid_cmdline() {
+    local pid="$1"
+    if [[ -r "/proc/${pid}/cmdline" ]]; then
+        tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true
+    else
+        ps -p "$pid" -o args= 2>/dev/null || true
+    fi
+}
+
+is_vllm_process_on_port() {
+    local cmd="$1"
+    [[ "$cmd" == *"vllm.entrypoints.openai.api_server"* ]] || {
+        [[ "$cmd" == *"vllm"* && "$cmd" == *"--port ${PORT}"* ]]
+    }
+}
+
+ensure_vllm_port_available() {
+    local pids
+    pids="$(port_listener_pids)"
+    if [[ -z "$pids" ]]; then
+        if curl -s "http://localhost:$PORT/health" > /dev/null 2>&1; then
+            echo "Error: port ${PORT} has a live /health endpoint, but no PID could be detected." >&2
+            echo "Install lsof/fuser/ss or set a different VLLM_PORT." >&2
+            exit 1
+        fi
+        return 0
+    fi
+
+    echo "  Port ${PORT} is already in use by: ${pids}"
+    if ! is_truthy "$VLLM_PORT_CLEANUP"; then
+        echo "Error: VLLM_PORT_CLEANUP=False and port ${PORT} is busy." >&2
+        exit 1
+    fi
+
+    local pid
+    local cmd
+    local blocked=0
+    for pid in $pids; do
+        cmd="$(pid_cmdline "$pid")"
+        if is_vllm_process_on_port "$cmd"; then
+            echo "  Killing stale vLLM process pid=${pid}: ${cmd}"
+            kill "$pid" 2>/dev/null || true
+        else
+            echo "Error: port ${PORT} is used by a non-vLLM process pid=${pid}: ${cmd}" >&2
+            blocked=1
+        fi
+    done
+    if [[ "$blocked" -ne 0 ]]; then
+        exit 1
+    fi
+
+    for _ in $(seq 1 "$VLLM_PORT_CLEANUP_WAIT"); do
+        pids="$(port_listener_pids)"
+        [[ -z "$pids" ]] && return 0
+        sleep 1
+    done
+
+    pids="$(port_listener_pids)"
+    if [[ -n "$pids" ]]; then
+        echo "  Port ${PORT} still busy after graceful cleanup; force killing stale vLLM pids: ${pids}"
+        for pid in $pids; do
+            cmd="$(pid_cmdline "$pid")"
+            if is_vllm_process_on_port "$cmd"; then
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+        done
+    fi
 }
 
 vision_benchmark_json_name() {
@@ -332,6 +451,7 @@ prepare_vision_benchmark_data
 # --- Step 1: Start vLLM server ---
 echo ""
 echo "[1/3] Starting vLLM server on port $PORT ..."
+ensure_vllm_port_available
 # Disable prometheus metrics to avoid '_IncludedRouter' compatibility issue with vLLM 0.18+
 export VLLM_DISABLE_PROMETHEUS=1
 "$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
@@ -563,7 +683,7 @@ if [[ "$CLEANUP_LOCAL_CKPT" == "True" || "$CLEANUP_LOCAL_CKPT" == "true" || "$CL
     if ossutil stat "${oss_path}/model.safetensors" > /dev/null 2>&1; then
         echo "  ✅ OSS backup verified at ${oss_path}"
         echo "  Removing local checkpoint directory: $CKPT_ROOT"
-        rm -rf "$CKPT_ROOT"
+        safe_remove_checkpoint_dir "$CKPT_ROOT"
         # Remove parent experiment dir if empty
         local_parent="$(dirname "$CKPT_ROOT")"
         if [[ -d "$local_parent" ]] && [ -z "$(ls -A "$local_parent" 2>/dev/null)" ]; then

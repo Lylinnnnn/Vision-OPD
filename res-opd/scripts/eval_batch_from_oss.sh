@@ -77,6 +77,8 @@ VERSION_TAG="latest"
 DATASET_VERSION="${DATASET_VERSION:-full}"
 EVAL_MODE="${EVAL_MODE:-chair,pope}"
 PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
+VLLM_PORT_CLEANUP="${VLLM_PORT_CLEANUP:-True}"
+VLLM_PORT_CLEANUP_WAIT="${VLLM_PORT_CLEANUP_WAIT:-20}"
 CHAIR_MAX_NEW_TOKENS="${CHAIR_MAX_NEW_TOKENS:-384}"
 CHAIR_PARALLEL_WORKERS="${CHAIR_PARALLEL_WORKERS:-8}"
 CHAIR_MAX_SAMPLES="${CHAIR_MAX_SAMPLES:-0}"
@@ -234,6 +236,31 @@ has_eval_task() {
     [[ ",${mode}," == *",${task},"* ]]
 }
 
+realpath_for_cleanup() {
+    "$PYTHON_BIN" - "$1" <<'PY'
+import os
+import sys
+
+print(os.path.realpath(sys.argv[1]))
+PY
+}
+
+safe_remove_checkpoint_dir() {
+    local target="$1"
+    local target_real
+    local base_real
+    target_real="$(realpath_for_cleanup "$target")"
+    base_real="$(realpath_for_cleanup "$CKPT_BASE")"
+
+    if [[ "$target_real" == "$base_real"/* ]]; then
+        rm -rf "$target"
+        return 0
+    fi
+
+    echo "  ⚠️  Refusing to remove path outside ${base_real}: ${target_real}" >&2
+    return 1
+}
+
 download_checkpoint() {
     local oss_path="$1"
     local local_ckpt_dir="$2"
@@ -274,7 +301,7 @@ cleanup_checkpoint() {
     # Only delete local checkpoint if OSS backup is confirmed
     if [[ -n "$oss_path" ]] && verify_oss_backup "$oss_path"; then
         echo "  OSS backup verified, removing local checkpoint directory ..."
-        rm -rf "$local_ckpt_dir"
+        safe_remove_checkpoint_dir "$local_ckpt_dir"
         # Also remove parent experiment dir if empty
         local parent_dir
         parent_dir="$(dirname "$local_ckpt_dir")"
@@ -370,6 +397,7 @@ if has_eval_task "$EVAL_MODE" "vision"; then
     echo " Vision data dir: ${VISION_BENCHMARK_DATA_DIR}"
     echo " Vision auto download: ${VISION_BENCHMARK_AUTO_DOWNLOAD}"
     echo " Vision clean source: ${VISION_BENCHMARK_CLEAN_SOURCE}"
+    echo " vLLM port cleanup: ${VLLM_PORT_CLEANUP}"
     echo " Rule-only judge: ${RULE_ONLY_JUDGE}"
 fi
 echo " CHAIR logprobs: ${CHAIR_SAVE_LOGPROBS} (top=${CHAIR_TOP_LOGPROBS})"
@@ -454,6 +482,8 @@ for idx in "${!OSS_NAMES[@]}"; do
         echo "  Running local COCO eval (${coco_mode}) ..."
         DATASET_VERSION="$DATASET_VERSION" \
         CLEANUP_LOCAL_CKPT=False \
+        VLLM_PORT_CLEANUP="$VLLM_PORT_CLEANUP" \
+        VLLM_PORT_CLEANUP_WAIT="$VLLM_PORT_CLEANUP_WAIT" \
         DEGRADATION_MODE="$effective_degradation_mode" \
         STUDENT_RATIO="$effective_student_ratio" \
         TEACHER_RATIO="$effective_teacher_ratio" \
@@ -477,6 +507,8 @@ for idx in "${!OSS_NAMES[@]}"; do
         vision_env=(
             DATASET_VERSION="$DATASET_VERSION"
             CLEANUP_LOCAL_CKPT=False
+            VLLM_PORT_CLEANUP="$VLLM_PORT_CLEANUP"
+            VLLM_PORT_CLEANUP_WAIT="$VLLM_PORT_CLEANUP_WAIT"
             DEGRADATION_MODE="$effective_degradation_mode"
             STUDENT_RATIO="$effective_student_ratio"
             TEACHER_RATIO="$effective_teacher_ratio"
