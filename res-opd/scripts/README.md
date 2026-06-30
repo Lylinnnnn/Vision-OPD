@@ -178,6 +178,78 @@ Monitor the compact SwanLab metrics:
   `<bucket>_weighted_abs_loss_share` shows whether gradient mass moved away
   from `protect/unclear` and stayed on `risk/other`.
 
+For OPD-baseline-first protection, use:
+
+```bash
+OPD_SELECTIVE_WEIGHT=True \
+OPD_SELECTIVE_WEIGHT_MODE=protect_risk_unprotect \
+OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE=entropy_or_nll \
+OPD_SELECTIVE_WEIGHT_TIERED_PROTECT=True \
+OPD_SELECTIVE_WEIGHT_NORMALIZE=False \
+OPD_SELECTIVE_WEIGHT_PROTECT_STRONG=0.25 \
+OPD_SELECTIVE_WEIGHT_PROTECT_MID=0.50 \
+OPD_SELECTIVE_WEIGHT_PROTECT_WEAK=0.75 \
+OPD_SELECTIVE_WEIGHT_PROTECT_STRONG_Q=0.25 \
+OPD_SELECTIVE_WEIGHT_ENTROPY_HIGH_Q=0.80 \
+OPD_SELECTIVE_WEIGHT_NLL_LOW_Q=0.40 \
+OPD_SELECTIVE_WEIGHT_NLL_HIGH_Q=0.80 \
+OPD_SELECTIVE_WEIGHT_LOSS_HIGH_Q=0.90 \
+bash res-opd/scripts/run_res_opd_default.sh
+```
+
+`protect_risk_unprotect` keeps raw frozen RKL as the default weight and only
+downweights likely-safe tokens. With `OPD_SELECTIVE_WEIGHT_TIERED_PROTECT=True`,
+protected tokens are split by raw RKL loss, low-res teacher uncertainty, and
+student uncertainty:
+
+| RKL | Teacher uncertainty | Student uncertainty | Bucket | Default weight |
+| --- | --- | --- | --- | ---: |
+| low | low | very low | `protect_strong` | 0.25 |
+| low | low/high | low/high mixed | `protect_mid` | 0.50 |
+| low/mid or teacher-high | otherwise not risk | `protect_weak` | 0.75 |
+| high | low | high | `risk_unprotect` | 1.00 |
+| high | low | low/mid | `other` | 1.00 |
+
+`risk_unprotect` is intentionally not boosted above 1.0: high cross-view RKL is
+a noisy hallucination-enrichment signal, so it should remove protection rather
+than force stronger low-res teacher imitation. Teacher uncertainty is used as a
+safety valve: high-RKL tokens from an uncertain low-res teacher are protected
+instead of treated as hallucination evidence. When this mode is selected,
+`run_res_opd.sh` defaults to `uncertainty_mode=entropy_or_nll`,
+`tiered_protect=True`, `normalize=False`, tier weights `0.25/0.50/0.75`,
+`protect_strong_q=0.25`, `entropy_high_q=0.80`, `nll_low_q=0.40`,
+`nll_high_q=0.80`, and `loss_high_q=0.90` unless set explicitly.
+
+`OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE` controls student uncertainty:
+
+| Mode | Protect low-uncertainty rule | Risk/unclear high-uncertainty rule |
+| --- | --- | --- |
+| `entropy` | entropy <= low-q | entropy >= high-q |
+| `nll` | student NLL <= low-q | student NLL >= high-q |
+| `entropy_or_nll` | entropy <= low-q AND NLL <= low-q | entropy >= high-q OR NLL >= high-q |
+| `entropy_and_nll` | entropy <= low-q AND NLL <= low-q | entropy >= high-q AND NLL >= high-q |
+
+Compact SwanLab metrics for this mode are:
+
+- `self_distillation/selective_weight_protected_frac`
+- `self_distillation/selective_weight_protect_strong_frac`
+- `self_distillation/selective_weight_protect_mid_frac`
+- `self_distillation/selective_weight_protect_weak_frac`
+- `self_distillation/selective_weight_risk_unprotect_frac`
+- `self_distillation/selective_weight_bucket/protect_strong_*`
+- `self_distillation/selective_weight_bucket/protect_mid_*`
+- `self_distillation/selective_weight_bucket/protect_weak_*`
+- `self_distillation/selective_weight_bucket/risk_unprotect_*`
+- `self_distillation/selective_weight_gate8/<rkl>_<teacher>_<student>_frac`
+- `self_distillation/selective_weight_proxy/*_threshold`
+- `self_distillation/selective_weight_weighted_abs_loss_over_raw`
+
+For `protect_risk_unprotect`, each selective bucket also reports
+`student_entropy_mean`, `student_nll_mean`, `teacher_entropy_mean`, and
+`raw_loss_mean` by default, because these are the actual training-time proxies
+used by the gate. Older verbose disagreement and threshold metrics remain behind
+`OPD_SELECTIVE_METRICS_VERBOSE=True`.
+
 Verbose curves are off by default. Use
 `OPD_TRAIN_METRICS_VERBOSE=True` for top-k training metrics and
 `OPD_SELECTIVE_METRICS_VERBOSE=True` for mild/medium/strong disagreement

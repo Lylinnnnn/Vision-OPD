@@ -91,13 +91,26 @@ class SelfDistillationConfig(BaseConfig):
         selective_bucket_q_low (float): Lower positive-disagreement quantile for bucket split, default 0.70.
         selective_bucket_q_high (float): Higher positive-disagreement quantile for bucket split, default 0.90.
         selective_weight_enabled (bool): Whether to apply soft token weights to the distillation loss.
-        selective_weight_mode (str): Soft-weighting rule. Currently supports "entropy_rkl_bucket".
+        selective_weight_mode (str): Soft-weighting rule. Supports "entropy_rkl_bucket" and
+            "protect_risk_unprotect".
+        selective_weight_uncertainty_mode (str): Which student-uncertainty proxy drives
+            protect/risk buckets. Supports "entropy", "nll", "entropy_or_nll", and
+            "entropy_and_nll".
+        selective_weight_tiered_protect (bool): In "protect_risk_unprotect" mode, split protected
+            tokens into strong/mid/weak tiers using RKL, teacher uncertainty, and student uncertainty.
         selective_weight_normalize (bool): Normalize valid-token mean weight to one.
+        selective_weight_protect_strong_q (float): Very-low quantile for the strongest protect tier.
         selective_weight_entropy_low_q (float): Low-entropy quantile used for protect tokens.
         selective_weight_entropy_high_q (float): High-entropy quantile used for risk/unclear tokens.
+        selective_weight_nll_low_q (float): Low student-NLL quantile used for protect tokens.
+        selective_weight_nll_high_q (float): High student-NLL quantile used as an additional
+            uncertainty proxy in "protect_risk_unprotect" mode.
         selective_weight_loss_low_q (float): Low-loss quantile used for protect tokens.
         selective_weight_loss_mid_q (float): Mid-loss threshold used to identify unclear high-entropy tokens.
         selective_weight_loss_high_q (float): High-loss quantile used for risk tokens.
+        selective_weight_protect_strong (float): Raw weight for strongest protected tokens.
+        selective_weight_protect_mid (float): Raw weight for medium protected tokens.
+        selective_weight_protect_weak (float): Raw weight for weakly protected tokens.
         selective_weight_protect (float): Raw weight for low-entropy, low-loss tokens.
         selective_weight_unclear (float): Raw weight for high-entropy, low/mid-loss tokens.
         selective_weight_risk (float): Raw weight for high-entropy, high-loss tokens.
@@ -168,12 +181,20 @@ class SelfDistillationConfig(BaseConfig):
     selective_bucket_q_high: float = 0.90
     selective_weight_enabled: bool = False
     selective_weight_mode: str = "entropy_rkl_bucket"
+    selective_weight_uncertainty_mode: str = "entropy"
+    selective_weight_tiered_protect: bool = False
     selective_weight_normalize: bool = True
+    selective_weight_protect_strong_q: float = 0.25
     selective_weight_entropy_low_q: float = 0.40
     selective_weight_entropy_high_q: float = 0.75
+    selective_weight_nll_low_q: float = 0.40
+    selective_weight_nll_high_q: float = 0.80
     selective_weight_loss_low_q: float = 0.40
     selective_weight_loss_mid_q: float = 0.50
     selective_weight_loss_high_q: float = 0.75
+    selective_weight_protect_strong: float = 0.25
+    selective_weight_protect_mid: float = 0.50
+    selective_weight_protect_weak: float = 0.75
     selective_weight_protect: float = 0.50
     selective_weight_unclear: float = 0.50
     selective_weight_risk: float = 1.00
@@ -234,15 +255,29 @@ class SelfDistillationConfig(BaseConfig):
                 "self_distillation selective bucket quantiles must satisfy 0 < q_low < q_high < 1, "
                 f"got q_low={self.selective_bucket_q_low}, q_high={self.selective_bucket_q_high}"
             )
-        valid_selective_weight_modes = ["entropy_rkl_bucket"]
+        valid_selective_weight_modes = ["entropy_rkl_bucket", "protect_risk_unprotect"]
         if self.selective_weight_mode not in valid_selective_weight_modes:
             raise ValueError(
                 "self_distillation.selective_weight_mode must be one of "
                 f"{valid_selective_weight_modes}, got {self.selective_weight_mode}"
             )
+        if self.selective_weight_tiered_protect and self.selective_weight_mode != "protect_risk_unprotect":
+            raise ValueError(
+                "self_distillation.selective_weight_tiered_protect=True requires "
+                "self_distillation.selective_weight_mode=protect_risk_unprotect"
+            )
+        valid_uncertainty_modes = ["entropy", "nll", "entropy_or_nll", "entropy_and_nll"]
+        if self.selective_weight_uncertainty_mode not in valid_uncertainty_modes:
+            raise ValueError(
+                "self_distillation.selective_weight_uncertainty_mode must be one of "
+                f"{valid_uncertainty_modes}, got {self.selective_weight_uncertainty_mode}"
+            )
         selective_weight_quantiles = [
+            ("selective_weight_protect_strong_q", self.selective_weight_protect_strong_q),
             ("selective_weight_entropy_low_q", self.selective_weight_entropy_low_q),
             ("selective_weight_entropy_high_q", self.selective_weight_entropy_high_q),
+            ("selective_weight_nll_low_q", self.selective_weight_nll_low_q),
+            ("selective_weight_nll_high_q", self.selective_weight_nll_high_q),
             ("selective_weight_loss_low_q", self.selective_weight_loss_low_q),
             ("selective_weight_loss_mid_q", self.selective_weight_loss_mid_q),
             ("selective_weight_loss_high_q", self.selective_weight_loss_high_q),
@@ -255,6 +290,24 @@ class SelfDistillationConfig(BaseConfig):
                 "self_distillation selective entropy quantiles must satisfy low_q < high_q, "
                 f"got {self.selective_weight_entropy_low_q} >= {self.selective_weight_entropy_high_q}"
             )
+        if self.selective_weight_nll_low_q >= self.selective_weight_nll_high_q:
+            raise ValueError(
+                "self_distillation selective NLL quantiles must satisfy low_q < high_q, "
+                f"got {self.selective_weight_nll_low_q} >= {self.selective_weight_nll_high_q}"
+            )
+        if self.selective_weight_protect_strong_q > min(
+            self.selective_weight_entropy_low_q,
+            self.selective_weight_nll_low_q,
+            self.selective_weight_loss_low_q,
+        ):
+            raise ValueError(
+                "self_distillation.selective_weight_protect_strong_q must be <= entropy_low_q, "
+                "nll_low_q, and loss_low_q; got "
+                f"strong_q={self.selective_weight_protect_strong_q}, "
+                f"entropy_low_q={self.selective_weight_entropy_low_q}, "
+                f"nll_low_q={self.selective_weight_nll_low_q}, "
+                f"loss_low_q={self.selective_weight_loss_low_q}"
+            )
         if not self.selective_weight_loss_low_q < self.selective_weight_loss_mid_q < self.selective_weight_loss_high_q:
             raise ValueError(
                 "self_distillation selective loss quantiles must satisfy low_q < mid_q < high_q, "
@@ -262,6 +315,9 @@ class SelfDistillationConfig(BaseConfig):
                 f"high={self.selective_weight_loss_high_q}"
             )
         selective_weights = [
+            ("selective_weight_protect_strong", self.selective_weight_protect_strong),
+            ("selective_weight_protect_mid", self.selective_weight_protect_mid),
+            ("selective_weight_protect_weak", self.selective_weight_protect_weak),
             ("selective_weight_protect", self.selective_weight_protect),
             ("selective_weight_unclear", self.selective_weight_unclear),
             ("selective_weight_risk", self.selective_weight_risk),

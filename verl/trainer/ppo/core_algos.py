@@ -1428,23 +1428,40 @@ def compute_self_distillation_loss(
         selective_weight_mode = str(
             self_distillation_config.get("selective_weight_mode", "entropy_rkl_bucket") or "entropy_rkl_bucket"
         )
-        if selective_weight_mode != "entropy_rkl_bucket":
+        valid_selective_weight_modes = {"entropy_rkl_bucket", "protect_risk_unprotect"}
+        if selective_weight_mode not in valid_selective_weight_modes:
             raise ValueError(
-                "self_distillation.selective_weight_mode currently supports only "
-                f"'entropy_rkl_bucket', got {selective_weight_mode}"
+                "self_distillation.selective_weight_mode must be one of "
+                f"{sorted(valid_selective_weight_modes)}, got {selective_weight_mode}"
             )
         if student_entropy is None:
             raise ValueError(
-                "self_distillation.selective_weight_enabled=True with mode=entropy_rkl_bucket "
+                f"self_distillation.selective_weight_enabled=True with mode={selective_weight_mode} "
                 "requires actor.calculate_entropy=True. Set OPD_METRICS_ENTROPY=True."
             )
 
         with torch.no_grad():
+            uncertainty_mode = str(
+                self_distillation_config.get("selective_weight_uncertainty_mode", "entropy") or "entropy"
+            )
+            valid_uncertainty_modes = {"entropy", "nll", "entropy_or_nll", "entropy_and_nll"}
+            if uncertainty_mode not in valid_uncertainty_modes:
+                raise ValueError(
+                    "self_distillation.selective_weight_uncertainty_mode must be one of "
+                    f"{sorted(valid_uncertainty_modes)}, got {uncertainty_mode}"
+                )
             entropy_low_q = float(self_distillation_config.get("selective_weight_entropy_low_q", 0.40))
             entropy_high_q = float(self_distillation_config.get("selective_weight_entropy_high_q", 0.75))
+            nll_low_q = float(self_distillation_config.get("selective_weight_nll_low_q", 0.40))
+            nll_high_q = float(self_distillation_config.get("selective_weight_nll_high_q", 0.80))
             loss_low_q = float(self_distillation_config.get("selective_weight_loss_low_q", 0.40))
             loss_mid_q = float(self_distillation_config.get("selective_weight_loss_mid_q", 0.50))
             loss_high_q = float(self_distillation_config.get("selective_weight_loss_high_q", 0.75))
+            tiered_protect = bool(self_distillation_config.get("selective_weight_tiered_protect", False))
+            protect_strong_q = float(self_distillation_config.get("selective_weight_protect_strong_q", 0.25))
+            protect_strong_weight = float(self_distillation_config.get("selective_weight_protect_strong", 0.25))
+            protect_mid_weight = float(self_distillation_config.get("selective_weight_protect_mid", 0.50))
+            protect_weak_weight = float(self_distillation_config.get("selective_weight_protect_weak", 0.75))
             protect_weight = float(self_distillation_config.get("selective_weight_protect", 0.50))
             unclear_weight = float(self_distillation_config.get("selective_weight_unclear", 0.50))
             risk_weight = float(self_distillation_config.get("selective_weight_risk", 1.00))
@@ -1456,69 +1473,253 @@ def compute_self_distillation_loss(
                     "self_distillation selective entropy quantiles must satisfy 0 < low < high < 1, "
                     f"got low={entropy_low_q}, high={entropy_high_q}"
                 )
+            if not 0.0 < nll_high_q < 1.0:
+                raise ValueError(
+                    "self_distillation selective NLL quantile must satisfy 0 < high < 1, "
+                    f"got high={nll_high_q}"
+                )
+            if not 0.0 < nll_low_q < nll_high_q < 1.0:
+                raise ValueError(
+                    "self_distillation selective NLL quantiles must satisfy 0 < low < high < 1, "
+                    f"got low={nll_low_q}, high={nll_high_q}"
+                )
             if not 0.0 < loss_low_q < loss_mid_q < loss_high_q < 1.0:
                 raise ValueError(
                     "self_distillation selective loss quantiles must satisfy 0 < low < mid < high < 1, "
                     f"got low={loss_low_q}, mid={loss_mid_q}, high={loss_high_q}"
                 )
-            if min(protect_weight, unclear_weight, risk_weight, other_weight) < 0.0:
+            if not 0.0 < protect_strong_q <= min(entropy_low_q, nll_low_q, loss_low_q):
+                raise ValueError(
+                    "self_distillation.selective_weight_protect_strong_q must satisfy "
+                    "0 < strong_q <= entropy_low_q, nll_low_q, and loss_low_q; got "
+                    f"strong_q={protect_strong_q}, entropy_low_q={entropy_low_q}, "
+                    f"nll_low_q={nll_low_q}, loss_low_q={loss_low_q}"
+                )
+            if min(
+                protect_strong_weight,
+                protect_mid_weight,
+                protect_weak_weight,
+                protect_weight,
+                unclear_weight,
+                risk_weight,
+                other_weight,
+            ) < 0.0:
                 raise ValueError("self_distillation selective weights must be non-negative")
+            if tiered_protect and selective_weight_mode != "protect_risk_unprotect":
+                raise ValueError(
+                    "self_distillation.selective_weight_tiered_protect=True is only supported with "
+                    "selective_weight_mode=protect_risk_unprotect"
+                )
+            if tiered_protect and teacher_entropy is None:
+                raise ValueError(
+                    "self_distillation.selective_weight_tiered_protect=True requires teacher entropy. "
+                    "Set OPD_METRICS_ENTROPY=True so teacher uncertainty is available."
+                )
 
             pre_weight_loss_mask = loss_mask
+            student_nll = -student_log_probs.detach()
             valid_weight_mask = (
                 (pre_weight_loss_mask > 0)
                 & torch.isfinite(raw_per_token_loss)
                 & torch.isfinite(student_entropy)
+                & torch.isfinite(student_nll)
             )
+            if tiered_protect:
+                valid_weight_mask = valid_weight_mask & torch.isfinite(teacher_entropy)
             valid_weight_count_tensor = valid_weight_mask.to(raw_per_token_loss.dtype).sum().clamp(min=1.0)
             valid_weight_count = int(valid_weight_mask.sum().item())
             token_weight = torch.ones_like(raw_per_token_loss, dtype=raw_per_token_loss.dtype)
             token_weight = token_weight * other_weight
+            entropy_strong_threshold = None
             entropy_low_threshold = None
             entropy_high_threshold = None
+            teacher_entropy_strong_threshold = None
+            teacher_entropy_low_threshold = None
+            teacher_entropy_high_threshold = None
+            nll_strong_threshold = None
+            nll_low_threshold = None
+            nll_high_threshold = None
+            loss_strong_threshold = None
             loss_low_threshold = None
             loss_mid_threshold = None
             loss_high_threshold = None
+            protect_strong_mask = torch.zeros_like(valid_weight_mask)
+            protect_mid_mask = torch.zeros_like(valid_weight_mask)
+            protect_weak_mask = torch.zeros_like(valid_weight_mask)
             protect_mask = torch.zeros_like(valid_weight_mask)
             unclear_mask = torch.zeros_like(valid_weight_mask)
             risk_mask = torch.zeros_like(valid_weight_mask)
+            gate8_masks = {}
             raw_weight_mean = None
 
             if valid_weight_count > 0:
                 entropy_values = student_entropy[valid_weight_mask].float()
+                nll_values = student_nll[valid_weight_mask].float()
                 loss_values = raw_per_token_loss.detach()[valid_weight_mask].float()
+                entropy_strong_threshold = torch.quantile(entropy_values, protect_strong_q)
                 entropy_low_threshold = torch.quantile(entropy_values, entropy_low_q)
                 entropy_high_threshold = torch.quantile(entropy_values, entropy_high_q)
+                nll_strong_threshold = torch.quantile(nll_values, protect_strong_q)
+                nll_low_threshold = torch.quantile(nll_values, nll_low_q)
+                nll_high_threshold = torch.quantile(nll_values, nll_high_q)
+                loss_strong_threshold = torch.quantile(loss_values, protect_strong_q)
                 loss_low_threshold = torch.quantile(loss_values, loss_low_q)
                 loss_mid_threshold = torch.quantile(loss_values, loss_mid_q)
                 loss_high_threshold = torch.quantile(loss_values, loss_high_q)
+                if tiered_protect:
+                    teacher_entropy_values = teacher_entropy[valid_weight_mask].float()
+                    teacher_entropy_strong_threshold = torch.quantile(teacher_entropy_values, protect_strong_q)
+                    teacher_entropy_low_threshold = torch.quantile(teacher_entropy_values, entropy_low_q)
+                    teacher_entropy_high_threshold = torch.quantile(teacher_entropy_values, entropy_high_q)
 
+                strong_entropy_mask = student_entropy <= entropy_strong_threshold
                 low_entropy_mask = student_entropy <= entropy_low_threshold
                 high_entropy_mask = student_entropy >= entropy_high_threshold
+                strong_nll_mask = student_nll <= nll_strong_threshold
+                low_nll_mask = student_nll <= nll_low_threshold
+                high_nll_mask = student_nll >= nll_high_threshold
+                if uncertainty_mode == "entropy":
+                    student_strong_uncertainty_mask = strong_entropy_mask
+                    low_uncertainty_mask = low_entropy_mask
+                    high_uncertainty_mask = high_entropy_mask
+                elif uncertainty_mode == "nll":
+                    student_strong_uncertainty_mask = strong_nll_mask
+                    low_uncertainty_mask = low_nll_mask
+                    high_uncertainty_mask = high_nll_mask
+                elif uncertainty_mode == "entropy_and_nll":
+                    student_strong_uncertainty_mask = strong_entropy_mask & strong_nll_mask
+                    low_uncertainty_mask = low_entropy_mask & low_nll_mask
+                    high_uncertainty_mask = high_entropy_mask & high_nll_mask
+                else:
+                    student_strong_uncertainty_mask = strong_entropy_mask & strong_nll_mask
+                    low_uncertainty_mask = low_entropy_mask & low_nll_mask
+                    high_uncertainty_mask = high_entropy_mask | high_nll_mask
+                strong_loss_mask = raw_per_token_loss.detach() <= loss_strong_threshold
                 low_loss_mask = raw_per_token_loss.detach() <= loss_low_threshold
                 mid_or_lower_loss_mask = raw_per_token_loss.detach() <= loss_mid_threshold
                 high_loss_mask = raw_per_token_loss.detach() >= loss_high_threshold
 
-                risk_mask = valid_weight_mask & high_entropy_mask & high_loss_mask
-                protect_mask = valid_weight_mask & low_entropy_mask & low_loss_mask & (~risk_mask)
-                unclear_mask = (
-                    valid_weight_mask
-                    & high_entropy_mask
-                    & mid_or_lower_loss_mask
-                    & (~risk_mask)
-                    & (~protect_mask)
-                )
+                if selective_weight_mode == "protect_risk_unprotect" and tiered_protect:
+                    teacher_strong_uncertainty_mask = teacher_entropy <= teacher_entropy_strong_threshold
+                    teacher_low_uncertainty_mask = teacher_entropy <= teacher_entropy_low_threshold
+                    teacher_high_uncertainty_mask = teacher_entropy >= teacher_entropy_high_threshold
 
-                token_weight = torch.where(
-                    protect_mask,
-                    torch.full_like(token_weight, protect_weight),
-                    token_weight,
-                )
-                token_weight = torch.where(
-                    unclear_mask,
-                    torch.full_like(token_weight, unclear_weight),
-                    token_weight,
-                )
+                    rkl_low_mask = low_loss_mask
+                    rkl_high_mask = high_loss_mask
+                    teacher_low_mask = teacher_low_uncertainty_mask
+                    teacher_high_mask = teacher_high_uncertainty_mask
+                    student_low_mask = low_uncertainty_mask
+                    student_high_mask = high_uncertainty_mask
+
+                    gate8_masks = {
+                        "low_rkl_teacher_low_student_low": valid_weight_mask
+                        & rkl_low_mask
+                        & teacher_low_mask
+                        & student_low_mask,
+                        "low_rkl_teacher_low_student_high": valid_weight_mask
+                        & rkl_low_mask
+                        & teacher_low_mask
+                        & student_high_mask,
+                        "low_rkl_teacher_high_student_low": valid_weight_mask
+                        & rkl_low_mask
+                        & teacher_high_mask
+                        & student_low_mask,
+                        "low_rkl_teacher_high_student_high": valid_weight_mask
+                        & rkl_low_mask
+                        & teacher_high_mask
+                        & student_high_mask,
+                        "high_rkl_teacher_low_student_low": valid_weight_mask
+                        & rkl_high_mask
+                        & teacher_low_mask
+                        & student_low_mask,
+                        "high_rkl_teacher_low_student_high": valid_weight_mask
+                        & rkl_high_mask
+                        & teacher_low_mask
+                        & student_high_mask,
+                        "high_rkl_teacher_high_student_low": valid_weight_mask
+                        & rkl_high_mask
+                        & teacher_high_mask
+                        & student_low_mask,
+                        "high_rkl_teacher_high_student_high": valid_weight_mask
+                        & rkl_high_mask
+                        & teacher_high_mask
+                        & student_high_mask,
+                    }
+
+                    risk_mask = gate8_masks["high_rkl_teacher_low_student_high"]
+                    protect_strong_mask = (
+                        valid_weight_mask
+                        & strong_loss_mask
+                        & teacher_strong_uncertainty_mask
+                        & student_strong_uncertainty_mask
+                        & (~risk_mask)
+                    )
+                    protect_mid_mask = (
+                        gate8_masks["low_rkl_teacher_low_student_low"]
+                        | gate8_masks["low_rkl_teacher_low_student_high"]
+                        | gate8_masks["low_rkl_teacher_high_student_low"]
+                        | gate8_masks["high_rkl_teacher_high_student_low"]
+                    ) & (~protect_strong_mask) & (~risk_mask)
+                    protect_weak_mask = (
+                        gate8_masks["low_rkl_teacher_high_student_high"]
+                        | gate8_masks["high_rkl_teacher_high_student_high"]
+                        | (
+                            valid_weight_mask
+                            & (teacher_high_uncertainty_mask | mid_or_lower_loss_mask)
+                            & (~protect_strong_mask)
+                            & (~protect_mid_mask)
+                            & (~risk_mask)
+                        )
+                    )
+                    protect_weak_mask = protect_weak_mask & (~protect_strong_mask) & (~protect_mid_mask) & (~risk_mask)
+                    protect_mask = protect_strong_mask | protect_mid_mask | protect_weak_mask
+                    unclear_mask = torch.zeros_like(valid_weight_mask)
+                    token_weight = torch.where(
+                        protect_strong_mask,
+                        torch.full_like(token_weight, protect_strong_weight),
+                        token_weight,
+                    )
+                    token_weight = torch.where(
+                        protect_mid_mask,
+                        torch.full_like(token_weight, protect_mid_weight),
+                        token_weight,
+                    )
+                    token_weight = torch.where(
+                        protect_weak_mask,
+                        torch.full_like(token_weight, protect_weak_weight),
+                        token_weight,
+                    )
+                else:
+                    risk_mask = valid_weight_mask & high_uncertainty_mask & high_loss_mask
+                    if selective_weight_mode == "protect_risk_unprotect":
+                        protect_mask = valid_weight_mask & low_uncertainty_mask & low_loss_mask & (~high_uncertainty_mask)
+                        unclear_mask = (
+                            valid_weight_mask
+                            & high_uncertainty_mask
+                            & mid_or_lower_loss_mask
+                            & (~protect_mask)
+                        )
+                        protect_mask = protect_mask & (~risk_mask)
+                        unclear_mask = unclear_mask & (~risk_mask)
+                    else:
+                        protect_mask = valid_weight_mask & low_entropy_mask & low_loss_mask & (~risk_mask)
+                        unclear_mask = (
+                            valid_weight_mask
+                            & high_entropy_mask
+                            & mid_or_lower_loss_mask
+                            & (~risk_mask)
+                            & (~protect_mask)
+                        )
+                    token_weight = torch.where(
+                        protect_mask,
+                        torch.full_like(token_weight, protect_weight),
+                        token_weight,
+                    )
+                    token_weight = torch.where(
+                        unclear_mask,
+                        torch.full_like(token_weight, unclear_weight),
+                        token_weight,
+                    )
                 token_weight = torch.where(
                     risk_mask,
                     torch.full_like(token_weight, risk_weight),
@@ -1536,25 +1737,46 @@ def compute_self_distillation_loss(
             effective_weight_mean = (
                 verl_F.masked_sum(token_weight.float(), valid_weight_mask_f) / valid_weight_count_tensor
             )
+            protect_strong_count = protect_strong_mask.sum().detach().item()
+            protect_mid_count = protect_mid_mask.sum().detach().item()
+            protect_weak_count = protect_weak_mask.sum().detach().item()
             protect_count = protect_mask.sum().detach().item()
             unclear_count = unclear_mask.sum().detach().item()
             risk_count = risk_mask.sum().detach().item()
             other_count = max(valid_weight_count - int(protect_count) - int(unclear_count) - int(risk_count), 0)
 
             metrics["self_distillation/selective_weight_enabled"] = 1.0
+            metrics[f"self_distillation/selective_weight_mode/{selective_weight_mode}"] = 1.0
+            metrics[f"self_distillation/selective_weight_uncertainty_mode/{uncertainty_mode}"] = 1.0
+            metrics["self_distillation/selective_weight_tiered_protect_enabled"] = 1.0 if tiered_protect else 0.0
             metrics["self_distillation/selective_weight_raw_mean"] = (
                 raw_weight_mean.detach().item() if raw_weight_mean is not None else 0.0
             )
             metrics["self_distillation/selective_weight_effective_mean"] = effective_weight_mean.detach().item()
+            metrics["self_distillation/selective_weight_protected_frac"] = (
+                (protect_count + unclear_count) / valid_weight_count if valid_weight_count > 0 else 0.0
+            )
+            metrics["self_distillation/selective_weight_protect_strong_frac"] = (
+                protect_strong_count / valid_weight_count if valid_weight_count > 0 else 0.0
+            )
+            metrics["self_distillation/selective_weight_protect_mid_frac"] = (
+                protect_mid_count / valid_weight_count if valid_weight_count > 0 else 0.0
+            )
+            metrics["self_distillation/selective_weight_protect_weak_frac"] = (
+                protect_weak_count / valid_weight_count if valid_weight_count > 0 else 0.0
+            )
             metrics["self_distillation/selective_weight_protect_frac"] = (
                 protect_count / valid_weight_count if valid_weight_count > 0 else 0.0
             )
             metrics["self_distillation/selective_weight_unclear_frac"] = (
                 unclear_count / valid_weight_count if valid_weight_count > 0 else 0.0
             )
-            metrics["self_distillation/selective_weight_risk_frac"] = (
-                risk_count / valid_weight_count if valid_weight_count > 0 else 0.0
+            risk_frac_metric = (
+                "self_distillation/selective_weight_risk_unprotect_frac"
+                if selective_weight_mode == "protect_risk_unprotect"
+                else "self_distillation/selective_weight_risk_frac"
             )
+            metrics[risk_frac_metric] = risk_count / valid_weight_count if valid_weight_count > 0 else 0.0
             metrics["self_distillation/selective_weight_other_frac"] = (
                 other_count / valid_weight_count if valid_weight_count > 0 else 0.0
             )
@@ -1568,6 +1790,52 @@ def compute_self_distillation_loss(
             metrics["self_distillation/selective_weight_weighted_abs_loss_over_raw"] = (
                 weighted_abs_loss_total / raw_abs_loss_total
             ).detach().item()
+            if selective_weight_mode == "protect_risk_unprotect":
+                threshold_prefix = "self_distillation/selective_weight_proxy"
+                metrics[f"{threshold_prefix}/protect_strong_q"] = protect_strong_q
+                metrics[f"{threshold_prefix}/student_entropy_strong_threshold"] = (
+                    entropy_strong_threshold.detach().item() if entropy_strong_threshold is not None else 0.0
+                )
+                metrics[f"{threshold_prefix}/entropy_low_threshold"] = (
+                    entropy_low_threshold.detach().item() if entropy_low_threshold is not None else 0.0
+                )
+                metrics[f"{threshold_prefix}/entropy_high_threshold"] = (
+                    entropy_high_threshold.detach().item() if entropy_high_threshold is not None else 0.0
+                )
+                metrics[f"{threshold_prefix}/teacher_entropy_strong_threshold"] = (
+                    teacher_entropy_strong_threshold.detach().item()
+                    if teacher_entropy_strong_threshold is not None
+                    else 0.0
+                )
+                metrics[f"{threshold_prefix}/teacher_entropy_low_threshold"] = (
+                    teacher_entropy_low_threshold.detach().item() if teacher_entropy_low_threshold is not None else 0.0
+                )
+                metrics[f"{threshold_prefix}/teacher_entropy_high_threshold"] = (
+                    teacher_entropy_high_threshold.detach().item()
+                    if teacher_entropy_high_threshold is not None
+                    else 0.0
+                )
+                metrics[f"{threshold_prefix}/nll_strong_threshold"] = (
+                    nll_strong_threshold.detach().item() if nll_strong_threshold is not None else 0.0
+                )
+                metrics[f"{threshold_prefix}/nll_low_threshold"] = (
+                    nll_low_threshold.detach().item() if nll_low_threshold is not None else 0.0
+                )
+                metrics[f"{threshold_prefix}/nll_high_threshold"] = (
+                    nll_high_threshold.detach().item() if nll_high_threshold is not None else 0.0
+                )
+                metrics[f"{threshold_prefix}/loss_strong_threshold"] = (
+                    loss_strong_threshold.detach().item() if loss_strong_threshold is not None else 0.0
+                )
+                metrics[f"{threshold_prefix}/loss_low_threshold"] = (
+                    loss_low_threshold.detach().item() if loss_low_threshold is not None else 0.0
+                )
+                metrics[f"{threshold_prefix}/loss_mid_threshold"] = (
+                    loss_mid_threshold.detach().item() if loss_mid_threshold is not None else 0.0
+                )
+                metrics[f"{threshold_prefix}/loss_high_threshold"] = (
+                    loss_high_threshold.detach().item() if loss_high_threshold is not None else 0.0
+                )
 
             def add_selective_weight_bucket_metrics(name: str, bucket_mask: torch.Tensor) -> None:
                 bucket_mask = bucket_mask & valid_weight_mask
@@ -1585,29 +1853,96 @@ def compute_self_distillation_loss(
                     metrics[f"{prefix}_weighted_abs_loss_share"] = (
                         verl_F.masked_sum(weighted_abs_loss_for_metrics, bucket_mask_f) / weighted_abs_loss_total
                     ).detach().item()
+                    if selective_weight_mode == "protect_risk_unprotect":
+                        metrics[f"{prefix}_student_entropy_mean"] = (
+                            verl_F.masked_sum(student_entropy.detach().float(), bucket_mask_f) / bucket_count_tensor
+                        ).detach().item()
+                        metrics[f"{prefix}_raw_loss_mean"] = (
+                            verl_F.masked_sum(raw_per_token_loss.detach().float(), bucket_mask_f) / bucket_count_tensor
+                        ).detach().item()
+                        metrics[f"{prefix}_student_nll_mean"] = (
+                            verl_F.masked_sum(student_nll.float(), bucket_mask_f) / bucket_count_tensor
+                        ).detach().item()
+                        if teacher_entropy is not None:
+                            metrics[f"{prefix}_teacher_entropy_mean"] = (
+                                verl_F.masked_sum(teacher_entropy.detach().float(), bucket_mask_f)
+                                / bucket_count_tensor
+                            ).detach().item()
                 else:
                     metrics[f"{prefix}_effective_weight_mean"] = 0.0
                     metrics[f"{prefix}_raw_abs_loss_share"] = 0.0
                     metrics[f"{prefix}_weighted_abs_loss_share"] = 0.0
+                    if selective_weight_mode == "protect_risk_unprotect":
+                        metrics[f"{prefix}_student_entropy_mean"] = 0.0
+                        metrics[f"{prefix}_raw_loss_mean"] = 0.0
+                        metrics[f"{prefix}_student_nll_mean"] = 0.0
+                        if teacher_entropy is not None:
+                            metrics[f"{prefix}_teacher_entropy_mean"] = 0.0
 
-            add_selective_weight_bucket_metrics("protect", protect_mask)
-            add_selective_weight_bucket_metrics("unclear", unclear_mask)
-            add_selective_weight_bucket_metrics("risk", risk_mask)
+            if selective_weight_mode == "protect_risk_unprotect" and tiered_protect:
+                add_selective_weight_bucket_metrics("protect_strong", protect_strong_mask)
+                add_selective_weight_bucket_metrics("protect_mid", protect_mid_mask)
+                add_selective_weight_bucket_metrics("protect_weak", protect_weak_mask)
+            else:
+                add_selective_weight_bucket_metrics("protect", protect_mask)
+                add_selective_weight_bucket_metrics("unclear", unclear_mask)
+            add_selective_weight_bucket_metrics(
+                "risk_unprotect" if selective_weight_mode == "protect_risk_unprotect" else "risk",
+                risk_mask,
+            )
             add_selective_weight_bucket_metrics(
                 "other",
                 valid_weight_mask & (~protect_mask) & (~unclear_mask) & (~risk_mask),
             )
+            if selective_weight_mode == "protect_risk_unprotect" and tiered_protect:
+                for gate8_name, gate8_mask in gate8_masks.items():
+                    metrics[f"self_distillation/selective_weight_gate8/{gate8_name}_frac"] = (
+                        gate8_mask.sum().detach().item() / valid_weight_count if valid_weight_count > 0 else 0.0
+                    )
 
             if metrics_verbose:
+                metrics["self_distillation/selective_weight_protect_strong_weight"] = protect_strong_weight
+                metrics["self_distillation/selective_weight_protect_mid_weight"] = protect_mid_weight
+                metrics["self_distillation/selective_weight_protect_weak_weight"] = protect_weak_weight
                 metrics["self_distillation/selective_weight_protect_weight"] = protect_weight
                 metrics["self_distillation/selective_weight_unclear_weight"] = unclear_weight
                 metrics["self_distillation/selective_weight_risk_weight"] = risk_weight
                 metrics["self_distillation/selective_weight_other_weight"] = other_weight
+                metrics["self_distillation/selective_weight_entropy_strong_threshold"] = (
+                    entropy_strong_threshold.detach().item() if entropy_strong_threshold is not None else 0.0
+                )
                 metrics["self_distillation/selective_weight_entropy_low_threshold"] = (
                     entropy_low_threshold.detach().item() if entropy_low_threshold is not None else 0.0
                 )
                 metrics["self_distillation/selective_weight_entropy_high_threshold"] = (
                     entropy_high_threshold.detach().item() if entropy_high_threshold is not None else 0.0
+                )
+                metrics["self_distillation/selective_weight_teacher_entropy_strong_threshold"] = (
+                    teacher_entropy_strong_threshold.detach().item()
+                    if teacher_entropy_strong_threshold is not None
+                    else 0.0
+                )
+                metrics["self_distillation/selective_weight_teacher_entropy_low_threshold"] = (
+                    teacher_entropy_low_threshold.detach().item()
+                    if teacher_entropy_low_threshold is not None
+                    else 0.0
+                )
+                metrics["self_distillation/selective_weight_teacher_entropy_high_threshold"] = (
+                    teacher_entropy_high_threshold.detach().item()
+                    if teacher_entropy_high_threshold is not None
+                    else 0.0
+                )
+                metrics["self_distillation/selective_weight_nll_strong_threshold"] = (
+                    nll_strong_threshold.detach().item() if nll_strong_threshold is not None else 0.0
+                )
+                metrics["self_distillation/selective_weight_nll_low_threshold"] = (
+                    nll_low_threshold.detach().item() if nll_low_threshold is not None else 0.0
+                )
+                metrics["self_distillation/selective_weight_nll_high_threshold"] = (
+                    nll_high_threshold.detach().item() if nll_high_threshold is not None else 0.0
+                )
+                metrics["self_distillation/selective_weight_loss_strong_threshold"] = (
+                    loss_strong_threshold.detach().item() if loss_strong_threshold is not None else 0.0
                 )
                 metrics["self_distillation/selective_weight_loss_low_threshold"] = (
                     loss_low_threshold.detach().item() if loss_low_threshold is not None else 0.0
