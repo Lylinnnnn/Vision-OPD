@@ -60,6 +60,24 @@ PROMPT_TEXT = (
 )
 
 
+def extract_final_response_text(text):
+    """Return the final answer/caption after an optional thinking block."""
+    if not isinstance(text, str):
+        return ""
+    final = text.strip()
+    think_end = final.rfind("</think>")
+    if think_end != -1:
+        final = final[think_end + len("</think>"):].strip()
+    match = re.search(r"<answer>(.*?)</answer>", final, flags=re.IGNORECASE | re.DOTALL)
+    if match:
+        final = match.group(1).strip()
+    for marker in ("Final Answer:", "Final answer:", "Answer:", "answer:"):
+        if marker in final:
+            final = final.split(marker, 1)[1].strip()
+            break
+    return final
+
+
 def infer_student_px_from_path(path_str):
     """Try to extract student resolution from a checkpoint path like '...-s224-...'."""
     match = re.search(r"-s(\d+)", os.path.basename(path_str))
@@ -100,6 +118,10 @@ def parse_args():
                         help="Request and save generated-token logprobs in API/direct mode")
     parser.add_argument("--top-logprobs", type=int, default=5,
                         help="Top-k logprobs to save when --save-logprobs is enabled")
+    parser.add_argument("--enable-thinking", choices=["True", "False"], default=None,
+                        help="Pass enable_thinking through vLLM chat_template_kwargs when supported")
+    parser.add_argument("--final-answer-only", action="store_true",
+                        help="Strip optional thinking text before saving/scoring generated_caption")
     return parser.parse_args()
 
 
@@ -245,7 +267,8 @@ def serialize_api_logprobs(choice):
 def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
                      max_new_tokens, student_px, target_px, max_retries,
                      degradation_mode="square", student_ratio=1.0,
-                     save_logprobs=False, top_logprobs=5):
+                     save_logprobs=False, top_logprobs=5,
+                     enable_thinking=None, final_answer_only=False):
     """Generate a single caption via API with retry logic. Thread-safe."""
     import base64
 
@@ -289,12 +312,20 @@ def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
             if save_logprobs:
                 request_kwargs["logprobs"] = True
                 request_kwargs["top_logprobs"] = top_logprobs
+            if enable_thinking is not None:
+                request_kwargs["extra_body"] = {
+                    "chat_template_kwargs": {"enable_thinking": enable_thinking == "True"}
+                }
 
             response = client.chat.completions.create(**request_kwargs)
             choice = response.choices[0]
+            raw_caption = choice.message.content or ""
+            final_caption = extract_final_response_text(raw_caption) if final_answer_only else raw_caption
             result = {
-                "generated_caption": choice.message.content,
+                "generated_caption": final_caption,
             }
+            if raw_caption != final_caption:
+                result["raw_generated_caption"] = raw_caption
             if save_logprobs:
                 result.update(serialize_api_logprobs(choice))
             return result
@@ -308,7 +339,8 @@ def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
 def generate_via_model(model, processor, image_path, prompt, max_new_tokens,
                        device, student_px=0, target_px=448,
                        degradation_mode="square", student_ratio=1.0,
-                       save_logprobs=False, top_logprobs=5):
+                       save_logprobs=False, top_logprobs=5,
+                       enable_thinking=None, final_answer_only=False):
     """Generate caption via direct model inference (sequential only)."""
     import torch
     from qwen_vl_utils import process_vision_info
@@ -326,8 +358,15 @@ def generate_via_model(model, processor, image_path, prompt, max_new_tokens,
         {"type": "text", "text": prompt},
     ]}]
 
-    text = processor.apply_chat_template(messages, tokenize=False,
-                                         add_generation_prompt=True)
+    chat_template_kwargs = {}
+    if enable_thinking is not None:
+        chat_template_kwargs["enable_thinking"] = enable_thinking == "True"
+    text = processor.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+        **chat_template_kwargs,
+    )
     image_inputs, _ = process_vision_info(messages)
     inputs = processor(text=[text], images=image_inputs, return_tensors="pt")
     inputs = {k: v.to(device) for k, v in inputs.items() if torch.is_tensor(v)}
@@ -346,7 +385,10 @@ def generate_via_model(model, processor, image_path, prompt, max_new_tokens,
     generated_text = processor.decode(generated_ids,
                                       skip_special_tokens=True)
 
-    result = {"generated_caption": generated_text}
+    final_text = extract_final_response_text(generated_text) if final_answer_only else generated_text
+    result = {"generated_caption": final_text}
+    if generated_text != final_text:
+        result["raw_generated_caption"] = generated_text
     if save_logprobs:
         token_logprobs = []
         serialized_top_logprobs = []
@@ -459,6 +501,7 @@ def main():
                     args.student_px, args.target_px, args.max_retries,
                     args.degradation_mode, args.student_ratio,
                     args.save_logprobs, args.top_logprobs,
+                    args.enable_thinking, args.final_answer_only,
                 )
                 result = {
                     "image_id": sample["image_id"],
@@ -505,6 +548,7 @@ def main():
                         args.student_px, args.target_px,
                         args.degradation_mode, args.student_ratio,
                         args.save_logprobs, args.top_logprobs,
+                        args.enable_thinking, args.final_answer_only,
                     )
                     result = {
                         "image_id": sample["image_id"],
@@ -541,7 +585,7 @@ def main():
     for r in results_list:
         eval_records.append({
             "image_id": r["image_id"],
-            "generated_text": r["generated_caption"],
+            "generated_text": extract_final_response_text(r["generated_caption"]),
             "gt_objects": set(r["gt_objects"]),
         })
 

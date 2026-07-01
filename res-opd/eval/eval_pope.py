@@ -53,6 +53,23 @@ COCO_CATEGORIES = [
 ]
 
 
+def extract_final_response_text(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    final = text.strip()
+    think_end = final.rfind("</think>")
+    if think_end != -1:
+        final = final[think_end + len("</think>"):].strip()
+    match = re.search(r"<answer>(.*?)</answer>", final, flags=re.IGNORECASE | re.DOTALL)
+    if match:
+        final = match.group(1).strip()
+    for marker in ("Final Answer:", "Final answer:", "Answer:", "answer:"):
+        if marker in final:
+            final = final.split(marker, 1)[1].strip()
+            break
+    return final
+
+
 def parse_benchmarks(value: str) -> list[str]:
     if value.strip().lower() in {"all", "pope_all"}:
         return ["pope_adv", "pope_pop", "pope_random"]
@@ -341,6 +358,7 @@ def official_pope_extract(text: str) -> str:
     """
     if not isinstance(text, str) or not text.strip():
         return ""
+    text = extract_final_response_text(text)
     first_sentence = text.strip().split(".")[0].replace(",", "")
     words = first_sentence.split()
     if "No" in words or "no" in words or "not" in words:
@@ -445,11 +463,17 @@ def run_single_benchmark(args, benchmark: str) -> dict:
         answer = ""
         for attempt in range(1, args.max_retries + 1):
             try:
+                request_kwargs = {}
+                if args.enable_thinking is not None:
+                    request_kwargs["extra_body"] = {
+                        "chat_template_kwargs": {"enable_thinking": args.enable_thinking == "True"}
+                    }
                 response = get_client().chat.completions.create(
                     model=args.model_name,
                     messages=messages,
                     max_tokens=args.max_new_tokens,
                     temperature=0.0,
+                    **request_kwargs,
                 )
                 answer = (response.choices[0].message.content or "").strip()
                 break
@@ -462,6 +486,9 @@ def run_single_benchmark(args, benchmark: str) -> dict:
         record = dict(item)
         record["query_used"] = query
         record["model_answer"] = answer
+        final_answer = extract_final_response_text(answer)
+        if final_answer != answer:
+            record["final_answer_text"] = final_answer
         record["pred_answer"] = official_pope_extract(answer)
         record["correct"] = record["pred_answer"] == str(record.get("response", "")).strip().lower()
         record["student_px"] = args.student_px
@@ -555,6 +582,7 @@ def main():
     parser.add_argument("--parallel-workers", type=int, default=64)
     parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument("--prompt-suffix", default=DEFAULT_PROMPT_SUFFIX)
+    parser.add_argument("--enable-thinking", choices=["True", "False"], default=None)
     parser.add_argument(
         "--use-prepared-query",
         action="store_true",

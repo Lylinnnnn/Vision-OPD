@@ -93,18 +93,29 @@ def resolve_image_path(amber_root: Path, image_root: Optional[Path], image_name:
 def extract_yes_no(text: str) -> str:
     if not isinstance(text, str) or not text.strip():
         return "No"
-    t = text.strip()
-    if "</think>" in t:
-        t = t.rsplit("</think>", 1)[1].strip()
-    match = re.search(r"<answer>(.*?)</answer>", t, flags=re.IGNORECASE | re.DOTALL)
-    if match:
-        t = match.group(1).strip()
+    t = extract_final_response_text(text)
     lowered = t.lower()
     if lowered.startswith("yes") or re.search(r"\byes\b", lowered.split(".", 1)[0]):
         return "Yes"
     if lowered.startswith("no") or " not " in f" {lowered.split('.', 1)[0]} " or re.search(r"\bno\b", lowered.split(".", 1)[0]):
         return "No"
     return "No"
+
+
+def extract_final_response_text(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    t = text.strip()
+    if "</think>" in t:
+        t = t.rsplit("</think>", 1)[1].strip()
+    match = re.search(r"<answer>(.*?)</answer>", t, flags=re.IGNORECASE | re.DOTALL)
+    if match:
+        t = match.group(1).strip()
+    for marker in ("Final Answer:", "Final answer:", "Answer:", "answer:"):
+        if marker in t:
+            t = t.split(marker, 1)[1].strip()
+            break
+    return t
 
 
 def build_prompt(query: str, is_discriminative: bool) -> str:
@@ -297,7 +308,7 @@ def main():
                     answer = f"[ERROR] {exc}"
                 else:
                     time.sleep(float(attempt))
-        official_answer = extract_yes_no(answer) if is_discriminative else answer
+        official_answer = extract_yes_no(answer) if is_discriminative else extract_final_response_text(answer)
         official_record = {"id": item_id, "response": official_answer}
         raw_record = dict(item)
         raw_record.update(

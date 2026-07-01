@@ -214,13 +214,17 @@ def mcq_option_match(gt, answer, extract_mode="legacy", benchmark="", item=None)
 
 
 def extract_answer(model_answer_raw):
+    think_end = model_answer_raw.rfind("</think>")
+    if think_end != -1:
+        model_answer_raw = model_answer_raw[think_end + len("</think>") :].strip()
     if "<answer>" in model_answer_raw:
         start = model_answer_raw.find("<answer>")
         end = model_answer_raw.find("</answer>")
         if start != -1 and end != -1:
             return model_answer_raw[start + len("<answer>") : end].strip()
-    if "Answer:" in model_answer_raw:
-        return model_answer_raw[model_answer_raw.find("Answer:") :].strip()
+    for marker in ("Final Answer:", "Final answer:", "Answer:", "answer:"):
+        if marker in model_answer_raw:
+            return model_answer_raw.split(marker, 1)[1].strip()
     return model_answer_raw.strip()
 
 

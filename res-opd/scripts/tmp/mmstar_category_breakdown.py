@@ -75,16 +75,19 @@ def load_records(path: Path) -> list[dict[str, Any]]:
 def extract_answer_text(model_answer_raw: str) -> str:
     if not isinstance(model_answer_raw, str):
         return ""
+    think_end = model_answer_raw.rfind("</think>")
+    if think_end != -1:
+        model_answer_raw = model_answer_raw[think_end + len("</think>") :].strip()
     if "<answer>" in model_answer_raw:
         start = model_answer_raw.find("<answer>")
         end = model_answer_raw.find("</answer>")
         if start != -1 and end != -1:
             return model_answer_raw[start + len("<answer>") : end].strip()
     lower = model_answer_raw.lower()
-    marker = "answer:"
-    if marker in lower:
-        idx = lower.find(marker)
-        return model_answer_raw[idx + len(marker) :].strip()
+    for marker in ("final answer:", "answer:"):
+        if marker in lower:
+            idx = lower.find(marker)
+            return model_answer_raw[idx + len(marker) :].strip()
     return model_answer_raw.strip()
 
 

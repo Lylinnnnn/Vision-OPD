@@ -70,6 +70,16 @@ TARGET_PX="${TARGET_PX:-448}"
 PORT="${VLLM_PORT:-8000}"
 VLLM_PORT_CLEANUP="${VLLM_PORT_CLEANUP:-True}"
 VLLM_PORT_CLEANUP_WAIT="${VLLM_PORT_CLEANUP_WAIT:-20}"
+VLLM_GPU_MEMORY_UTILIZATION_WAS_SET="${VLLM_GPU_MEMORY_UTILIZATION+x}"
+VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.85}"
+VLLM_MAX_MODEL_LEN_WAS_SET="${VLLM_MAX_MODEL_LEN+x}"
+VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-9728}"
+VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-}"
+VLLM_MAX_NUM_SEQS_WAS_SET="${VLLM_MAX_NUM_SEQS+x}"
+VLLM_MAX_NUM_SEQS="${VLLM_MAX_NUM_SEQS:-}"
+VLLM_MAX_NUM_BATCHED_TOKENS_WAS_SET="${VLLM_MAX_NUM_BATCHED_TOKENS+x}"
+VLLM_MAX_NUM_BATCHED_TOKENS="${VLLM_MAX_NUM_BATCHED_TOKENS:-}"
+MODEL_PROFILE="${MODEL_PROFILE:-}"
 MODEL_NAME="Res-OPD"
 if [[ "$DATASET_VERSION" == "full" ]]; then
     TEST_JSON="${RES_OPD_ROOT}/data/test_1000.json"
@@ -81,11 +91,15 @@ POPE_BENCHMARK="${POPE_BENCHMARK:-pope_adv,pope_pop,pope_random}"
 POPE_SOURCE="${POPE_SOURCE:-res-opd-test}"
 POPE_QUESTIONS_PER_LABEL="${POPE_QUESTIONS_PER_LABEL:-3}"
 POPE_SEED="${POPE_SEED:-42}"
+POPE_PARALLEL_WORKERS_WAS_SET="${POPE_PARALLEL_WORKERS+x}"
 POPE_PARALLEL_WORKERS="${POPE_PARALLEL_WORKERS:-64}"
+POPE_MAX_NEW_TOKENS_WAS_SET="${POPE_MAX_NEW_TOKENS+x}"
 POPE_MAX_NEW_TOKENS="${POPE_MAX_NEW_TOKENS:-16}"
 POPE_MAX_SAMPLES="${POPE_MAX_SAMPLES:-0}"
 POPE_USE_PREPARED_QUERY="${POPE_USE_PREPARED_QUERY:-False}"
+CHAIR_MAX_NEW_TOKENS_WAS_SET="${CHAIR_MAX_NEW_TOKENS+x}"
 CHAIR_MAX_NEW_TOKENS="${CHAIR_MAX_NEW_TOKENS:-384}"
+CHAIR_PARALLEL_WORKERS_WAS_SET="${CHAIR_PARALLEL_WORKERS+x}"
 CHAIR_PARALLEL_WORKERS="${CHAIR_PARALLEL_WORKERS:-8}"
 CHAIR_MAX_SAMPLES="${CHAIR_MAX_SAMPLES:-0}"
 CHAIR_SAVE_LOGPROBS="${CHAIR_SAVE_LOGPROBS:-False}"
@@ -105,9 +119,14 @@ VISION_BENCHMARK_REFRESH_PROMPTS="${VISION_BENCHMARK_REFRESH_PROMPTS:-${BENCHMAR
 VISION_BENCHMARK_OUTPUT_SUFFIX="${VISION_BENCHMARK_OUTPUT_SUFFIX:-${BENCHMARK_OUTPUT_SUFFIX:-}}"
 VISION_MAX_TOKENS_WAS_SET="${VISION_MAX_TOKENS+x}"
 VISION_MAX_TOKENS="${VISION_MAX_TOKENS:-32768}"
+VISION_PARALLEL_WORKERS_WAS_SET="${VISION_PARALLEL_WORKERS+x}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
 VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
 VISION_ENABLE_THINKING="${VISION_ENABLE_THINKING:-}"
+ENABLE_THINKING_WAS_SET="${ENABLE_THINKING+x}${VISION_ENABLE_THINKING+x}"
+ENABLE_THINKING="${ENABLE_THINKING:-${VISION_ENABLE_THINKING:-}}"
+FINAL_ANSWER_ONLY_WAS_SET="${FINAL_ANSWER_ONLY+x}"
+FINAL_ANSWER_ONLY="${FINAL_ANSWER_ONLY:-}"
 RULE_ONLY_JUDGE_WAS_SET="${RULE_ONLY_JUDGE+x}"
 RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-False}"
 MCQ_EXTRACT_MODE_WAS_SET="${MCQ_EXTRACT_MODE+x}"
@@ -197,9 +216,91 @@ has_vision_eval_task() {
     has_eval_task "$mode" "vision" || has_eval_task "$mode" "mmstar" || has_eval_task "$mode" "cv-bench"
 }
 
+infer_model_profile() {
+    local explicit_profile="$1"
+    local path_lc
+    if [[ -n "$explicit_profile" ]]; then
+        echo "$explicit_profile"
+        return 0
+    fi
+    path_lc="$(echo "$MODEL_PATH" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$path_lc" == *"thinking"* ]]; then
+        if [[ "$path_lc" == *"8b"* ]]; then
+            echo "qwen3vl_8b_thinking"
+        elif [[ "$path_lc" == *"2b"* ]]; then
+            echo "qwen3vl_2b_thinking"
+        else
+            echo "generic_thinking"
+        fi
+    elif [[ "$path_lc" == *"instruct"* ]]; then
+        echo "qwen3vl_instruct"
+    else
+        echo "default"
+    fi
+}
+
+apply_model_profile_defaults() {
+    local profile="$1"
+    case "$profile" in
+        qwen3vl_2b_thinking)
+            [[ -z "$ENABLE_THINKING_WAS_SET" ]] && ENABLE_THINKING="True"
+            [[ -z "$FINAL_ANSWER_ONLY_WAS_SET" ]] && FINAL_ANSWER_ONLY="True"
+            [[ -z "$VLLM_MAX_MODEL_LEN_WAS_SET" ]] && VLLM_MAX_MODEL_LEN="${THINKING_2B_VLLM_MAX_MODEL_LEN:-32768}"
+            [[ -z "$VLLM_MAX_NUM_SEQS_WAS_SET" ]] && VLLM_MAX_NUM_SEQS="${THINKING_2B_VLLM_MAX_NUM_SEQS:-16}"
+            [[ -z "$VLLM_MAX_NUM_BATCHED_TOKENS_WAS_SET" ]] && VLLM_MAX_NUM_BATCHED_TOKENS="${THINKING_2B_VLLM_MAX_NUM_BATCHED_TOKENS:-65536}"
+            [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]] && VISION_MAX_TOKENS="${THINKING_2B_VISION_MAX_TOKENS:-2048}"
+            [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]] && VISION_MAX_TOKENS_WAS_SET="profile"
+            [[ -z "$VISION_PARALLEL_WORKERS_WAS_SET" ]] && VISION_PARALLEL_WORKERS="${THINKING_2B_VISION_PARALLEL_WORKERS:-32}"
+            [[ -z "$POPE_MAX_NEW_TOKENS_WAS_SET" ]] && POPE_MAX_NEW_TOKENS="${THINKING_2B_POPE_MAX_NEW_TOKENS:-512}"
+            [[ -z "$POPE_PARALLEL_WORKERS_WAS_SET" ]] && POPE_PARALLEL_WORKERS="${THINKING_2B_POPE_PARALLEL_WORKERS:-16}"
+            [[ -z "$CHAIR_MAX_NEW_TOKENS_WAS_SET" ]] && CHAIR_MAX_NEW_TOKENS="${THINKING_2B_CHAIR_MAX_NEW_TOKENS:-2048}"
+            [[ -z "$CHAIR_PARALLEL_WORKERS_WAS_SET" ]] && CHAIR_PARALLEL_WORKERS="${THINKING_2B_CHAIR_PARALLEL_WORKERS:-4}"
+            ;;
+        qwen3vl_8b_thinking)
+            [[ -z "$ENABLE_THINKING_WAS_SET" ]] && ENABLE_THINKING="True"
+            [[ -z "$FINAL_ANSWER_ONLY_WAS_SET" ]] && FINAL_ANSWER_ONLY="True"
+            [[ -z "$VLLM_MAX_MODEL_LEN_WAS_SET" ]] && VLLM_MAX_MODEL_LEN="${THINKING_8B_VLLM_MAX_MODEL_LEN:-32768}"
+            [[ -z "$VLLM_MAX_NUM_SEQS_WAS_SET" ]] && VLLM_MAX_NUM_SEQS="${THINKING_8B_VLLM_MAX_NUM_SEQS:-8}"
+            [[ -z "$VLLM_MAX_NUM_BATCHED_TOKENS_WAS_SET" ]] && VLLM_MAX_NUM_BATCHED_TOKENS="${THINKING_8B_VLLM_MAX_NUM_BATCHED_TOKENS:-32768}"
+            [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]] && VISION_MAX_TOKENS="${THINKING_8B_VISION_MAX_TOKENS:-2048}"
+            [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]] && VISION_MAX_TOKENS_WAS_SET="profile"
+            [[ -z "$VISION_PARALLEL_WORKERS_WAS_SET" ]] && VISION_PARALLEL_WORKERS="${THINKING_8B_VISION_PARALLEL_WORKERS:-16}"
+            [[ -z "$POPE_MAX_NEW_TOKENS_WAS_SET" ]] && POPE_MAX_NEW_TOKENS="${THINKING_8B_POPE_MAX_NEW_TOKENS:-512}"
+            [[ -z "$POPE_PARALLEL_WORKERS_WAS_SET" ]] && POPE_PARALLEL_WORKERS="${THINKING_8B_POPE_PARALLEL_WORKERS:-8}"
+            [[ -z "$CHAIR_MAX_NEW_TOKENS_WAS_SET" ]] && CHAIR_MAX_NEW_TOKENS="${THINKING_8B_CHAIR_MAX_NEW_TOKENS:-3072}"
+            [[ -z "$CHAIR_PARALLEL_WORKERS_WAS_SET" ]] && CHAIR_PARALLEL_WORKERS="${THINKING_8B_CHAIR_PARALLEL_WORKERS:-2}"
+            ;;
+        generic_thinking)
+            [[ -z "$ENABLE_THINKING_WAS_SET" ]] && ENABLE_THINKING="True"
+            [[ -z "$FINAL_ANSWER_ONLY_WAS_SET" ]] && FINAL_ANSWER_ONLY="True"
+            [[ -z "$VLLM_MAX_MODEL_LEN_WAS_SET" ]] && VLLM_MAX_MODEL_LEN="${THINKING_VLLM_MAX_MODEL_LEN:-32768}"
+            [[ -z "$VLLM_MAX_NUM_SEQS_WAS_SET" ]] && VLLM_MAX_NUM_SEQS="${THINKING_VLLM_MAX_NUM_SEQS:-8}"
+            [[ -z "$VLLM_MAX_NUM_BATCHED_TOKENS_WAS_SET" ]] && VLLM_MAX_NUM_BATCHED_TOKENS="${THINKING_VLLM_MAX_NUM_BATCHED_TOKENS:-32768}"
+            [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]] && VISION_MAX_TOKENS="${THINKING_VISION_MAX_TOKENS:-2048}"
+            [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]] && VISION_MAX_TOKENS_WAS_SET="profile"
+            [[ -z "$VISION_PARALLEL_WORKERS_WAS_SET" ]] && VISION_PARALLEL_WORKERS="${THINKING_VISION_PARALLEL_WORKERS:-16}"
+            [[ -z "$POPE_MAX_NEW_TOKENS_WAS_SET" ]] && POPE_MAX_NEW_TOKENS="${THINKING_POPE_MAX_NEW_TOKENS:-512}"
+            [[ -z "$POPE_PARALLEL_WORKERS_WAS_SET" ]] && POPE_PARALLEL_WORKERS="${THINKING_POPE_PARALLEL_WORKERS:-8}"
+            [[ -z "$CHAIR_MAX_NEW_TOKENS_WAS_SET" ]] && CHAIR_MAX_NEW_TOKENS="${THINKING_CHAIR_MAX_NEW_TOKENS:-2048}"
+            [[ -z "$CHAIR_PARALLEL_WORKERS_WAS_SET" ]] && CHAIR_PARALLEL_WORKERS="${THINKING_CHAIR_PARALLEL_WORKERS:-2}"
+            ;;
+        qwen3vl_instruct|default)
+            # Keep historical defaults unless the caller explicitly overrides env vars.
+            ;;
+        *)
+            echo "Error: unsupported MODEL_PROFILE=${profile}. Use default, qwen3vl_instruct, qwen3vl_2b_thinking, qwen3vl_8b_thinking, or generic_thinking." >&2
+            exit 1
+            ;;
+    esac
+}
+
 apply_official_aux_defaults() {
     local benches="$1"
     if [[ ",${benches}," == *",mmstar,"* || ",${benches}," == *",cv-bench,"* ]]; then
+        local default_max_tokens="16"
+        if [[ "${ENABLE_THINKING}" == "True" || "${ENABLE_THINKING}" == "true" || "${ENABLE_THINKING}" == "1" ]]; then
+            default_max_tokens="${VISION_THINKING_MAX_TOKENS:-2048}"
+        fi
         if [[ -z "$VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET" ]]; then
             VISION_BENCHMARK_REFRESH_PROMPTS="True"
         fi
@@ -210,7 +311,7 @@ apply_official_aux_defaults() {
             MCQ_EXTRACT_MODE="official"
         fi
         if [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]]; then
-            VISION_MAX_TOKENS="16"
+            VISION_MAX_TOKENS="$default_max_tokens"
         fi
     fi
     return 0
@@ -420,7 +521,20 @@ prepare_vision_benchmark_data() {
 
 EVAL_MODE="$(normalize_eval_mode "$EVAL_MODE")"
 EFFECTIVE_VISION_BENCHMARK="$(resolve_vision_benchmarks "$EVAL_MODE")"
+MODEL_PROFILE="$(infer_model_profile "$MODEL_PROFILE")"
+apply_model_profile_defaults "$MODEL_PROFILE"
 apply_official_aux_defaults "$EFFECTIVE_VISION_BENCHMARK"
+if [[ -z "$FINAL_ANSWER_ONLY" && ( "$ENABLE_THINKING" == "True" || "$ENABLE_THINKING" == "true" || "$ENABLE_THINKING" == "1" ) ]]; then
+    FINAL_ANSWER_ONLY="True"
+fi
+if [[ "$FINAL_ANSWER_ONLY" == "True" || "$FINAL_ANSWER_ONLY" == "true" || "$FINAL_ANSWER_ONLY" == "1" ]]; then
+    if [[ -z "$POPE_MAX_NEW_TOKENS_WAS_SET" && "$POPE_MAX_NEW_TOKENS" == "16" ]]; then
+        POPE_MAX_NEW_TOKENS="${POPE_THINKING_MAX_NEW_TOKENS:-512}"
+    fi
+    if [[ -z "$CHAIR_MAX_NEW_TOKENS_WAS_SET" && "$CHAIR_MAX_NEW_TOKENS" == "384" ]]; then
+        CHAIR_MAX_NEW_TOKENS="${CHAIR_THINKING_MAX_NEW_TOKENS:-2048}"
+    fi
+fi
 if ! has_eval_task "$EVAL_MODE" "chair" && ! has_eval_task "$EVAL_MODE" "pope" && ! has_vision_eval_task "$EVAL_MODE"; then
     echo "Error: eval_mode must include chair, pope, mmstar, cv-bench, vision, frequent, or all. Got: $EVAL_MODE" >&2
     exit 1
@@ -525,12 +639,14 @@ echo "Teacher ratio: $TEACHER_RATIO (original-mode offline OPD trace)"
 echo "Eval mode:   $EVAL_MODE"
 if has_eval_task "$EVAL_MODE" "chair"; then
     echo "CHAIR data:  $TEST_JSON"
+    echo "CHAIR max tokens/workers: ${CHAIR_MAX_NEW_TOKENS}/${CHAIR_PARALLEL_WORKERS}"
     echo "CHAIR logprobs: ${CHAIR_SAVE_LOGPROBS} (top=${CHAIR_TOP_LOGPROBS})"
     echo "OPD eval trace: ${EVAL_OPD_TRACE} (topk=${EVAL_OPD_TRACE_TOPK}, entropy=${EVAL_OPD_TRACE_ENTROPY})"
 fi
 if has_eval_task "$EVAL_MODE" "pope"; then
     echo "POPE:        $POPE_BENCHMARK"
     echo "POPE source: $POPE_SOURCE"
+    echo "POPE max tokens/workers: ${POPE_MAX_NEW_TOKENS}/${POPE_PARALLEL_WORKERS}"
 fi
 if has_vision_eval_task "$EVAL_MODE"; then
     echo "Vision-OPD:  $EFFECTIVE_VISION_BENCHMARK"
@@ -539,8 +655,14 @@ if has_vision_eval_task "$EVAL_MODE"; then
     echo "Vision clean source:  $VISION_BENCHMARK_CLEAN_SOURCE"
     echo "Vision refresh prompts: $VISION_BENCHMARK_REFRESH_PROMPTS"
     echo "Vision output suffix: $VISION_BENCHMARK_OUTPUT_SUFFIX"
+    echo "Vision max tokens/workers: ${VISION_MAX_TOKENS}/${VISION_PARALLEL_WORKERS}"
     echo "MCQ extract mode: $MCQ_EXTRACT_MODE"
 fi
+echo "Model profile: $MODEL_PROFILE"
+echo "Enable thinking: ${ENABLE_THINKING:-<unset>}"
+echo "Final-answer only: ${FINAL_ANSWER_ONLY:-False}"
+echo "vLLM max len: $VLLM_MAX_MODEL_LEN"
+echo "vLLM max seqs/batched tokens: ${VLLM_MAX_NUM_SEQS:-<default>}/${VLLM_MAX_NUM_BATCHED_TOKENS:-<default>}"
 echo "Output:      $OUTPUT_DIR"
 echo "============================================================"
 
@@ -554,14 +676,26 @@ echo "[1/3] Starting vLLM server on port $PORT ..."
 ensure_vllm_port_available
 # Disable prometheus metrics to avoid '_IncludedRouter' compatibility issue with vLLM 0.18+
 export VLLM_DISABLE_PROMETHEUS=1
-"$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
-    --model "$MODEL_PATH" \
-    --gpu-memory-utilization 0.85 \
-    --served-model-name "$MODEL_NAME" \
-    --trust-remote-code \
-    --port "$PORT" \
-    --max-model-len 9728 \
-    --disable-frontend-multiprocessing &
+vllm_args=(
+    -m vllm.entrypoints.openai.api_server
+    --model "$MODEL_PATH"
+    --gpu-memory-utilization "$VLLM_GPU_MEMORY_UTILIZATION"
+    --served-model-name "$MODEL_NAME"
+    --trust-remote-code
+    --port "$PORT"
+    --max-model-len "$VLLM_MAX_MODEL_LEN"
+    --disable-frontend-multiprocessing
+)
+if [[ -n "$VLLM_TENSOR_PARALLEL_SIZE" ]]; then
+    vllm_args+=(--tensor-parallel-size "$VLLM_TENSOR_PARALLEL_SIZE")
+fi
+if [[ -n "$VLLM_MAX_NUM_SEQS" ]]; then
+    vllm_args+=(--max-num-seqs "$VLLM_MAX_NUM_SEQS")
+fi
+if [[ -n "$VLLM_MAX_NUM_BATCHED_TOKENS" ]]; then
+    vllm_args+=(--max-num-batched-tokens "$VLLM_MAX_NUM_BATCHED_TOKENS")
+fi
+"$PYTHON_BIN" "${vllm_args[@]}" &
 VLLM_PID=$!
 
 cleanup() {
@@ -608,6 +742,12 @@ if has_eval_task "$EVAL_MODE" "chair"; then
     if [[ "$CHAIR_SAVE_LOGPROBS" == "True" || "$CHAIR_SAVE_LOGPROBS" == "true" || "$CHAIR_SAVE_LOGPROBS" == "1" ]]; then
         chair_extra_args+=(--save-logprobs --top-logprobs "$CHAIR_TOP_LOGPROBS")
     fi
+    if [[ -n "$ENABLE_THINKING" ]]; then
+        chair_extra_args+=(--enable-thinking "$ENABLE_THINKING")
+    fi
+    if [[ "$FINAL_ANSWER_ONLY" == "True" || "$FINAL_ANSWER_ONLY" == "true" || "$FINAL_ANSWER_ONLY" == "1" ]]; then
+        chair_extra_args+=(--final-answer-only)
+    fi
     if ! "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/eval_chair.py" \
         --api-base "http://localhost:$PORT/v1/" \
         --model-name "$MODEL_NAME" \
@@ -628,6 +768,9 @@ if has_eval_task "$EVAL_MODE" "pope"; then
     pope_extra_args=()
     if [[ "$POPE_USE_PREPARED_QUERY" == "True" || "$POPE_USE_PREPARED_QUERY" == "true" ]]; then
         pope_extra_args+=(--use-prepared-query)
+    fi
+    if [[ -n "$ENABLE_THINKING" ]]; then
+        pope_extra_args+=(--enable-thinking "$ENABLE_THINKING")
     fi
     if ! "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/eval_pope.py" \
         --api-base "http://localhost:$PORT/v1/" \
@@ -688,7 +831,7 @@ if has_vision_eval_task "$EVAL_MODE"; then
         [[ -n "${JUDGE_MODEL:-}" ]] && vision_args+=(JUDGE_MODEL="$JUDGE_MODEL")
         [[ -n "${JUDGE_MODEL_PATH:-}" ]] && vision_args+=(JUDGE_MODEL_PATH="$JUDGE_MODEL_PATH")
         [[ -n "${JUDGE_MAX_TOKENS:-}" ]] && vision_args+=(JUDGE_MAX_TOKENS="$JUDGE_MAX_TOKENS")
-        [[ -n "$VISION_ENABLE_THINKING" ]] && vision_args+=(ENABLE_THINKING="$VISION_ENABLE_THINKING")
+        [[ -n "$ENABLE_THINKING" ]] && vision_args+=(ENABLE_THINKING="$ENABLE_THINKING")
         if ! env "${vision_args[@]}" bash "${VISION_OPD_ROOT}/eval/run_eval.sh"; then
             echo "  WARNING: Vision-OPD benchmark(s) failed; keeping any completed outputs." >&2
             EVAL_FAILURES=$((EVAL_FAILURES + 1))

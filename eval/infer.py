@@ -102,8 +102,9 @@ def normalize_model_answer(model_answer_raw):
     end = model_answer_raw.find("</answer>", start + len("<answer>")) if start != -1 else -1
     if start != -1 and end != -1 and end > start:
         return model_answer_raw[start + len("<answer>"):end].strip()
-    if "Answer:" in model_answer_raw:
-        return model_answer_raw[model_answer_raw.find("Answer:"):].strip()
+    for marker in ("Final Answer:", "Final answer:", "Answer:", "answer:"):
+        if marker in model_answer_raw:
+            return model_answer_raw.split(marker, 1)[1].strip()
     return model_answer_raw.strip()
 
 
@@ -231,7 +232,7 @@ def main():
                     **extra_kwargs,
                 )
                 raw_model_answer = (resp.choices[0].message.content or "").strip()
-                model_answer = raw_model_answer
+                model_answer = normalize_model_answer(raw_model_answer)
                 break
             except Exception as e:
                 if attempt == args.max_retries:
@@ -242,6 +243,8 @@ def main():
         record = dict(item)
         record["sample_uid"] = sample_uid
         record["model_answer"] = model_answer
+        if raw_model_answer != model_answer:
+            record["raw_model_answer"] = raw_model_answer
         return record
 
     start = time.time()
