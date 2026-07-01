@@ -289,6 +289,7 @@ apply_model_profile_defaults() {
             exit 1
             ;;
     esac
+    return 0
 }
 
 apply_official_aux_defaults() {
