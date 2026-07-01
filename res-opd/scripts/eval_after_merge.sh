@@ -123,7 +123,12 @@ VISION_PARALLEL_WORKERS_WAS_SET="${VISION_PARALLEL_WORKERS+x}"
 VISION_PARALLEL_WORKERS="${VISION_PARALLEL_WORKERS:-128}"
 VISION_MAX_RETRIES="${VISION_MAX_RETRIES:-3}"
 VISION_ENABLE_THINKING="${VISION_ENABLE_THINKING:-}"
-ENABLE_THINKING_WAS_SET="${ENABLE_THINKING+x}${VISION_ENABLE_THINKING+x}"
+# Use non-empty check instead of +x to avoid bash version quirks with set -u
+if [[ -n "${ENABLE_THINKING:-}" || -n "${VISION_ENABLE_THINKING:-}" ]]; then
+    ENABLE_THINKING_WAS_SET="yes"
+else
+    ENABLE_THINKING_WAS_SET=""
+fi
 ENABLE_THINKING="${ENABLE_THINKING:-${VISION_ENABLE_THINKING:-}}"
 FINAL_ANSWER_ONLY_WAS_SET="${FINAL_ANSWER_ONLY+x}"
 FINAL_ANSWER_ONLY="${FINAL_ANSWER_ONLY:-}"
@@ -708,7 +713,8 @@ trap cleanup EXIT
 
 # Wait for server to be ready
 echo "  Waiting for vLLM server (pid=$VLLM_PID) ..."
-for i in $(seq 1 300); do
+VLLM_STARTUP_TIMEOUT="${VLLM_STARTUP_TIMEOUT:-600}"
+for i in $(seq 1 $VLLM_STARTUP_TIMEOUT); do
     if curl -s "http://localhost:$PORT/health" > /dev/null 2>&1; then
         echo "  vLLM server ready after ${i}s"
         break
@@ -721,7 +727,7 @@ for i in $(seq 1 300); do
 done
 
 if ! curl -s "http://localhost:$PORT/health" > /dev/null 2>&1; then
-    echo "  vLLM server failed to start within 300s" >&2
+    echo "  vLLM server failed to start within ${VLLM_STARTUP_TIMEOUT}s" >&2
     kill $VLLM_PID 2>/dev/null || true
     exit 1
 fi
