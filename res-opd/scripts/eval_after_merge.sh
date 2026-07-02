@@ -278,7 +278,7 @@ apply_model_profile_defaults() {
             [[ -z "$STUDENT_RATIO_WAS_SET" ]] && STUDENT_RATIO="1.0"
             [[ -z "$TARGET_PX_WAS_SET" ]] && TARGET_PX="448"
             [[ -z "$VLLM_CUSTOM_OPS_WAS_SET" ]] && VLLM_CUSTOM_OPS="none"
-            [[ -z "$VLLM_TENSOR_PARALLEL_SIZE_WAS_SET" ]] && VLLM_TENSOR_PARALLEL_SIZE="8"
+            [[ -z "$VLLM_TENSOR_PARALLEL_SIZE_WAS_SET" ]] && VLLM_TENSOR_PARALLEL_SIZE="1"
             [[ -z "$VLLM_MAX_MODEL_LEN_WAS_SET" ]] && VLLM_MAX_MODEL_LEN="${THINKING_2B_VLLM_MAX_MODEL_LEN:-12288}"
             [[ -z "$VLLM_MAX_NUM_SEQS_WAS_SET" ]] && VLLM_MAX_NUM_SEQS="${THINKING_2B_VLLM_MAX_NUM_SEQS:-32}"
             [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]] && VISION_MAX_TOKENS="${THINKING_2B_VISION_MAX_TOKENS:-3072}"
@@ -337,6 +337,7 @@ apply_model_profile_defaults() {
             [[ -z "$CHAIR_PARALLEL_WORKERS_WAS_SET" ]] && CHAIR_PARALLEL_WORKERS="${THINKING_CHAIR_PARALLEL_WORKERS:-2}"
             ;;
         qwen3vl_instruct|default)
+            [[ -z "$VLLM_TENSOR_PARALLEL_SIZE_WAS_SET" ]] && VLLM_TENSOR_PARALLEL_SIZE="1"
             # Keep historical defaults unless the caller explicitly overrides env vars.
             ;;
         *)
