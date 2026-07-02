@@ -9,7 +9,7 @@
 #   bash res-opd/scripts/run_res_opd_default.sh
 #
 #   # Override specific params:
-#   TRAIN_BATCH_SIZE=64 ROLLOUT_N=8 bash res-opd/scripts/run_res_opd_default.sh
+#   TRAIN_BATCH_SIZE=16 ROLLOUT_N=8 bash res-opd/scripts/run_res_opd_default.sh
 #
 #   # Run in tmux:
 #   tmux new-session -d -s opd_train "cd /path/to/Vision-OPD && bash res-opd/scripts/run_res_opd_default.sh 2>&1 | tee res-opd/logs/train_default.log"
@@ -46,19 +46,21 @@ export REF_PARAM_OFFLOAD="${REF_PARAM_OFFLOAD:-False}"
 export ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.8}"
 
 # --- Logprob micro batch ---
-# 8: maximize logprob throughput with offload disabled and ample VRAM
-export ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-8}"
-export REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-8}"
+# 4: faster logprob scoring while staying conservative for both Instruct and Thinking runs.
+export ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-4}"
+export REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-4}"
 
 # --- Batch size ---
-# 128: maximize GPU utilization on H20 98GB with offload disabled
-export TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-128}"
-export PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-128}"
+# 8: longer, comparable training curves for Instruct/Thinking full-5k runs.
+export TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-8}"
+export PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-8}"
+export LR="${LR:-1e-6}"
+export SAVE_FREQ="${SAVE_FREQ:-50}"
 
 # --- Mini eval ---
-# Mini eval: 100 samples from val2017, evaluate every 20 steps
+# Mini eval: 100 samples from val2017, evaluate every 100 steps.
 export OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-True}"
-export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-20}"
+export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-100}"
 export OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-100}"
 export VAL_N="${VAL_N:-1}"
 export VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-False}"
@@ -114,6 +116,9 @@ echo "ROLLOUT_GPU_MEMORY_UTIL     = $ROLLOUT_GPU_MEMORY_UTILIZATION"
 echo "ROLLOUT_LOGPROB_MICRO_BSZ   = $ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU"
 echo "REF_LOGPROB_MICRO_BSZ       = $REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU"
 echo "TRAIN_BATCH_SIZE            = $TRAIN_BATCH_SIZE"
+echo "PPO_MINI_BATCH_SIZE         = $PPO_MINI_BATCH_SIZE"
+echo "LR                          = $LR"
+echo "SAVE_FREQ                   = $SAVE_FREQ"
 echo "OPD_MINI_EVAL_TRACE         = $OPD_MINI_EVAL_TRACE"
 echo "OPD_MINI_EVAL_TEST_FREQ     = $OPD_MINI_EVAL_TEST_FREQ"
 echo "OPD_MINI_EVAL_MAX_SAMPLES   = $OPD_MINI_EVAL_MAX_SAMPLES"
