@@ -48,6 +48,7 @@ POPE_SOURCE="${POPE_SOURCE:-res-opd-test}"
 SEED="${SEED:-42}"
 AMBER_ROOT="${AMBER_ROOT:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}/AMBER}"
 AMBER_EVAL_TYPE="${AMBER_EVAL_TYPE:-a}"
+AMBER_OFFICIAL_EVAL_WORKERS="${AMBER_OFFICIAL_EVAL_WORKERS:-16}"
 
 export PYTHONPATH="$VISION_OPD_ROOT:${PYTHONPATH:-}"
 
@@ -520,6 +521,7 @@ merge_args=(
     --judge-max-tokens "${JUDGE_MAX_TOKENS:-2048}"
     --amber-root "$AMBER_ROOT"
     --amber-eval-type "$AMBER_EVAL_TYPE"
+    --amber-official-eval-workers "$AMBER_OFFICIAL_EVAL_WORKERS"
 )
 is_truthy "$RULE_ONLY_JUDGE" && merge_args+=(--rule-only-judge)
 [[ -n "${JUDGE_API_BASE:-}" ]] && merge_args+=(--judge-api-base "$JUDGE_API_BASE")

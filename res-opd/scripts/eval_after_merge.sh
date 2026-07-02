@@ -122,6 +122,7 @@ AMBER_EVAL_TYPE="${AMBER_EVAL_TYPE:-a}"
 AMBER_MAX_SAMPLES="${AMBER_MAX_SAMPLES:-0}"
 AMBER_PARALLEL_WORKERS_WAS_SET="${AMBER_PARALLEL_WORKERS+x}"
 AMBER_PARALLEL_WORKERS="${AMBER_PARALLEL_WORKERS:-64}"
+AMBER_OFFICIAL_EVAL_WORKERS="${AMBER_OFFICIAL_EVAL_WORKERS:-16}"
 AMBER_MAX_NEW_TOKENS_GENERATIVE_WAS_SET="${AMBER_MAX_NEW_TOKENS_GENERATIVE+x}"
 AMBER_MAX_NEW_TOKENS_GENERATIVE="${AMBER_MAX_NEW_TOKENS_GENERATIVE:-384}"
 AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE_WAS_SET="${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE+x}"
@@ -743,6 +744,7 @@ if has_eval_task "$EVAL_MODE" "amber"; then
     echo "AMBER type:  $AMBER_EVAL_TYPE"
     echo "AMBER max tokens: generative=${AMBER_MAX_NEW_TOKENS_GENERATIVE}, discriminative=${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE}"
     echo "AMBER workers: $AMBER_PARALLEL_WORKERS"
+    echo "AMBER official eval workers: $AMBER_OFFICIAL_EVAL_WORKERS"
 fi
 if has_vision_eval_task "$EVAL_MODE"; then
     echo "Vision-OPD:  $EFFECTIVE_VISION_BENCHMARK"
@@ -974,6 +976,7 @@ if has_eval_task "$EVAL_MODE" "amber"; then
         --shard-count "$EVAL_SHARD_COUNT" \
         --shard-index "$EVAL_SHARD_INDEX" \
         --parallel-workers "$AMBER_PARALLEL_WORKERS" \
+        --official-eval-workers "$AMBER_OFFICIAL_EVAL_WORKERS" \
         ${amber_extra_args[@]+"${amber_extra_args[@]}"}; then
         echo "  WARNING: AMBER failed; keeping any completed outputs." >&2
         EVAL_FAILURES=$((EVAL_FAILURES + 1))

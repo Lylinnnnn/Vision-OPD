@@ -299,6 +299,11 @@ def main():
     parser.add_argument("--workers", type=int, default=16, help="Number of parallel workers")
     parser.add_argument("--similarity_score", type=float, default=0.8)
     parser.add_argument("--amber_root", type=str, default=str(AMBER_ROOT))
+    parser.add_argument("--word_association", type=str, default=None)
+    parser.add_argument("--safe_words", type=str, default=None)
+    parser.add_argument("--annotation", type=str, default=None)
+    parser.add_argument("--metrics", type=str, default=None)
+    parser.add_argument("--output_metrics_json", type=str, default=None)
     args = parser.parse_args()
 
     amber_root = Path(args.amber_root)
@@ -308,10 +313,10 @@ def main():
 
     shared = load_shared_data(
         amber_root,
-        amber_root / "data" / "relation.json",
-        amber_root / "data" / "safe_words.txt",
-        amber_root / "data" / "annotations.json",
-        amber_root / "data" / "metrics.txt",
+        Path(args.word_association) if args.word_association else amber_root / "data" / "relation.json",
+        Path(args.safe_words) if args.safe_words else amber_root / "data" / "safe_words.txt",
+        Path(args.annotation) if args.annotation else amber_root / "data" / "annotations.json",
+        Path(args.metrics) if args.metrics else amber_root / "data" / "metrics.txt",
     )
 
     # Split data into chunks
@@ -330,6 +335,9 @@ def main():
     print("Merging results...")
     merged = merge_metrics(partial_results)
     print_results(merged, args.evaluation_type)
+    if args.output_metrics_json:
+        with open(args.output_metrics_json, "w", encoding="utf-8") as f:
+            json.dump(merged, f, ensure_ascii=False, indent=2)
 
 
 if __name__ == "__main__":

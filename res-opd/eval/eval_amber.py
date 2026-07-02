@@ -19,6 +19,8 @@ from typing import Optional
 from PIL import Image
 
 
+RES_OPD_ROOT = Path(__file__).resolve().parents[1]
+
 QUERY_MAP = {
     "a": "query_all.json",
     "g": "query_generative.json",
@@ -169,24 +171,46 @@ def parse_official_stdout(text: str) -> dict:
     return metrics
 
 
-def run_official_eval(args, response_path: Path, out_dir: Path) -> None:
-    evaluator = args.amber_root / "inference.py"
-    if not evaluator.exists():
-        raise FileNotFoundError(f"AMBER official inference.py not found: {evaluator}")
-    cmd = [
-        sys.executable,
-        str(evaluator),
-        "--inference_data",
-        str(response_path),
-        "--evaluation_type",
-        args.evaluation_type,
-    ]
-    for opt, rel_default, value in [
+def amber_official_paths(args) -> list[tuple[str, str, Optional[Path]]]:
+    return [
         ("--word_association", "data/relation.json", args.word_association),
         ("--safe_words", "data/safe_words.txt", args.safe_words),
         ("--annotation", "data/annotations.json", args.annotation),
         ("--metrics", "data/metrics.txt", args.metrics),
-    ]:
+    ]
+
+
+def run_official_eval(args, response_path: Path, out_dir: Path) -> None:
+    parallel_evaluator = RES_OPD_ROOT / "scripts" / "run_amber_parallel.py"
+    use_parallel = args.official_eval_workers > 1 and parallel_evaluator.exists()
+    if use_parallel:
+        cmd = [
+            sys.executable,
+            str(parallel_evaluator),
+            "--inference_data",
+            str(response_path),
+            "--evaluation_type",
+            args.evaluation_type,
+            "--workers",
+            str(args.official_eval_workers),
+            "--amber_root",
+            str(args.amber_root),
+            "--output_metrics_json",
+            str(out_dir / "amber_metrics_raw_counts.json"),
+        ]
+    else:
+        evaluator = args.amber_root / "inference.py"
+        if not evaluator.exists():
+            raise FileNotFoundError(f"AMBER official inference.py not found: {evaluator}")
+        cmd = [
+            sys.executable,
+            str(evaluator),
+            "--inference_data",
+            str(response_path),
+            "--evaluation_type",
+            args.evaluation_type,
+        ]
+    for opt, rel_default, value in amber_official_paths(args):
         cmd.extend([opt, str(value or (args.amber_root / rel_default))])
     proc = subprocess.run(
         cmd,
@@ -201,6 +225,8 @@ def run_official_eval(args, response_path: Path, out_dir: Path) -> None:
     summary = {
         "benchmark": "amber",
         "evaluation_type": args.evaluation_type,
+        "official_eval_mode": "parallel" if use_parallel else "official",
+        "official_eval_workers": args.official_eval_workers if use_parallel else 1,
         "official_returncode": proc.returncode,
         "official_log": str(official_log),
         "response_path": str(response_path),
@@ -213,7 +239,7 @@ def run_official_eval(args, response_path: Path, out_dir: Path) -> None:
     with open(out_dir / "amber_metrics.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
     if proc.returncode != 0:
-        raise RuntimeError(f"Official AMBER evaluator failed. See {official_log}")
+        raise RuntimeError(f"AMBER evaluator failed. See {official_log}")
 
 
 def main():
@@ -235,6 +261,7 @@ def main():
     parser.add_argument("--shard-count", type=int, default=1)
     parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--parallel-workers", type=int, default=64)
+    parser.add_argument("--official-eval-workers", type=int, default=1)
     parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument("--enable-thinking", choices=["True", "False"], default=None)
     parser.add_argument("--skip-official-eval", action="store_true")
@@ -247,6 +274,8 @@ def main():
         raise ValueError("--shard-count must be positive")
     if not 0 <= args.shard_index < args.shard_count:
         raise ValueError("--shard-index must satisfy 0 <= index < shard-count")
+    if args.official_eval_workers <= 0:
+        raise ValueError("--official-eval-workers must be positive")
 
     query_path = args.amber_root / "data" / "query" / QUERY_MAP[args.evaluation_type]
     queries = load_json(query_path)

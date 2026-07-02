@@ -245,25 +245,47 @@ def merge_amber(args, shard_dirs):
     if args.amber_skip_official_eval:
         return
 
-    evaluator = args.amber_root / "inference.py"
-    if not evaluator.exists():
-        raise FileNotFoundError(f"AMBER official inference.py not found: {evaluator}")
-    cmd = [
-        sys.executable,
-        str(evaluator),
-        "--inference_data",
-        str(response_path),
-        "--evaluation_type",
-        args.amber_eval_type,
-        "--word_association",
-        str(args.amber_word_association or (args.amber_root / "data" / "relation.json")),
-        "--safe_words",
-        str(args.amber_safe_words or (args.amber_root / "data" / "safe_words.txt")),
-        "--annotation",
-        str(args.amber_annotation or (args.amber_root / "data" / "annotations.json")),
-        "--metrics",
-        str(args.amber_metrics or (args.amber_root / "data" / "metrics.txt")),
-    ]
+    parallel_evaluator = REPO_ROOT / "res-opd" / "scripts" / "run_amber_parallel.py"
+    use_parallel = args.amber_official_eval_workers > 1 and parallel_evaluator.exists()
+    if use_parallel:
+        cmd = [
+            sys.executable,
+            str(parallel_evaluator),
+            "--inference_data",
+            str(response_path),
+            "--evaluation_type",
+            args.amber_eval_type,
+            "--workers",
+            str(args.amber_official_eval_workers),
+            "--amber_root",
+            str(args.amber_root),
+            "--output_metrics_json",
+            str(out_dir / "amber_metrics_raw_counts.json"),
+        ]
+    else:
+        evaluator = args.amber_root / "inference.py"
+        if not evaluator.exists():
+            raise FileNotFoundError(f"AMBER official inference.py not found: {evaluator}")
+        cmd = [
+            sys.executable,
+            str(evaluator),
+            "--inference_data",
+            str(response_path),
+            "--evaluation_type",
+            args.amber_eval_type,
+        ]
+    cmd.extend(
+        [
+            "--word_association",
+            str(args.amber_word_association or (args.amber_root / "data" / "relation.json")),
+            "--safe_words",
+            str(args.amber_safe_words or (args.amber_root / "data" / "safe_words.txt")),
+            "--annotation",
+            str(args.amber_annotation or (args.amber_root / "data" / "annotations.json")),
+            "--metrics",
+            str(args.amber_metrics or (args.amber_root / "data" / "metrics.txt")),
+        ]
+    )
     proc = subprocess.run(
         cmd,
         cwd=str(args.amber_root),
@@ -277,6 +299,8 @@ def merge_amber(args, shard_dirs):
     summary = {
         "benchmark": "amber",
         "evaluation_type": args.amber_eval_type,
+        "official_eval_mode": "parallel" if use_parallel else "official",
+        "official_eval_workers": args.amber_official_eval_workers if use_parallel else 1,
         "official_returncode": proc.returncode,
         "official_log": str(official_log),
         "response_path": str(response_path),
@@ -287,7 +311,7 @@ def merge_amber(args, shard_dirs):
     with open(out_dir / "amber_metrics.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
     if proc.returncode != 0:
-        raise RuntimeError(f"Official AMBER evaluator failed. See {official_log}")
+        raise RuntimeError(f"AMBER evaluator failed. See {official_log}")
 
 
 def vision_key(row):
@@ -393,11 +417,14 @@ def main():
     parser.add_argument("--amber-root", type=Path, default=Path("/home/liuyanlin.lyl/notebook/data/AMBER"))
     parser.add_argument("--amber-eval-type", default="a")
     parser.add_argument("--amber-skip-official-eval", action="store_true")
+    parser.add_argument("--amber-official-eval-workers", type=int, default=1)
     parser.add_argument("--amber-word-association", type=Path, default=None)
     parser.add_argument("--amber-safe-words", type=Path, default=None)
     parser.add_argument("--amber-annotation", type=Path, default=None)
     parser.add_argument("--amber-metrics", type=Path, default=None)
     args = parser.parse_args()
+    if args.amber_official_eval_workers <= 0:
+        raise ValueError("--amber-official-eval-workers must be positive")
 
     tasks = normalize_eval_mode(args.eval_mode)
     shard_dirs = shard_out_dirs(args.shard_root)
