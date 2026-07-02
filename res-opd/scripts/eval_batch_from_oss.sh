@@ -620,12 +620,15 @@ for idx in "${!OSS_NAMES[@]}"; do
     fi
     if has_eval_task "$EVAL_MODE" "amber"; then
         echo "  Running AMBER ..."
-        STUDENT_PX="$effective_student_px" \
-        TARGET_PX="$effective_target_px" \
-        DEGRADATION_MODE="$effective_degradation_mode" \
-        STUDENT_RATIO="$effective_student_ratio" \
-        DATASET_VERSION="$DATASET_VERSION" \
-            bash "$AMBER_SCRIPT" "$local_ckpt_dir" "$VERSION_TAG"
+        eval_env=(
+            DATASET_VERSION="$DATASET_VERSION"
+            CLEANUP_LOCAL_CKPT=False
+            DEGRADATION_MODE="$effective_degradation_mode"
+            STUDENT_RATIO="$effective_student_ratio"
+            TARGET_PX="$effective_target_px"
+        )
+        [[ -n "$VISION_ENABLE_THINKING" ]] && eval_env+=(VISION_ENABLE_THINKING="$VISION_ENABLE_THINKING")
+        env "${eval_env[@]}" bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "amber"
     fi
     if has_eval_task "$EVAL_MODE" "mme"; then
         echo "  Running classic MME perception ..."

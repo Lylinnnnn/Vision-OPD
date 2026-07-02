@@ -105,6 +105,21 @@ POPE_MAX_NEW_TOKENS_WAS_SET="${POPE_MAX_NEW_TOKENS+x}"
 POPE_MAX_NEW_TOKENS="${POPE_MAX_NEW_TOKENS:-16}"
 POPE_MAX_SAMPLES="${POPE_MAX_SAMPLES:-0}"
 POPE_USE_PREPARED_QUERY="${POPE_USE_PREPARED_QUERY:-False}"
+AMBER_ROOT="${AMBER_ROOT:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}/AMBER}"
+AMBER_IMAGE_ROOT="${AMBER_IMAGE_ROOT:-}"
+AMBER_EVAL_TYPE="${AMBER_EVAL_TYPE:-a}"
+AMBER_MAX_SAMPLES="${AMBER_MAX_SAMPLES:-0}"
+AMBER_PARALLEL_WORKERS_WAS_SET="${AMBER_PARALLEL_WORKERS+x}"
+AMBER_PARALLEL_WORKERS="${AMBER_PARALLEL_WORKERS:-64}"
+AMBER_MAX_NEW_TOKENS_GENERATIVE_WAS_SET="${AMBER_MAX_NEW_TOKENS_GENERATIVE+x}"
+AMBER_MAX_NEW_TOKENS_GENERATIVE="${AMBER_MAX_NEW_TOKENS_GENERATIVE:-384}"
+AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE_WAS_SET="${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE+x}"
+AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE:-16}"
+AMBER_SKIP_OFFICIAL_EVAL="${AMBER_SKIP_OFFICIAL_EVAL:-False}"
+AMBER_WORD_ASSOCIATION="${AMBER_WORD_ASSOCIATION:-}"
+AMBER_SAFE_WORDS="${AMBER_SAFE_WORDS:-}"
+AMBER_ANNOTATION="${AMBER_ANNOTATION:-}"
+AMBER_METRICS="${AMBER_METRICS:-}"
 CHAIR_MAX_NEW_TOKENS_WAS_SET="${CHAIR_MAX_NEW_TOKENS+x}"
 CHAIR_MAX_NEW_TOKENS="${CHAIR_MAX_NEW_TOKENS:-384}"
 CHAIR_PARALLEL_WORKERS_WAS_SET="${CHAIR_PARALLEL_WORKERS+x}"
@@ -162,13 +177,13 @@ normalize_eval_mode() {
             cvbench|cv_bench|cv-bench)
                 normalized+=(cv-bench)
                 ;;
-            mmstar|chair|pope|vision)
+            mmstar|chair|pope|vision|amber)
                 normalized+=("$token")
                 ;;
             "")
                 ;;
             *)
-                echo "Error: unsupported eval task '$token'. Use chair,pope,mmstar,cv-bench,vision,frequent,all." >&2
+                echo "Error: unsupported eval task '$token'. Use chair,pope,mmstar,cv-bench,vision,amber,frequent,all." >&2
                 exit 1
                 ;;
         esac
@@ -271,6 +286,9 @@ apply_model_profile_defaults() {
             [[ -z "$VISION_PARALLEL_WORKERS_WAS_SET" ]] && VISION_PARALLEL_WORKERS="${THINKING_2B_VISION_PARALLEL_WORKERS:-32}"
             [[ -z "$POPE_MAX_NEW_TOKENS_WAS_SET" ]] && POPE_MAX_NEW_TOKENS="${THINKING_2B_POPE_MAX_NEW_TOKENS:-256}"
             [[ -z "$POPE_PARALLEL_WORKERS_WAS_SET" ]] && POPE_PARALLEL_WORKERS="${THINKING_2B_POPE_PARALLEL_WORKERS:-24}"
+            [[ -z "$AMBER_MAX_NEW_TOKENS_GENERATIVE_WAS_SET" ]] && AMBER_MAX_NEW_TOKENS_GENERATIVE="${THINKING_2B_AMBER_MAX_NEW_TOKENS_GENERATIVE:-1152}"
+            [[ -z "$AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE_WAS_SET" ]] && AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="${THINKING_2B_AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE:-256}"
+            [[ -z "$AMBER_PARALLEL_WORKERS_WAS_SET" ]] && AMBER_PARALLEL_WORKERS="${THINKING_2B_AMBER_PARALLEL_WORKERS:-8}"
             [[ -z "$CHAIR_MAX_NEW_TOKENS_WAS_SET" ]] && CHAIR_MAX_NEW_TOKENS="${THINKING_2B_CHAIR_MAX_NEW_TOKENS:-1152}"
             [[ -z "$CHAIR_PARALLEL_WORKERS_WAS_SET" ]] && CHAIR_PARALLEL_WORKERS="${THINKING_2B_CHAIR_PARALLEL_WORKERS:-4}"
             ;;
@@ -290,6 +308,9 @@ apply_model_profile_defaults() {
             [[ -z "$VISION_PARALLEL_WORKERS_WAS_SET" ]] && VISION_PARALLEL_WORKERS="${THINKING_8B_VISION_PARALLEL_WORKERS:-16}"
             [[ -z "$POPE_MAX_NEW_TOKENS_WAS_SET" ]] && POPE_MAX_NEW_TOKENS="${THINKING_8B_POPE_MAX_NEW_TOKENS:-256}"
             [[ -z "$POPE_PARALLEL_WORKERS_WAS_SET" ]] && POPE_PARALLEL_WORKERS="${THINKING_8B_POPE_PARALLEL_WORKERS:-8}"
+            [[ -z "$AMBER_MAX_NEW_TOKENS_GENERATIVE_WAS_SET" ]] && AMBER_MAX_NEW_TOKENS_GENERATIVE="${THINKING_8B_AMBER_MAX_NEW_TOKENS_GENERATIVE:-1152}"
+            [[ -z "$AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE_WAS_SET" ]] && AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="${THINKING_8B_AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE:-256}"
+            [[ -z "$AMBER_PARALLEL_WORKERS_WAS_SET" ]] && AMBER_PARALLEL_WORKERS="${THINKING_8B_AMBER_PARALLEL_WORKERS:-4}"
             [[ -z "$CHAIR_MAX_NEW_TOKENS_WAS_SET" ]] && CHAIR_MAX_NEW_TOKENS="${THINKING_8B_CHAIR_MAX_NEW_TOKENS:-1152}"
             [[ -z "$CHAIR_PARALLEL_WORKERS_WAS_SET" ]] && CHAIR_PARALLEL_WORKERS="${THINKING_8B_CHAIR_PARALLEL_WORKERS:-2}"
             ;;
@@ -309,6 +330,9 @@ apply_model_profile_defaults() {
             [[ -z "$VISION_PARALLEL_WORKERS_WAS_SET" ]] && VISION_PARALLEL_WORKERS="${THINKING_VISION_PARALLEL_WORKERS:-16}"
             [[ -z "$POPE_MAX_NEW_TOKENS_WAS_SET" ]] && POPE_MAX_NEW_TOKENS="${THINKING_POPE_MAX_NEW_TOKENS:-256}"
             [[ -z "$POPE_PARALLEL_WORKERS_WAS_SET" ]] && POPE_PARALLEL_WORKERS="${THINKING_POPE_PARALLEL_WORKERS:-8}"
+            [[ -z "$AMBER_MAX_NEW_TOKENS_GENERATIVE_WAS_SET" ]] && AMBER_MAX_NEW_TOKENS_GENERATIVE="${THINKING_AMBER_MAX_NEW_TOKENS_GENERATIVE:-1152}"
+            [[ -z "$AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE_WAS_SET" ]] && AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="${THINKING_AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE:-256}"
+            [[ -z "$AMBER_PARALLEL_WORKERS_WAS_SET" ]] && AMBER_PARALLEL_WORKERS="${THINKING_AMBER_PARALLEL_WORKERS:-4}"
             [[ -z "$CHAIR_MAX_NEW_TOKENS_WAS_SET" ]] && CHAIR_MAX_NEW_TOKENS="${THINKING_CHAIR_MAX_NEW_TOKENS:-1152}"
             [[ -z "$CHAIR_PARALLEL_WORKERS_WAS_SET" ]] && CHAIR_PARALLEL_WORKERS="${THINKING_CHAIR_PARALLEL_WORKERS:-2}"
             ;;
@@ -564,8 +588,8 @@ if [[ "$FINAL_ANSWER_ONLY" == "True" || "$FINAL_ANSWER_ONLY" == "true" || "$FINA
         CHAIR_MAX_NEW_TOKENS="${CHAIR_THINKING_MAX_NEW_TOKENS:-2048}"
     fi
 fi
-if ! has_eval_task "$EVAL_MODE" "chair" && ! has_eval_task "$EVAL_MODE" "pope" && ! has_vision_eval_task "$EVAL_MODE"; then
-    echo "Error: eval_mode must include chair, pope, mmstar, cv-bench, vision, frequent, or all. Got: $EVAL_MODE" >&2
+if ! has_eval_task "$EVAL_MODE" "chair" && ! has_eval_task "$EVAL_MODE" "pope" && ! has_eval_task "$EVAL_MODE" "amber" && ! has_vision_eval_task "$EVAL_MODE"; then
+    echo "Error: eval_mode must include chair, pope, mmstar, cv-bench, vision, amber, frequent, or all. Got: $EVAL_MODE" >&2
     exit 1
 fi
 
@@ -676,6 +700,13 @@ if has_eval_task "$EVAL_MODE" "pope"; then
     echo "POPE:        $POPE_BENCHMARK"
     echo "POPE source: $POPE_SOURCE"
     echo "POPE max tokens/workers: ${POPE_MAX_NEW_TOKENS}/${POPE_PARALLEL_WORKERS}"
+fi
+if has_eval_task "$EVAL_MODE" "amber"; then
+    echo "AMBER root:  $AMBER_ROOT"
+    echo "AMBER image: ${AMBER_IMAGE_ROOT:-<auto>}"
+    echo "AMBER type:  $AMBER_EVAL_TYPE"
+    echo "AMBER max tokens: generative=${AMBER_MAX_NEW_TOKENS_GENERATIVE}, discriminative=${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE}"
+    echo "AMBER workers: $AMBER_PARALLEL_WORKERS"
 fi
 if has_vision_eval_task "$EVAL_MODE"; then
     echo "Vision-OPD:  $EFFECTIVE_VISION_BENCHMARK"
@@ -866,6 +897,39 @@ if has_vision_eval_task "$EVAL_MODE"; then
             echo "  WARNING: Vision-OPD benchmark(s) failed; keeping any completed outputs." >&2
             EVAL_FAILURES=$((EVAL_FAILURES + 1))
         fi
+    fi
+fi
+
+if has_eval_task "$EVAL_MODE" "amber"; then
+    echo "  Running AMBER ..."
+    amber_extra_args=()
+    [[ -n "$AMBER_IMAGE_ROOT" ]] && amber_extra_args+=(--image-root "$AMBER_IMAGE_ROOT")
+    if [[ "$AMBER_SKIP_OFFICIAL_EVAL" == "True" || "$AMBER_SKIP_OFFICIAL_EVAL" == "true" || "$AMBER_SKIP_OFFICIAL_EVAL" == "1" ]]; then
+        amber_extra_args+=(--skip-official-eval)
+    fi
+    [[ -n "$AMBER_WORD_ASSOCIATION" ]] && amber_extra_args+=(--word-association "$AMBER_WORD_ASSOCIATION")
+    [[ -n "$AMBER_SAFE_WORDS" ]] && amber_extra_args+=(--safe-words "$AMBER_SAFE_WORDS")
+    [[ -n "$AMBER_ANNOTATION" ]] && amber_extra_args+=(--annotation "$AMBER_ANNOTATION")
+    [[ -n "$AMBER_METRICS" ]] && amber_extra_args+=(--metrics "$AMBER_METRICS")
+    [[ -n "$ENABLE_THINKING" ]] && amber_extra_args+=(--enable-thinking "$ENABLE_THINKING")
+    if ! "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/eval_amber.py" \
+        --api-base "http://localhost:$PORT/v1/" \
+        --api-key "${OPENAI_API_KEY:-EMPTY}" \
+        --model-name "$MODEL_NAME" \
+        --amber-root "$AMBER_ROOT" \
+        --output-dir "$OUTPUT_DIR" \
+        --student-px "$STUDENT_PX" \
+        --target-px "$TARGET_PX" \
+        --degradation-mode "$DEGRADATION_MODE" \
+        --student-ratio "$STUDENT_RATIO" \
+        --evaluation-type "$AMBER_EVAL_TYPE" \
+        --max-new-tokens-generative "$AMBER_MAX_NEW_TOKENS_GENERATIVE" \
+        --max-new-tokens-discriminative "$AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE" \
+        --max-samples "$AMBER_MAX_SAMPLES" \
+        --parallel-workers "$AMBER_PARALLEL_WORKERS" \
+        ${amber_extra_args[@]+"${amber_extra_args[@]}"}; then
+        echo "  WARNING: AMBER failed; keeping any completed outputs." >&2
+        EVAL_FAILURES=$((EVAL_FAILURES + 1))
     fi
 fi
 
