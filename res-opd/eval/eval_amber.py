@@ -232,6 +232,8 @@ def main():
     parser.add_argument("--max-new-tokens-generative", type=int, default=384)
     parser.add_argument("--max-new-tokens-discriminative", type=int, default=16)
     parser.add_argument("--max-samples", type=int, default=0)
+    parser.add_argument("--shard-count", type=int, default=1)
+    parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--parallel-workers", type=int, default=64)
     parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument("--enable-thinking", choices=["True", "False"], default=None)
@@ -241,11 +243,24 @@ def main():
     parser.add_argument("--annotation", type=Path, default=None)
     parser.add_argument("--metrics", type=Path, default=None)
     args = parser.parse_args()
+    if args.shard_count <= 0:
+        raise ValueError("--shard-count must be positive")
+    if not 0 <= args.shard_index < args.shard_count:
+        raise ValueError("--shard-index must satisfy 0 <= index < shard-count")
 
     query_path = args.amber_root / "data" / "query" / QUERY_MAP[args.evaluation_type]
     queries = load_json(query_path)
     if args.max_samples > 0:
         queries = queries[: args.max_samples]
+    if args.shard_count > 1:
+        queries = [
+            item for idx, item in enumerate(queries)
+            if idx % args.shard_count == args.shard_index
+        ]
+        print(
+            f"AMBER shard {args.shard_index}/{args.shard_count}: "
+            f"{len(queries)} samples after deterministic split"
+        )
 
     out_dir = args.output_dir / "amber"
     out_dir.mkdir(parents=True, exist_ok=True)

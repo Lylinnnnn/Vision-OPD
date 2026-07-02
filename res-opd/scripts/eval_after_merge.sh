@@ -58,10 +58,20 @@ MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [student_px] [version_tag]}"
 STUDENT_PX="${2:-${STUDENT_PX:-}}"
 VERSION_TAG="${3:-latest}"
 RESULT_VERSION_TAG="${RESULT_VERSION_TAG:-}"
+EVAL_OUTPUT_DIR="${EVAL_OUTPUT_DIR:-}"
+EVAL_SHARD_COUNT="${EVAL_SHARD_COUNT:-1}"
+EVAL_SHARD_INDEX="${EVAL_SHARD_INDEX:-0}"
+EVAL_BACKEND="${EVAL_BACKEND:-single}"
+EVAL_SHARDED="${EVAL_SHARDED:-False}"
 # Support both legacy (test.json) and full-scale (test_1000.json) datasets.
 # Set DATASET_VERSION=full to use the full-scale dataset; default is full.
 DATASET_VERSION="${DATASET_VERSION:-full}"
 EVAL_MODE="${4:-${EVAL_MODE:-chair}}"
+if [[ "${EVAL_SHARDED_CHILD:-0}" != "1" ]]; then
+    if [[ "$EVAL_BACKEND" == "sharded" || "$EVAL_SHARDED" == "True" || "$EVAL_SHARDED" == "true" || "$EVAL_SHARDED" == "1" ]]; then
+        exec "${RES_OPD_ROOT}/scripts/eval_after_merge_sharded_8gpu.sh" "$MODEL_PATH" "$STUDENT_PX" "$VERSION_TAG" "$EVAL_MODE"
+    fi
+fi
 OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
 CLEANUP_LOCAL_CKPT_WAS_SET="${CLEANUP_LOCAL_CKPT+x}"
 CLEANUP_LOCAL_CKPT="${CLEANUP_LOCAL_CKPT:-True}"
@@ -695,6 +705,9 @@ if [[ "$DATASET_VERSION" == "full" ]]; then
 else
     OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${RESULT_VERSION_TAG}/${EXPERIMENT_NAME}/${DATASET_TAG}"
 fi
+if [[ -n "$EVAL_OUTPUT_DIR" ]]; then
+    OUTPUT_DIR="$EVAL_OUTPUT_DIR"
+fi
 
 if has_eval_task "$EVAL_MODE" "chair" && [ ! -f "$TEST_JSON" ]; then
     echo "Error: test.json not found at $TEST_JSON" >&2
@@ -749,6 +762,7 @@ echo "Final-answer only: ${FINAL_ANSWER_ONLY:-False}"
 echo "vLLM max len: $VLLM_MAX_MODEL_LEN"
 echo "vLLM max seqs/batched tokens: ${VLLM_MAX_NUM_SEQS:-<default>}/${VLLM_MAX_NUM_BATCHED_TOKENS:-<default>}"
 echo "Output:      $OUTPUT_DIR"
+echo "Shard:       ${EVAL_SHARD_INDEX}/${EVAL_SHARD_COUNT}"
 echo "============================================================"
 
 mkdir -p "$OUTPUT_DIR"
@@ -843,6 +857,8 @@ if has_eval_task "$EVAL_MODE" "chair"; then
         --target-px "$TARGET_PX" \
         --degradation-mode "$DEGRADATION_MODE" \
         --student-ratio "$STUDENT_RATIO" \
+        --shard-count "$EVAL_SHARD_COUNT" \
+        --shard-index "$EVAL_SHARD_INDEX" \
         ${chair_extra_args[@]+"${chair_extra_args[@]}"}; then
         echo "  WARNING: CHAIR failed; keeping any completed outputs." >&2
         EVAL_FAILURES=$((EVAL_FAILURES + 1))
@@ -875,6 +891,8 @@ if has_eval_task "$EVAL_MODE" "pope"; then
         --student-ratio "$STUDENT_RATIO" \
         --max-new-tokens "$POPE_MAX_NEW_TOKENS" \
         --max-samples "$POPE_MAX_SAMPLES" \
+        --shard-count "$EVAL_SHARD_COUNT" \
+        --shard-index "$EVAL_SHARD_INDEX" \
         --parallel-workers "$POPE_PARALLEL_WORKERS" \
         ${pope_extra_args[@]+"${pope_extra_args[@]}"}; then
         echo "  WARNING: POPE failed; keeping any completed outputs." >&2
@@ -910,6 +928,8 @@ if has_vision_eval_task "$EVAL_MODE"; then
             PARALLEL_WORKERS="$VISION_PARALLEL_WORKERS"
             RULE_ONLY_JUDGE="$RULE_ONLY_JUDGE"
             MCQ_EXTRACT_MODE="$MCQ_EXTRACT_MODE"
+            BENCHMARK_SHARD_COUNT="$EVAL_SHARD_COUNT"
+            BENCHMARK_SHARD_INDEX="$EVAL_SHARD_INDEX"
         )
         [[ -n "${OPENAI_API_KEY:-}" ]] && vision_args+=(OPENAI_API_KEY="$OPENAI_API_KEY")
         [[ -n "${JUDGE_API_BASE:-}" ]] && vision_args+=(JUDGE_API_BASE="$JUDGE_API_BASE")
@@ -951,6 +971,8 @@ if has_eval_task "$EVAL_MODE" "amber"; then
         --max-new-tokens-generative "$AMBER_MAX_NEW_TOKENS_GENERATIVE" \
         --max-new-tokens-discriminative "$AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE" \
         --max-samples "$AMBER_MAX_SAMPLES" \
+        --shard-count "$EVAL_SHARD_COUNT" \
+        --shard-index "$EVAL_SHARD_INDEX" \
         --parallel-workers "$AMBER_PARALLEL_WORKERS" \
         ${amber_extra_args[@]+"${amber_extra_args[@]}"}; then
         echo "  WARNING: AMBER failed; keeping any completed outputs." >&2

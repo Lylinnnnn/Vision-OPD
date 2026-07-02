@@ -45,6 +45,7 @@ cd "$VISION_OPD_ROOT"
 OSS_BASE="oss://industry-algo/yanlin/ckpt/OPD/v4"
 CKPT_BASE="${RES_OPD_ROOT}/checkpoints"
 EVAL_SCRIPT="${RES_OPD_ROOT}/scripts/eval_after_merge.sh"
+SHARDED_EVAL_SCRIPT="${RES_OPD_ROOT}/scripts/eval_after_merge_sharded_8gpu.sh"
 AMBER_SCRIPT="${RES_OPD_ROOT}/scripts/archive/val_amber.sh"
 MME_SCRIPT="${RES_OPD_ROOT}/scripts/archive/val_mme_perception.sh"
 VISION_STATUS_SCRIPT="${RES_OPD_ROOT}/eval/check_vision_opd_eval.py"
@@ -77,6 +78,11 @@ VERSION_TAG="latest"
 RESULT_VERSION_TAG="${RESULT_VERSION_TAG:-}"
 DATASET_VERSION="${DATASET_VERSION:-full}"
 EVAL_MODE="${EVAL_MODE:-chair,pope}"
+EVAL_BACKEND="${EVAL_BACKEND:-single}"
+EVAL_SHARDED="${EVAL_SHARDED:-False}"
+EVAL_SHARD_COUNT="${EVAL_SHARD_COUNT:-8}"
+GPU_LIST="${GPU_LIST:-${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}}"
+SHARDED_EVAL_KEEP_SHARDS="${SHARDED_EVAL_KEEP_SHARDS:-False}"
 PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
 VLLM_PORT_CLEANUP="${VLLM_PORT_CLEANUP:-True}"
 VLLM_PORT_CLEANUP_WAIT="${VLLM_PORT_CLEANUP_WAIT:-20}"
@@ -113,6 +119,18 @@ JUDGE_API_KEY="${JUDGE_API_KEY:-}"
 JUDGE_MODEL="${JUDGE_MODEL:-}"
 JUDGE_MODEL_PATH="${JUDGE_MODEL_PATH:-}"
 JUDGE_MAX_TOKENS="${JUDGE_MAX_TOKENS:-2048}"
+AMBER_ROOT="${AMBER_ROOT:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}/AMBER}"
+AMBER_IMAGE_ROOT="${AMBER_IMAGE_ROOT:-}"
+AMBER_EVAL_TYPE="${AMBER_EVAL_TYPE:-a}"
+AMBER_MAX_SAMPLES="${AMBER_MAX_SAMPLES:-0}"
+AMBER_PARALLEL_WORKERS="${AMBER_PARALLEL_WORKERS:-64}"
+AMBER_MAX_NEW_TOKENS_GENERATIVE="${AMBER_MAX_NEW_TOKENS_GENERATIVE:-384}"
+AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE:-16}"
+AMBER_SKIP_OFFICIAL_EVAL="${AMBER_SKIP_OFFICIAL_EVAL:-False}"
+AMBER_WORD_ASSOCIATION="${AMBER_WORD_ASSOCIATION:-}"
+AMBER_SAFE_WORDS="${AMBER_SAFE_WORDS:-}"
+AMBER_ANNOTATION="${AMBER_ANNOTATION:-}"
+AMBER_METRICS="${AMBER_METRICS:-}"
 OSS_NAMES=()
 LOCAL_NAMES=()
 STUDENT_RATIOS=()
@@ -151,6 +169,11 @@ while [[ $# -gt 0 ]]; do
         --version-tag) VERSION_TAG="$2"; shift 2 ;;
         --result-version-tag) RESULT_VERSION_TAG="$2"; shift 2 ;;
         --eval-mode)  EVAL_MODE="$2"; shift 2 ;;
+        --eval-backend) EVAL_BACKEND="$2"; shift 2 ;;
+        --eval-sharded|--sharded-eval) EVAL_SHARDED="$2"; shift 2 ;;
+        --eval-shard-count) EVAL_SHARD_COUNT="$2"; shift 2 ;;
+        --gpu-list) GPU_LIST="$2"; shift 2 ;;
+        --sharded-eval-keep-shards) SHARDED_EVAL_KEEP_SHARDS="$2"; shift 2 ;;
         --chair-max-new-tokens) CHAIR_MAX_NEW_TOKENS="$2"; shift 2 ;;
         --chair-parallel-workers) CHAIR_PARALLEL_WORKERS="$2"; shift 2 ;;
         --chair-max-samples) CHAIR_MAX_SAMPLES="$2"; shift 2 ;;
@@ -180,6 +203,18 @@ while [[ $# -gt 0 ]]; do
         --judge-model) JUDGE_MODEL="$2"; shift 2 ;;
         --judge-model-path) JUDGE_MODEL_PATH="$2"; shift 2 ;;
         --judge-max-tokens) JUDGE_MAX_TOKENS="$2"; shift 2 ;;
+        --amber-root) AMBER_ROOT="$2"; shift 2 ;;
+        --amber-image-root) AMBER_IMAGE_ROOT="$2"; shift 2 ;;
+        --amber-eval-type) AMBER_EVAL_TYPE="$2"; shift 2 ;;
+        --amber-max-samples) AMBER_MAX_SAMPLES="$2"; shift 2 ;;
+        --amber-parallel-workers) AMBER_PARALLEL_WORKERS="$2"; shift 2 ;;
+        --amber-max-new-tokens-generative) AMBER_MAX_NEW_TOKENS_GENERATIVE="$2"; shift 2 ;;
+        --amber-max-new-tokens-discriminative) AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="$2"; shift 2 ;;
+        --amber-skip-official-eval) AMBER_SKIP_OFFICIAL_EVAL="$2"; shift 2 ;;
+        --amber-word-association) AMBER_WORD_ASSOCIATION="$2"; shift 2 ;;
+        --amber-safe-words) AMBER_SAFE_WORDS="$2"; shift 2 ;;
+        --amber-annotation) AMBER_ANNOTATION="$2"; shift 2 ;;
+        --amber-metrics) AMBER_METRICS="$2"; shift 2 ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
@@ -198,6 +233,10 @@ case "${DEGRADATION_MODE:-square}" in
         exit 1
         ;;
 esac
+
+is_truthy() {
+    [[ "${1:-}" == "True" || "${1:-}" == "true" || "${1:-}" == "1" || "${1:-}" == "yes" || "${1:-}" == "Y" || "${1:-}" == "y" ]]
+}
 
 normalize_eval_mode() {
     local mode
@@ -479,6 +518,23 @@ eval_results_exist() {
 EVAL_MODE="$(normalize_eval_mode "$EVAL_MODE")"
 EFFECTIVE_VISION_BENCHMARK="$(resolve_vision_benchmarks "$EVAL_MODE")"
 apply_official_aux_defaults "$EFFECTIVE_VISION_BENCHMARK"
+if is_truthy "$EVAL_SHARDED"; then
+    EVAL_BACKEND="sharded"
+fi
+case "$EVAL_BACKEND" in
+    single|sharded)
+        ;;
+    *)
+        echo "Error: --eval-backend must be single or sharded. Got: ${EVAL_BACKEND}" >&2
+        exit 1
+        ;;
+esac
+if [[ "$EVAL_BACKEND" == "sharded" ]]; then
+    if ! [[ "$EVAL_SHARD_COUNT" =~ ^[0-9]+$ ]] || [[ "$EVAL_SHARD_COUNT" -le 0 ]]; then
+        echo "Error: EVAL_SHARD_COUNT must be a positive integer. Got: ${EVAL_SHARD_COUNT}" >&2
+        exit 1
+    fi
+fi
 if [[ -z "$EVAL_MODE" ]]; then
     echo "Error: --eval-mode expanded to empty. Use chair,pope,coco,mmstar,cv-bench,vision,amber,mme,final,all." >&2
     exit 1
@@ -492,6 +548,10 @@ echo " Target PX: ${TARGET_PX}"
 echo " Version tag: ${VERSION_TAG}"
 echo " Result tag override: ${RESULT_VERSION_TAG:-<auto by model profile>}"
 echo " Eval mode: ${EVAL_MODE}"
+echo " Eval backend: ${EVAL_BACKEND}"
+if [[ "$EVAL_BACKEND" == "sharded" ]]; then
+    echo " Sharded eval: shards=${EVAL_SHARD_COUNT}, gpu_list=${GPU_LIST}, keep_shards=${SHARDED_EVAL_KEEP_SHARDS}"
+fi
 if has_vision_eval_task "$EVAL_MODE"; then
     echo " Vision benchmarks: ${EFFECTIVE_VISION_BENCHMARK}"
     echo " Vision data dir: ${VISION_BENCHMARK_DATA_DIR}"
@@ -580,6 +640,70 @@ for idx in "${!OSS_NAMES[@]}"; do
 
     # Step 2: Run evaluation
     echo "[2/4] Running evaluation ..."
+    if [[ "$EVAL_BACKEND" == "sharded" ]]; then
+        if has_eval_task "$EVAL_MODE" "mme"; then
+            echo "Error: sharded backend does not support legacy MME script. Run MME separately or use --eval-backend single." >&2
+            exit 1
+        fi
+        echo "  Running sharded eval (${EVAL_MODE}) ..."
+        sharded_env=(
+            DATASET_VERSION="$DATASET_VERSION"
+            CLEANUP_LOCAL_CKPT=False
+            VLLM_PORT_CLEANUP="$VLLM_PORT_CLEANUP"
+            VLLM_PORT_CLEANUP_WAIT="$VLLM_PORT_CLEANUP_WAIT"
+            VLLM_BASE_PORT="$((VLLM_BASE_PORT + idx * EVAL_SHARD_COUNT))"
+            EVAL_SHARD_COUNT="$EVAL_SHARD_COUNT"
+            GPU_LIST="$GPU_LIST"
+            SHARDED_EVAL_KEEP_SHARDS="$SHARDED_EVAL_KEEP_SHARDS"
+            DEGRADATION_MODE="$effective_degradation_mode"
+            STUDENT_RATIO="$effective_student_ratio"
+            TEACHER_RATIO="$effective_teacher_ratio"
+            TEACHER_PX="$effective_teacher_px"
+            TARGET_PX="$effective_target_px"
+            CHAIR_MAX_NEW_TOKENS="$CHAIR_MAX_NEW_TOKENS"
+            CHAIR_PARALLEL_WORKERS="$CHAIR_PARALLEL_WORKERS"
+            CHAIR_MAX_SAMPLES="$CHAIR_MAX_SAMPLES"
+            CHAIR_SAVE_LOGPROBS="$CHAIR_SAVE_LOGPROBS"
+            CHAIR_TOP_LOGPROBS="$CHAIR_TOP_LOGPROBS"
+            EVAL_OPD_TRACE="$EVAL_OPD_TRACE"
+            EVAL_OPD_TRACE_TOPK="$EVAL_OPD_TRACE_TOPK"
+            EVAL_OPD_TRACE_ENTROPY="$EVAL_OPD_TRACE_ENTROPY"
+            EVAL_OPD_TRACE_SCORE_BASELINE="$EVAL_OPD_TRACE_SCORE_BASELINE"
+            EVAL_OPD_TRACE_CASE_ANALYSIS="$EVAL_OPD_TRACE_CASE_ANALYSIS"
+            EVAL_OPD_TRACE_MAX_SAMPLES="$EVAL_OPD_TRACE_MAX_SAMPLES"
+            VISION_BENCHMARK="$EFFECTIVE_VISION_BENCHMARK"
+            VISION_BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR"
+            VISION_BENCHMARK_AUTO_DOWNLOAD="$VISION_BENCHMARK_AUTO_DOWNLOAD"
+            VISION_BENCHMARK_CLEAN_SOURCE="$VISION_BENCHMARK_CLEAN_SOURCE"
+            VISION_BENCHMARK_REFRESH_PROMPTS="$VISION_BENCHMARK_REFRESH_PROMPTS"
+            VISION_BENCHMARK_OUTPUT_SUFFIX="$VISION_BENCHMARK_OUTPUT_SUFFIX"
+            VISION_MAX_TOKENS="$VISION_MAX_TOKENS"
+            VISION_PARALLEL_WORKERS="$VISION_PARALLEL_WORKERS"
+            VISION_MAX_RETRIES="$VISION_MAX_RETRIES"
+            RULE_ONLY_JUDGE="$RULE_ONLY_JUDGE"
+            MCQ_EXTRACT_MODE="$MCQ_EXTRACT_MODE"
+            JUDGE_MAX_TOKENS="$JUDGE_MAX_TOKENS"
+            AMBER_ROOT="$AMBER_ROOT"
+            AMBER_IMAGE_ROOT="$AMBER_IMAGE_ROOT"
+            AMBER_EVAL_TYPE="$AMBER_EVAL_TYPE"
+            AMBER_MAX_SAMPLES="$AMBER_MAX_SAMPLES"
+            AMBER_PARALLEL_WORKERS="$AMBER_PARALLEL_WORKERS"
+            AMBER_MAX_NEW_TOKENS_GENERATIVE="$AMBER_MAX_NEW_TOKENS_GENERATIVE"
+            AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="$AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE"
+            AMBER_SKIP_OFFICIAL_EVAL="$AMBER_SKIP_OFFICIAL_EVAL"
+            AMBER_WORD_ASSOCIATION="$AMBER_WORD_ASSOCIATION"
+            AMBER_SAFE_WORDS="$AMBER_SAFE_WORDS"
+            AMBER_ANNOTATION="$AMBER_ANNOTATION"
+            AMBER_METRICS="$AMBER_METRICS"
+            RESULT_VERSION_TAG="$result_version_tag"
+        )
+        [[ -n "$VISION_ENABLE_THINKING" ]] && sharded_env+=(VISION_ENABLE_THINKING="$VISION_ENABLE_THINKING")
+        [[ -n "${JUDGE_API_BASE:-}" ]] && sharded_env+=(JUDGE_API_BASE="$JUDGE_API_BASE")
+        [[ -n "${JUDGE_API_KEY:-}" ]] && sharded_env+=(JUDGE_API_KEY="$JUDGE_API_KEY")
+        [[ -n "${JUDGE_MODEL:-}" ]] && sharded_env+=(JUDGE_MODEL="$JUDGE_MODEL")
+        [[ -n "${JUDGE_MODEL_PATH:-}" ]] && sharded_env+=(JUDGE_MODEL_PATH="$JUDGE_MODEL_PATH")
+        env "${sharded_env[@]}" bash "$SHARDED_EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "$EVAL_MODE"
+    else
     coco_tasks=()
     has_eval_task "$EVAL_MODE" "chair" && coco_tasks+=(chair)
     has_eval_task "$EVAL_MODE" "pope" && coco_tasks+=(pope)
@@ -650,6 +774,18 @@ for idx in "${!OSS_NAMES[@]}"; do
             DEGRADATION_MODE="$effective_degradation_mode"
             STUDENT_RATIO="$effective_student_ratio"
             TARGET_PX="$effective_target_px"
+            AMBER_ROOT="$AMBER_ROOT"
+            AMBER_IMAGE_ROOT="$AMBER_IMAGE_ROOT"
+            AMBER_EVAL_TYPE="$AMBER_EVAL_TYPE"
+            AMBER_MAX_SAMPLES="$AMBER_MAX_SAMPLES"
+            AMBER_PARALLEL_WORKERS="$AMBER_PARALLEL_WORKERS"
+            AMBER_MAX_NEW_TOKENS_GENERATIVE="$AMBER_MAX_NEW_TOKENS_GENERATIVE"
+            AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="$AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE"
+            AMBER_SKIP_OFFICIAL_EVAL="$AMBER_SKIP_OFFICIAL_EVAL"
+            AMBER_WORD_ASSOCIATION="$AMBER_WORD_ASSOCIATION"
+            AMBER_SAFE_WORDS="$AMBER_SAFE_WORDS"
+            AMBER_ANNOTATION="$AMBER_ANNOTATION"
+            AMBER_METRICS="$AMBER_METRICS"
             RESULT_VERSION_TAG="$result_version_tag"
         )
         [[ -n "$VISION_ENABLE_THINKING" ]] && eval_env+=(VISION_ENABLE_THINKING="$VISION_ENABLE_THINKING")
@@ -662,6 +798,7 @@ for idx in "${!OSS_NAMES[@]}"; do
         DEGRADATION_MODE="$effective_degradation_mode" \
         STUDENT_RATIO="$effective_student_ratio" \
             bash "$MME_SCRIPT" "$local_ckpt_dir" "$VERSION_TAG"
+    fi
     fi
     echo "  ✅ Evaluation complete"
 

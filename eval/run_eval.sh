@@ -36,6 +36,8 @@ BENCHMARK_OUTPUT_SUFFIX="${BENCHMARK_OUTPUT_SUFFIX:-}"
 MAX_RETRIES="${MAX_RETRIES:-3}"
 PARALLEL_WORKERS="${PARALLEL_WORKERS:-256}"
 ENABLE_THINKING="${ENABLE_THINKING:-}"
+BENCHMARK_SHARD_COUNT="${BENCHMARK_SHARD_COUNT:-1}"
+BENCHMARK_SHARD_INDEX="${BENCHMARK_SHARD_INDEX:-0}"
 BENCHMARK_REFRESH_PROMPTS_WAS_SET="${BENCHMARK_REFRESH_PROMPTS+x}"
 BENCHMARK_REFRESH_PROMPTS="${BENCHMARK_REFRESH_PROMPTS:-False}"
 
@@ -57,6 +59,7 @@ BENCHMARK_DATA_DIR="${BENCHMARK_DATA_DIR:-${SCRIPT_DIR}}"
 BENCHMARK_PREPARE_DATA="${BENCHMARK_PREPARE_DATA:-True}"
 BENCHMARK_AUTO_DOWNLOAD="${BENCHMARK_AUTO_DOWNLOAD:-True}"
 BENCHMARK_CLEAN_SOURCE="${BENCHMARK_CLEAN_SOURCE:-False}"
+BENCHMARK_SKIP_JUDGE="${BENCHMARK_SKIP_JUDGE:-False}"
 mkdir -p "${BENCHMARK_DATA_DIR}"
 
 if [[ ",${BENCHMARK}," == *",mmstar,"* || ",${BENCHMARK}," == *",cv-bench,"* ]]; then
@@ -106,6 +109,7 @@ run_single_benchmark() {
   echo "Clean source: ${BENCHMARK_CLEAN_SOURCE}"
   echo "Refresh prompts: ${BENCHMARK_REFRESH_PROMPTS}"
   echo "Output suffix: ${BENCHMARK_OUTPUT_SUFFIX}"
+  echo "Shard: ${BENCHMARK_SHARD_INDEX}/${BENCHMARK_SHARD_COUNT}"
   echo "=========================================="
 
   local model_tag="${MODEL_NAME}_seed${SEED}"
@@ -173,11 +177,18 @@ run_single_benchmark() {
     --max_tokens "${MAX_TOKENS}"
     --max_retries "${MAX_RETRIES}"
     --parallel_workers "${PARALLEL_WORKERS}"
+    --shard_count "${BENCHMARK_SHARD_COUNT}"
+    --shard_index "${BENCHMARK_SHARD_INDEX}"
   )
   [[ -n "${ENABLE_THINKING}" ]] && INFER_ARGS+=(--enable_thinking "${ENABLE_THINKING}")
   INFER_ARGS+=("${output_layout_args[@]}")
 
   "$PYTHON_BIN" infer.py "${INFER_ARGS[@]}"
+
+  if [[ "${BENCHMARK_SKIP_JUDGE}" == "True" || "${BENCHMARK_SKIP_JUDGE}" == "true" || "${BENCHMARK_SKIP_JUDGE}" == "1" ]]; then
+    echo "[3/4] Skipping judge/accuracy for shard inference."
+    return 0
+  fi
 
   # [3/4] Judge
   echo "[3/4] Running judge..."

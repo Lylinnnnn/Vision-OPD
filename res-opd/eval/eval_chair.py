@@ -110,6 +110,10 @@ def parse_args():
                         help="Original-mode degradation ratio (1.0 = original, 0.75/0.5/0.25 = down/up sample)")
     parser.add_argument("--max-new-tokens", type=int, default=384)
     parser.add_argument("--max-samples", type=int, default=0, help="Max test samples (0 = all)")
+    parser.add_argument("--shard-count", type=int, default=1,
+                        help="Total number of deterministic eval shards")
+    parser.add_argument("--shard-index", type=int, default=0,
+                        help="This shard index in [0, shard-count)")
     parser.add_argument("--parallel-workers", type=int, default=8,
                         help="Number of concurrent API workers (only for --api-base mode)")
     parser.add_argument("--max-retries", type=int, default=3,
@@ -425,6 +429,10 @@ def generate_via_model(model, processor, image_path, prompt, max_new_tokens,
 def main():
     args = parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
+    if args.shard_count <= 0:
+        raise ValueError("--shard-count must be positive")
+    if not 0 <= args.shard_index < args.shard_count:
+        raise ValueError("--shard-index must satisfy 0 <= index < shard-count")
 
     # --- Resolve student degradation ---
     if args.degradation_mode == "original":
@@ -456,6 +464,15 @@ def main():
 
     if args.max_samples > 0:
         test_samples = test_samples[:args.max_samples]
+    if args.shard_count > 1:
+        test_samples = [
+            sample for idx, sample in enumerate(test_samples)
+            if idx % args.shard_count == args.shard_index
+        ]
+        print(
+            f"Shard {args.shard_index}/{args.shard_count}: "
+            f"{len(test_samples)} samples after deterministic split"
+        )
 
     # --- Checkpoint / resume ---
     eval_results_path = os.path.join(args.output_dir, "eval_results.jsonl")
@@ -612,6 +629,8 @@ def main():
     metrics["target_px"] = args.target_px
     metrics["degradation_mode"] = args.degradation_mode
     metrics["student_ratio"] = args.student_ratio
+    metrics["shard_count"] = args.shard_count
+    metrics["shard_index"] = args.shard_index
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
     print(f"Saved metrics to {metrics_path}")

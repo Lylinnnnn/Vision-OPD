@@ -407,6 +407,15 @@ def run_single_benchmark(args, benchmark: str) -> dict:
     samples, source_path = load_pope_samples(args, benchmark)
     if args.max_samples > 0:
         samples = samples[: args.max_samples]
+    if args.shard_count > 1:
+        samples = [
+            sample for idx, sample in enumerate(samples)
+            if idx % args.shard_count == args.shard_index
+        ]
+        print(
+            f"[{benchmark}] shard {args.shard_index}/{args.shard_count}: "
+            f"{len(samples)} samples after deterministic split"
+        )
 
     bench_dir = args.output_dir / "pope" / benchmark
     bench_dir.mkdir(parents=True, exist_ok=True)
@@ -536,6 +545,8 @@ def run_single_benchmark(args, benchmark: str) -> dict:
             "questions_per_label": args.questions_per_label,
             "extractor": "official_pope_first_sentence_no_not_rule",
             "source_path": source_path,
+            "shard_count": args.shard_count,
+            "shard_index": args.shard_index,
         }
     )
     with open(metrics_path, "w", encoding="utf-8") as f:
@@ -580,6 +591,8 @@ def main():
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--max-new-tokens", type=int, default=16)
     parser.add_argument("--max-samples", type=int, default=0)
+    parser.add_argument("--shard-count", type=int, default=1)
+    parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--parallel-workers", type=int, default=64)
     parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument("--prompt-suffix", default=DEFAULT_PROMPT_SUFFIX)
@@ -597,6 +610,10 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=True)
     if args.questions_per_label <= 0:
         raise ValueError("--questions-per-label must be positive")
+    if args.shard_count <= 0:
+        raise ValueError("--shard-count must be positive")
+    if not 0 <= args.shard_index < args.shard_count:
+        raise ValueError("--shard-index must satisfy 0 <= index < shard-count")
     if args.pope_source == "res-opd-test" and not args.test_json.exists():
         raise FileNotFoundError(f"Res-OPD test JSON not found: {args.test_json}")
 

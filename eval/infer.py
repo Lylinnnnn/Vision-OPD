@@ -142,6 +142,8 @@ def main():
     parser.add_argument("--max_tokens", default=4096, type=int)
     parser.add_argument("--max_retries", default=3, type=int)
     parser.add_argument("--parallel_workers", default=32, type=int)
+    parser.add_argument("--shard_count", default=1, type=int)
+    parser.add_argument("--shard_index", default=0, type=int)
     parser.add_argument(
         "--no_benchmark_subdir",
         action="store_true",
@@ -150,11 +152,24 @@ def main():
     parser.add_argument("--enable_thinking", type=str, default=None, choices=["True", "False"],
                         help="Set enable_thinking via chat_template_kwargs (True=on, False=off)")
     args = parser.parse_args()
+    if args.shard_count <= 0:
+        raise ValueError("--shard_count must be positive")
+    if not 0 <= args.shard_index < args.shard_count:
+        raise ValueError("--shard_index must satisfy 0 <= index < shard_count")
 
     benchmark = args.benchmark
     data_path = Path(args.benchmark_json)
     with open(data_path, "r", encoding="utf-8") as f:
         total_data = json.load(f)
+    if args.shard_count > 1:
+        total_data = [
+            item for idx, item in enumerate(total_data)
+            if idx % args.shard_count == args.shard_index
+        ]
+        print(
+            f"Shard {args.shard_index}/{args.shard_count}: "
+            f"{len(total_data)} samples after deterministic split."
+        )
 
     out_dir = Path(args.out_dir) if args.no_benchmark_subdir else Path(args.out_dir) / benchmark
     out_dir.mkdir(parents=True, exist_ok=True)
