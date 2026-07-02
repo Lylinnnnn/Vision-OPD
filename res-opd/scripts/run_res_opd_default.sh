@@ -59,8 +59,9 @@ export ACTOR_PARAM_OFFLOAD="${ACTOR_PARAM_OFFLOAD:-False}"
 export ACTOR_OPTIMIZER_OFFLOAD="${ACTOR_OPTIMIZER_OFFLOAD:-False}"
 export REF_PARAM_OFFLOAD="${REF_PARAM_OFFLOAD:-False}"
 
-# --- vLLM rollout ---
+# --- Training rollout ---
 # 0.85: H20 98GB has enough headroom for Qwen3-VL 2B Instruct/Thinking.
+# TP=1 is per rollout engine; training still uses TRAINER_N_GPUS_PER_NODE=8 by default.
 export ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.85}"
 export ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE="${ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE:-1}"
 

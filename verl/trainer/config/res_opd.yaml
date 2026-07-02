@@ -39,7 +39,15 @@ actor_rollout_ref:
       teacher_regularization: ema
       teacher_update_rate: 0.05
       train_metrics_enabled: True
+      train_metrics_verbose: False
+      selective_metrics_verbose: False
       trace_enabled: False
+      trace_dump_dir: null
+      trace_every_n_steps: 5
+      trace_max_samples: 4
+      trace_topk: null
+      trace_entropy: True
+      trace_only_first_ppo_epoch: True
       selective_veto_enabled: False
       selective_veto_top_p: 0.10
       selective_veto_min_score: 0.0
@@ -50,6 +58,27 @@ actor_rollout_ref:
       selective_bucket_metrics_enabled: True
       selective_bucket_q_low: 0.70
       selective_bucket_q_high: 0.90
+      selective_weight_enabled: False
+      selective_weight_mode: entropy_rkl_bucket
+      selective_weight_uncertainty_mode: entropy
+      selective_weight_tiered_protect: False
+      selective_weight_normalize: True
+      selective_weight_risk_top_p: 0.30
+      selective_weight_protect_strong_q: 0.25
+      selective_weight_entropy_low_q: 0.40
+      selective_weight_entropy_high_q: 0.75
+      selective_weight_nll_low_q: 0.40
+      selective_weight_nll_high_q: 0.80
+      selective_weight_loss_low_q: 0.40
+      selective_weight_loss_mid_q: 0.50
+      selective_weight_loss_high_q: 0.75
+      selective_weight_protect_strong: 0.25
+      selective_weight_protect_mid: 0.50
+      selective_weight_protect_weak: 0.75
+      selective_weight_protect: 0.50
+      selective_weight_unclear: 0.50
+      selective_weight_risk: 1.00
+      selective_weight_other: 1.00
     optim:
       lr: 2e-6
   rollout:
