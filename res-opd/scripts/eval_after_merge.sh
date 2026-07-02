@@ -440,6 +440,30 @@ safe_remove_checkpoint_dir() {
     return 1
 }
 
+get_oss_name_from_exp_name() {
+    local exp_name="$1"
+    local suffix
+    if [[ "$exp_name" == ResOPD_* ]]; then
+        echo "$exp_name"
+        return 0
+    elif [[ "$exp_name" == Res-OPD-Qwen3VL-2B-Instruct-* ]]; then
+        # Backward-compatible path for existing Instruct checkpoints.
+        suffix="${exp_name#Res-OPD-Qwen3VL-2B-Instruct-}"
+    elif [[ "$exp_name" == Res-OPD-* ]]; then
+        suffix="${exp_name#Res-OPD-}"
+    else
+        suffix="$exp_name"
+    fi
+
+    local epoch_tag=""
+    if [[ "$suffix" =~ ^(.+)-(e[0-9]+)$ ]]; then
+        suffix="${BASH_REMATCH[1]}"
+        epoch_tag="-${BASH_REMATCH[2]}"
+    fi
+
+    echo "ResOPD_${suffix//-/_}${epoch_tag}"
+}
+
 port_listener_pids() {
     local pids=""
     if command -v lsof >/dev/null 2>&1; then
@@ -1044,26 +1068,13 @@ if [[ "$CLEANUP_LOCAL_CKPT" == "True" || "$CLEANUP_LOCAL_CKPT" == "true" || "$CL
     # Derive OSS path from experiment name and step
     oss_ckpt_dir="$CKPT_ROOT"
     if [[ -n "$STEP_TAG" ]]; then
-        oss_experiment="$(basename "$(dirname "$CKPT_ROOT")")"
+        oss_experiment="$(basename "$CKPT_ROOT")"
         oss_step="$STEP_TAG"
     else
         oss_experiment="$(basename "$CKPT_ROOT")"
         oss_step=""
     fi
-    # Convert local naming (Res-OPD-Qwen3VL-2B-Instruct-...) to OSS naming (ResOPD_...)
-    oss_name=$(echo "$oss_experiment" | sed \
-        -e 's/^Res-OPD-Qwen3VL-2B-Instruct-/ResOPD_/' \
-        -e 's/-orig-sr/_orig_sr/' \
-        -e 's/-tr/_tr/' \
-        -e 's/-a/_a/' \
-        -e 's/-ema/_ema/' \
-        -e 's/-frozen/_frozen/' \
-        -e 's/-rkl/_rkl/' \
-        -e 's/-veto/_veto/' \
-        -e 's/-s/_s/' \
-        -e 's/-t/_t/' \
-        -e 's/-e/_e/' \
-        -e 's/\./_/g')
+    oss_name="$(get_oss_name_from_exp_name "$oss_experiment")"
     if [[ -n "$oss_step" ]]; then
         oss_path="${OSS_BASE}/${oss_name}/${oss_step}"
     else

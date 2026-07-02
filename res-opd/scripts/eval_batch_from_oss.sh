@@ -11,6 +11,12 @@
 # keeps only eval results.
 #
 # Usage:
+#   bash scripts/eval_batch_from_oss.sh --experiment-names <exp1> [exp2] ... \
+#       [--step global_step_92] [--student-px 448] [--target-px 448] [--degradation-mode square] \
+#       [--student-ratio 1.0] [--version-tag v5] [--eval-mode chair,pope] \
+#       [--vision-benchmark mmstar,cv-bench] [--vision-benchmark-data-dir /home/liuyanlin.lyl/notebook/data] \
+#       [--chair-save-logprobs true] [--chair-top-logprobs 5]
+#
 #   bash scripts/eval_batch_from_oss.sh --oss-names <name1> [name2] ... \
 #       [--step global_step_92] [--student-px 448] [--target-px 448] [--degradation-mode square] \
 #       [--student-ratio 1.0] [--version-tag v5] [--eval-mode chair,pope] \
@@ -25,7 +31,13 @@
 #   all              Run chair,pope,amber,mme.
 #
 # Examples:
-#   # Evaluate specific experiments at step 92
+#   # Evaluate by local experiment names; OSS names are derived with the same
+#   # mapping used by run_res_opd.sh / ckpt_upload_watcher.sh.
+#   bash scripts/eval_batch_from_oss.sh \
+#       --experiment-names Res-OPD-Qwen3-VL-2B-Thinking-orig-sr1.0-tr0.75-a1.0-frozen-rkl-b8-rn4-full5k-e1 \
+#       --step global_step_39
+#
+#   # Evaluate specific legacy OSS experiments at step 92
 #   bash scripts/eval_batch_from_oss.sh \
 #       --oss-names ResOPD_s448_t0_a0.5_ema-e2 ResOPD_s448_t448_a0.5_ema-e2 \
 #       --step global_step_92 --student-px 448 --version-tag v5
@@ -133,6 +145,7 @@ AMBER_SAFE_WORDS="${AMBER_SAFE_WORDS:-}"
 AMBER_ANNOTATION="${AMBER_ANNOTATION:-}"
 AMBER_METRICS="${AMBER_METRICS:-}"
 OSS_NAMES=()
+EXPERIMENT_NAMES=()
 LOCAL_NAMES=()
 STUDENT_RATIOS=()
 
@@ -143,6 +156,13 @@ while [[ $# -gt 0 ]]; do
             shift
             while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
                 OSS_NAMES+=("$1")
+                shift
+            done
+            ;;
+        --experiment-names)
+            shift
+            while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
+                EXPERIMENT_NAMES+=("$1")
                 shift
             done
             ;;
@@ -221,9 +241,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ ${#OSS_NAMES[@]} -eq 0 ]]; then
-    echo "Error: --oss-names is required" >&2
-    echo "Usage: $0 --oss-names <name1> [name2] ... [--step STEP] [--student-px PX] [--target-px PX] [--degradation-mode square|original] [--student-ratio RATIO] [--version-tag TAG]" >&2
+if [[ ${#OSS_NAMES[@]} -eq 0 && ${#EXPERIMENT_NAMES[@]} -eq 0 ]]; then
+    echo "Error: --experiment-names or --oss-names is required" >&2
+    echo "Usage: $0 --experiment-names <exp1> [exp2] ... [--step STEP] [--student-px PX] [--target-px PX] [--degradation-mode square|original] [--student-ratio RATIO] [--version-tag TAG]" >&2
     exit 1
 fi
 
@@ -347,6 +367,54 @@ resolve_result_version_tag() {
         echo "instruct"
     else
         echo "$VERSION_TAG"
+    fi
+}
+
+get_oss_name_from_exp_name() {
+    local exp_name="$1"
+    local suffix
+    if [[ "$exp_name" == ResOPD_* ]]; then
+        echo "$exp_name"
+        return 0
+    elif [[ "$exp_name" == Res-OPD-Qwen3VL-2B-Instruct-* ]]; then
+        # Backward-compatible OSS path for existing Instruct checkpoints.
+        suffix="${exp_name#Res-OPD-Qwen3VL-2B-Instruct-}"
+    elif [[ "$exp_name" == Res-OPD-* ]]; then
+        suffix="${exp_name#Res-OPD-}"
+    else
+        suffix="$exp_name"
+    fi
+
+    local epoch_tag=""
+    if [[ "$suffix" =~ ^(.+)-(e[0-9]+)$ ]]; then
+        suffix="${BASH_REMATCH[1]}"
+        epoch_tag="-${BASH_REMATCH[2]}"
+    fi
+
+    echo "ResOPD_${suffix//-/_}${epoch_tag}"
+}
+
+get_exp_name_from_oss_name() {
+    local oss_name="$1"
+    local suffix
+    local exp_suffix
+    if [[ "$oss_name" == Res-OPD-* ]]; then
+        echo "$oss_name"
+        return 0
+    elif [[ "$oss_name" != ResOPD_* ]]; then
+        echo "$oss_name"
+        return 0
+    fi
+
+    suffix="${oss_name#ResOPD_}"
+    exp_suffix="${suffix//_/-}"
+
+    # Legacy Instruct OSS names strip the model prefix to preserve old paths.
+    # New generic names include the model name in the OSS suffix.
+    if [[ "$suffix" == orig_* || "$suffix" == s[0-9]* || "$suffix" == sr[0-9.]* || "$suffix" == train* ]]; then
+        echo "Res-OPD-Qwen3VL-2B-Instruct-${exp_suffix}"
+    else
+        echo "Res-OPD-${exp_suffix}"
     fi
 }
 
@@ -541,6 +609,11 @@ if [[ -z "$EVAL_MODE" ]]; then
     echo "Error: --eval-mode expanded to empty. Use chair,pope,coco,mmstar,cv-bench,vision,amber,mme,final,all." >&2
     exit 1
 fi
+if [[ ${#EXPERIMENT_NAMES[@]} -gt 0 ]]; then
+    NUM_EXPERIMENTS=${#EXPERIMENT_NAMES[@]}
+else
+    NUM_EXPERIMENTS=${#OSS_NAMES[@]}
+fi
 
 echo "=========================================="
 echo " Batch Eval from OSS"
@@ -569,14 +642,31 @@ fi
 echo " CHAIR logprobs: ${CHAIR_SAVE_LOGPROBS} (top=${CHAIR_TOP_LOGPROBS})"
 echo " OPD eval trace: ${EVAL_OPD_TRACE} (topk=${EVAL_OPD_TRACE_TOPK}, entropy=${EVAL_OPD_TRACE_ENTROPY})"
 echo " AMBER official eval workers: ${AMBER_OFFICIAL_EVAL_WORKERS}"
-echo " Experiments: ${#OSS_NAMES[@]}"
+echo " Experiments: ${NUM_EXPERIMENTS}"
 echo " Started at: $(date)"
 echo "=========================================="
 
 VLLM_BASE_PORT="${VLLM_BASE_PORT:-8000}"
 
-for idx in "${!OSS_NAMES[@]}"; do
-    oss_name="${OSS_NAMES[$idx]}"
+for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
+    if [[ $idx -lt ${#EXPERIMENT_NAMES[@]} && -n "${EXPERIMENT_NAMES[$idx]}" ]]; then
+        local_exp_name="${EXPERIMENT_NAMES[$idx]}"
+        if [[ $idx -lt ${#OSS_NAMES[@]} && -n "${OSS_NAMES[$idx]}" ]]; then
+            oss_name="${OSS_NAMES[$idx]}"
+        else
+            oss_name="$(get_oss_name_from_exp_name "$local_exp_name")"
+        fi
+    else
+        oss_name="${OSS_NAMES[$idx]}"
+        # Derive local experiment name with fallback:
+        #   1. Explicit --local-names (if provided for this index)
+        #   2. OSS-name reverse mapping used by the checkpoint uploader
+        if [[ $idx -lt ${#LOCAL_NAMES[@]} && -n "${LOCAL_NAMES[$idx]}" ]]; then
+            local_exp_name="${LOCAL_NAMES[$idx]}"
+        else
+            local_exp_name="$(get_exp_name_from_oss_name "$oss_name")"
+        fi
+    fi
 
     # Increment port for each experiment to avoid vLLM port conflicts
     export VLLM_PORT=$((VLLM_BASE_PORT + idx))
@@ -585,27 +675,6 @@ for idx in "${!OSS_NAMES[@]}"; do
     if [[ $idx -lt ${#STUDENT_RATIOS[@]} && -n "${STUDENT_RATIOS[$idx]}" ]]; then
         export STUDENT_RATIO="${STUDENT_RATIOS[$idx]}"
         echo "  Student ratio: ${STUDENT_RATIO}"
-    fi
-
-    # Derive local experiment name with triple fallback:
-    #   1. Explicit --local-names (if provided for this index)
-    #   2. Structured regex parsing
-    #   3. sed fallback (legacy compatibility)
-    if [[ $idx -lt ${#LOCAL_NAMES[@]} && -n "${LOCAL_NAMES[$idx]}" ]]; then
-        local_exp_name="${LOCAL_NAMES[$idx]}"
-    elif [[ "$oss_name" =~ ^ResOPD_s([0-9]+)_t([0-9]+)_a([0-9.]+)_(.+)$ ]]; then
-        local_exp_name="Res-OPD-Qwen3VL-2B-Instruct-s${BASH_REMATCH[1]}-t${BASH_REMATCH[2]}-a${BASH_REMATCH[3]}-${BASH_REMATCH[4]}"
-    elif [[ "$oss_name" =~ ^ResOPD_s([0-9]+)_a([0-9.]+)_(.+)$ ]]; then
-        local_exp_name="Res-OPD-Qwen3VL-2B-Instruct-s${BASH_REMATCH[1]}-a${BASH_REMATCH[2]}-${BASH_REMATCH[3]}"
-    else
-        # sed fallback for legacy/non-standard names
-        local_exp_name=$(echo "$oss_name" | sed \
-            -e 's/^ResOPD_/Res-OPD-Qwen3VL-2B-Instruct-/' \
-            -e 's/_a/-a/' \
-            -e 's/_t/-t/g' \
-            -e 's/_s/-s/' \
-            -e 's/_/-/g')
-        echo "⚠️  Regex failed for '${oss_name}', using sed fallback: ${local_exp_name}"
     fi
     result_version_tag="$(resolve_result_version_tag "$local_exp_name")"
 
