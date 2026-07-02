@@ -185,7 +185,7 @@ class SelfDistillationConfig(BaseConfig):
     selective_weight_uncertainty_mode: str = "entropy"
     selective_weight_tiered_protect: bool = False
     selective_weight_normalize: bool = True
-    selective_weight_risk_top_p: float = 0.20
+    selective_weight_risk_top_p: float = 0.30
     selective_weight_protect_strong_q: float = 0.25
     selective_weight_entropy_low_q: float = 0.40
     selective_weight_entropy_high_q: float = 0.75
