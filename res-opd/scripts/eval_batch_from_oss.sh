@@ -432,7 +432,7 @@ eval_results_exist() {
         fi
     fi
     if has_eval_task "$EVAL_MODE" "amber"; then
-        if ! [[ -f "${result_dir}/final_hallucination/amber_metrics.json" ]]; then
+        if ! ls "${result_dir}/"*/amber/amber_metrics.json 2>/dev/null | grep -q .; then
             ok=1
         fi
     fi
@@ -624,6 +624,7 @@ for idx in "${!OSS_NAMES[@]}"; do
         TARGET_PX="$effective_target_px" \
         DEGRADATION_MODE="$effective_degradation_mode" \
         STUDENT_RATIO="$effective_student_ratio" \
+        DATASET_VERSION="$DATASET_VERSION" \
             bash "$AMBER_SCRIPT" "$local_ckpt_dir" "$VERSION_TAG"
     fi
     if has_eval_task "$EVAL_MODE" "mme"; then

@@ -21,6 +21,7 @@ RES_OPD_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [version_tag]}"
 VERSION_TAG="${2:-${VERSION_TAG:-latest}}"
+DATASET_VERSION="${DATASET_VERSION:-full}"
 PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
 PORT="${VLLM_PORT:-8000}"
 MODEL_NAME="${MODEL_NAME:-Res-OPD}"
@@ -64,7 +65,6 @@ if [[ "$(basename "$MODEL_PATH")" =~ ^global_step_[0-9]+$ ]]; then
 fi
 EXPERIMENT_NAME="$(basename "$CKPT_ROOT")"
 [[ -n "$STEP_TAG" ]] && EXPERIMENT_NAME="${EXPERIMENT_NAME}_${STEP_TAG}"
-OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${EXPERIMENT_NAME}/final_hallucination"
 
 infer_eval_spec() {
     local exp_name="$1"
@@ -85,6 +85,29 @@ infer_eval_spec() {
 }
 
 infer_eval_spec "$EXPERIMENT_NAME"
+
+if [[ "$DATASET_VERSION" == "full" ]]; then
+    TRAIN_FILE="${RES_OPD_ROOT}/data/train_5k.parquet"
+    TEST_FILE="${RES_OPD_ROOT}/data/test_1000.json"
+else
+    TRAIN_FILE="${RES_OPD_ROOT}/data/train.parquet"
+    TEST_FILE="${RES_OPD_ROOT}/data/test.json"
+fi
+DATASET_TAG="unknown_dataset"
+if [[ -f "$TRAIN_FILE" && -f "$TEST_FILE" ]]; then
+    TRAIN_N=$("$PYTHON_BIN" -c "import pandas as pd; print(len(pd.read_parquet('$TRAIN_FILE')))" 2>/dev/null || echo "?")
+    TEST_N=$("$PYTHON_BIN" -c "import json; print(len(json.load(open('$TEST_FILE'))))" 2>/dev/null || echo "?")
+    DATASET_TAG="train${TRAIN_N}_test${TEST_N}"
+fi
+if [[ "$DEGRADATION_MODE" == "original" ]]; then
+    RATIO_TAG="${STUDENT_RATIO//./p}"
+    DATASET_TAG="${DATASET_TAG}_original_sr${RATIO_TAG}"
+fi
+if [[ "$DATASET_VERSION" == "full" ]]; then
+    OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/full/${EXPERIMENT_NAME}/${DATASET_TAG}"
+else
+    OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${EXPERIMENT_NAME}/${DATASET_TAG}"
+fi
 
 infer_model_profile() {
     local explicit_profile="$1"
@@ -245,6 +268,7 @@ echo "Model:     $MODEL_PATH"
 echo "AMBER:     $AMBER_ROOT"
 echo "AMBER OSS: ${AMBER_OSS_URI:-<none>}"
 echo "Eval type: $AMBER_EVAL_TYPE"
+echo "Dataset:   $DATASET_VERSION / $DATASET_TAG"
 echo "Model profile: $MODEL_PROFILE"
 echo "Enable thinking: ${ENABLE_THINKING:-<unset>}"
 echo "AMBER max tokens: generative=${AMBER_MAX_NEW_TOKENS_GENERATIVE}, discriminative=${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE}"
