@@ -92,19 +92,20 @@ class SelfDistillationConfig(BaseConfig):
         selective_bucket_q_high (float): Higher positive-disagreement quantile for bucket split, default 0.90.
         selective_weight_enabled (bool): Whether to apply soft token weights to the distillation loss.
         selective_weight_mode (str): Soft-weighting rule. Supports "entropy_rkl_bucket" and
-            "protect_risk_unprotect".
+            "risk_only_mask".
         selective_weight_uncertainty_mode (str): Which student-uncertainty proxy drives
             protect/risk buckets. Supports "entropy", "nll", "entropy_or_nll", and
             "entropy_and_nll".
-        selective_weight_tiered_protect (bool): In "protect_risk_unprotect" mode, split protected
-            tokens into strong/mid/weak tiers using RKL, teacher uncertainty, and student uncertainty.
+        selective_weight_tiered_protect (bool): Deprecated tprotect switch. New runs should use
+            "risk_only_mask" instead.
         selective_weight_normalize (bool): Normalize valid-token mean weight to one.
+        selective_weight_risk_top_p (float): In "risk_only_mask" mode, keep only the top-p
+            tokens ranked by coupled RKL/student-uncertainty score.
         selective_weight_protect_strong_q (float): Very-low quantile for the strongest protect tier.
         selective_weight_entropy_low_q (float): Low-entropy quantile used for protect tokens.
         selective_weight_entropy_high_q (float): High-entropy quantile used for risk/unclear tokens.
         selective_weight_nll_low_q (float): Low student-NLL quantile used for protect tokens.
-        selective_weight_nll_high_q (float): High student-NLL quantile used as an additional
-            uncertainty proxy in "protect_risk_unprotect" mode.
+        selective_weight_nll_high_q (float): High student-NLL quantile used by legacy bucket weighting.
         selective_weight_loss_low_q (float): Low-loss quantile used for protect tokens.
         selective_weight_loss_mid_q (float): Mid-loss threshold used to identify unclear high-entropy tokens.
         selective_weight_loss_high_q (float): High-loss quantile used for risk tokens.
@@ -184,6 +185,7 @@ class SelfDistillationConfig(BaseConfig):
     selective_weight_uncertainty_mode: str = "entropy"
     selective_weight_tiered_protect: bool = False
     selective_weight_normalize: bool = True
+    selective_weight_risk_top_p: float = 0.20
     selective_weight_protect_strong_q: float = 0.25
     selective_weight_entropy_low_q: float = 0.40
     selective_weight_entropy_high_q: float = 0.75
@@ -255,16 +257,21 @@ class SelfDistillationConfig(BaseConfig):
                 "self_distillation selective bucket quantiles must satisfy 0 < q_low < q_high < 1, "
                 f"got q_low={self.selective_bucket_q_low}, q_high={self.selective_bucket_q_high}"
             )
-        valid_selective_weight_modes = ["entropy_rkl_bucket", "protect_risk_unprotect"]
+        valid_selective_weight_modes = ["entropy_rkl_bucket", "risk_only_mask"]
         if self.selective_weight_mode not in valid_selective_weight_modes:
             raise ValueError(
                 "self_distillation.selective_weight_mode must be one of "
                 f"{valid_selective_weight_modes}, got {self.selective_weight_mode}"
             )
-        if self.selective_weight_tiered_protect and self.selective_weight_mode != "protect_risk_unprotect":
+        if self.selective_weight_tiered_protect:
             raise ValueError(
-                "self_distillation.selective_weight_tiered_protect=True requires "
-                "self_distillation.selective_weight_mode=protect_risk_unprotect"
+                "self_distillation.selective_weight_tiered_protect was used by the removed "
+                "tprotect branch. Use selective_weight_mode=risk_only_mask instead."
+            )
+        if not 0.0 < self.selective_weight_risk_top_p <= 1.0:
+            raise ValueError(
+                "self_distillation.selective_weight_risk_top_p must be in (0,1], "
+                f"got {self.selective_weight_risk_top_p}"
             )
         valid_uncertainty_modes = ["entropy", "nll", "entropy_or_nll", "entropy_and_nll"]
         if self.selective_weight_uncertainty_mode not in valid_uncertainty_modes:

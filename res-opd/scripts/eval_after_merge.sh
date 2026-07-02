@@ -57,6 +57,7 @@ export PYTHONPATH="$VISION_OPD_ROOT:${PYTHONPATH:-}"
 MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [student_px] [version_tag]}"
 STUDENT_PX="${2:-${STUDENT_PX:-}}"
 VERSION_TAG="${3:-latest}"
+RESULT_VERSION_TAG="${RESULT_VERSION_TAG:-}"
 # Support both legacy (test.json) and full-scale (test_1000.json) datasets.
 # Set DATASET_VERSION=full to use the full-scale dataset; default is full.
 DATASET_VERSION="${DATASET_VERSION:-full}"
@@ -265,6 +266,26 @@ infer_model_profile() {
     else
         echo "default"
     fi
+}
+
+resolve_result_version_tag() {
+    local profile="$1"
+    local requested_tag="$2"
+    if [[ -n "$RESULT_VERSION_TAG" ]]; then
+        echo "$RESULT_VERSION_TAG"
+        return 0
+    fi
+    case "$profile" in
+        qwen3vl_2b_thinking|qwen3vl_8b_thinking|generic_thinking)
+            echo "thinking"
+            ;;
+        qwen3vl_instruct)
+            echo "instruct"
+            ;;
+        *)
+            echo "$requested_tag"
+            ;;
+    esac
 }
 
 apply_model_profile_defaults() {
@@ -578,6 +599,7 @@ EFFECTIVE_VISION_BENCHMARK="$(resolve_vision_benchmarks "$EVAL_MODE")"
 MODEL_PROFILE="$(infer_model_profile "$MODEL_PROFILE")"
 apply_model_profile_defaults "$MODEL_PROFILE"
 apply_official_aux_defaults "$EFFECTIVE_VISION_BENCHMARK"
+RESULT_VERSION_TAG="$(resolve_result_version_tag "$MODEL_PROFILE" "$VERSION_TAG")"
 if [[ -z "$FINAL_ANSWER_ONLY" && ( "$ENABLE_THINKING" == "True" || "$ENABLE_THINKING" == "true" || "$ENABLE_THINKING" == "1" ) ]]; then
     FINAL_ANSWER_ONLY="True"
 fi
@@ -669,9 +691,9 @@ fi
 # When DATASET_VERSION=full, add a "full/" parent folder for separation.
 # Legacy results stay directly under eval_results/<version_tag>/<exp_name>/<dataset_tag>/
 if [[ "$DATASET_VERSION" == "full" ]]; then
-    OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/full/${EXPERIMENT_NAME}/${DATASET_TAG}"
+    OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${RESULT_VERSION_TAG}/full/${EXPERIMENT_NAME}/${DATASET_TAG}"
 else
-    OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${EXPERIMENT_NAME}/${DATASET_TAG}"
+    OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${RESULT_VERSION_TAG}/${EXPERIMENT_NAME}/${DATASET_TAG}"
 fi
 
 if has_eval_task "$EVAL_MODE" "chair" && [ ! -f "$TEST_JSON" ]; then
@@ -720,6 +742,8 @@ if has_vision_eval_task "$EVAL_MODE"; then
     echo "MCQ extract mode: $MCQ_EXTRACT_MODE"
 fi
 echo "Model profile: $MODEL_PROFILE"
+echo "Version tag: $VERSION_TAG"
+echo "Result tag:  $RESULT_VERSION_TAG"
 echo "Enable thinking: ${ENABLE_THINKING:-<unset>}"
 echo "Final-answer only: ${FINAL_ANSWER_ONLY:-False}"
 echo "vLLM max len: $VLLM_MAX_MODEL_LEN"

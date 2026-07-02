@@ -74,6 +74,7 @@ DEGRADATION_MODE="${DEGRADATION_MODE:-}"
 STUDENT_RATIO="${STUDENT_RATIO:-}"
 TEACHER_RATIO="${TEACHER_RATIO:-}"
 VERSION_TAG="latest"
+RESULT_VERSION_TAG="${RESULT_VERSION_TAG:-}"
 DATASET_VERSION="${DATASET_VERSION:-full}"
 EVAL_MODE="${EVAL_MODE:-chair,pope}"
 PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
@@ -148,6 +149,7 @@ while [[ $# -gt 0 ]]; do
         --student-ratio) STUDENT_RATIO="$2"; shift 2 ;;
         --teacher-ratio) TEACHER_RATIO="$2"; shift 2 ;;
         --version-tag) VERSION_TAG="$2"; shift 2 ;;
+        --result-version-tag) RESULT_VERSION_TAG="$2"; shift 2 ;;
         --eval-mode)  EVAL_MODE="$2"; shift 2 ;;
         --chair-max-new-tokens) CHAIR_MAX_NEW_TOKENS="$2"; shift 2 ;;
         --chair-parallel-workers) CHAIR_PARALLEL_WORKERS="$2"; shift 2 ;;
@@ -288,6 +290,23 @@ resolve_vision_benchmarks() {
 has_vision_eval_task() {
     local mode="$1"
     has_eval_task "$mode" "vision" || has_eval_task "$mode" "mmstar" || has_eval_task "$mode" "cv-bench"
+}
+
+resolve_result_version_tag() {
+    local exp_name="$1"
+    local exp_name_lc
+    if [[ -n "$RESULT_VERSION_TAG" ]]; then
+        echo "$RESULT_VERSION_TAG"
+        return 0
+    fi
+    exp_name_lc="$(echo "$exp_name" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$exp_name_lc" == *"thinking"* || "$VISION_ENABLE_THINKING" == "True" || "$VISION_ENABLE_THINKING" == "true" || "$VISION_ENABLE_THINKING" == "1" ]]; then
+        echo "thinking"
+    elif [[ "$exp_name_lc" == *"instruct"* ]]; then
+        echo "instruct"
+    else
+        echo "$VERSION_TAG"
+    fi
 }
 
 apply_official_aux_defaults() {
@@ -471,6 +490,7 @@ echo " Step: ${STEP}"
 echo " Student spec: auto from experiment name unless overridden"
 echo " Target PX: ${TARGET_PX}"
 echo " Version tag: ${VERSION_TAG}"
+echo " Result tag override: ${RESULT_VERSION_TAG:-<auto by model profile>}"
 echo " Eval mode: ${EVAL_MODE}"
 if has_vision_eval_task "$EVAL_MODE"; then
     echo " Vision benchmarks: ${EFFECTIVE_VISION_BENCHMARK}"
@@ -524,6 +544,7 @@ for idx in "${!OSS_NAMES[@]}"; do
             -e 's/_/-/g')
         echo "⚠️  Regex failed for '${oss_name}', using sed fallback: ${local_exp_name}"
     fi
+    result_version_tag="$(resolve_result_version_tag "$local_exp_name")"
 
     oss_path="${OSS_BASE}/${oss_name}/${STEP}"
     local_ckpt_dir="${CKPT_BASE}/${local_exp_name}/${STEP}"
@@ -535,6 +556,7 @@ for idx in "${!OSS_NAMES[@]}"; do
     echo "=========================================="
     echo " Processing: ${oss_name}"
     echo " Local exp: ${local_exp_name}"
+    echo " Result tag: ${result_version_tag}"
     echo " OSS: ${oss_path}"
     echo " Student: mode=${effective_degradation_mode} px=${effective_student_px} target=${effective_target_px} ratio=${effective_student_ratio}"
     echo " Teacher: px=${effective_teacher_px} ratio=${effective_teacher_ratio}"
@@ -542,9 +564,9 @@ for idx in "${!OSS_NAMES[@]}"; do
 
     # Check if eval results already exist
     if [[ "$DATASET_VERSION" == "full" ]]; then
-        existing_result_root="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/full/${local_exp_name}_${STEP}"
+        existing_result_root="${RES_OPD_ROOT}/eval_results/${result_version_tag}/full/${local_exp_name}_${STEP}"
     else
-        existing_result_root="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${local_exp_name}_${STEP}"
+        existing_result_root="${RES_OPD_ROOT}/eval_results/${result_version_tag}/${local_exp_name}_${STEP}"
     fi
     if eval_results_exist "$existing_result_root"; then
         echo "⚠️  Eval results already exist, skipping."
@@ -584,6 +606,7 @@ for idx in "${!OSS_NAMES[@]}"; do
         EVAL_OPD_TRACE_SCORE_BASELINE="$EVAL_OPD_TRACE_SCORE_BASELINE" \
         EVAL_OPD_TRACE_CASE_ANALYSIS="$EVAL_OPD_TRACE_CASE_ANALYSIS" \
         EVAL_OPD_TRACE_MAX_SAMPLES="$EVAL_OPD_TRACE_MAX_SAMPLES" \
+        RESULT_VERSION_TAG="$result_version_tag" \
             bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "$coco_mode"
     fi
     if has_vision_eval_task "$EVAL_MODE"; then
@@ -610,6 +633,7 @@ for idx in "${!OSS_NAMES[@]}"; do
             RULE_ONLY_JUDGE="$RULE_ONLY_JUDGE"
             MCQ_EXTRACT_MODE="$MCQ_EXTRACT_MODE"
             JUDGE_MAX_TOKENS="$JUDGE_MAX_TOKENS"
+            RESULT_VERSION_TAG="$result_version_tag"
         )
         [[ -n "$VISION_ENABLE_THINKING" ]] && vision_env+=(VISION_ENABLE_THINKING="$VISION_ENABLE_THINKING")
         [[ -n "${JUDGE_API_BASE:-}" ]] && vision_env+=(JUDGE_API_BASE="$JUDGE_API_BASE")
@@ -626,6 +650,7 @@ for idx in "${!OSS_NAMES[@]}"; do
             DEGRADATION_MODE="$effective_degradation_mode"
             STUDENT_RATIO="$effective_student_ratio"
             TARGET_PX="$effective_target_px"
+            RESULT_VERSION_TAG="$result_version_tag"
         )
         [[ -n "$VISION_ENABLE_THINKING" ]] && eval_env+=(VISION_ENABLE_THINKING="$VISION_ENABLE_THINKING")
         env "${eval_env[@]}" bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "amber"
@@ -648,9 +673,9 @@ for idx in "${!OSS_NAMES[@]}"; do
     # Step 4: Verify eval results
     echo "[4/4] Verifying eval results ..."
     if [[ "$DATASET_VERSION" == "full" ]]; then
-        result_dir="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/full/${local_exp_name}_${STEP}"
+        result_dir="${RES_OPD_ROOT}/eval_results/${result_version_tag}/full/${local_exp_name}_${STEP}"
     else
-        result_dir="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${local_exp_name}_${STEP}"
+        result_dir="${RES_OPD_ROOT}/eval_results/${result_version_tag}/${local_exp_name}_${STEP}"
     fi
     if eval_results_exist "$result_dir"; then
         echo "  ✅ Eval results saved:"
