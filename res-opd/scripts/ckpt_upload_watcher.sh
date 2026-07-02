@@ -68,10 +68,8 @@ log() {
 # Map checkpoint dir name pattern to OSS name
 get_oss_name() {
     local ckpt_dir_name="$1"
-    # Generic mapping: strip the model-name prefix (Res-OPD-Qwen3VL-2B-Instruct-)
-    # then replace all remaining '-' with '_' and prepend 'ResOPD_'.
-    # This works for any naming convention (square, original, future modes)
-    # without hard-coded regex patterns.
+    # Generic mapping: strip the Res-OPD prefix, then replace all remaining
+    # '-' with '_' and prepend 'ResOPD_'.
     #
     # Backward-compatible mappings preserve existing OSS paths:
     #   s448-t224-a0.5-ema-e2  → ResOPD_s448_t224_a0.5_ema-e2  (keep last '-')
@@ -79,9 +77,12 @@ get_oss_name() {
     #
     # Rule: the last '-e{N}' epoch tag keeps its dash for backward compat.
     local suffix
-    suffix="${ckpt_dir_name#Res-OPD-Qwen3VL-2B-Instruct-}"
-    if [[ "$suffix" == "$ckpt_dir_name" ]]; then
-        # Prefix not found; fall back to full replacement
+    if [[ "$ckpt_dir_name" == Res-OPD-Qwen3VL-2B-Instruct-* ]]; then
+        # Backward-compatible path for existing Instruct checkpoints.
+        suffix="${ckpt_dir_name#Res-OPD-Qwen3VL-2B-Instruct-}"
+    elif [[ "$ckpt_dir_name" == Res-OPD-* ]]; then
+        suffix="${ckpt_dir_name#Res-OPD-}"
+    else
         suffix="$ckpt_dir_name"
     fi
 

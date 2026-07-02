@@ -338,16 +338,63 @@ if [[ "$TRAINER_SAVE_FREQ" == "auto" ]]; then
 fi
 
 # --- Experiment naming ---
-# Always include teacher_px in the name to avoid ambiguity (e.g. t0 vs t448)
 MODEL_NAME=$(basename "$MODEL_PATH")
 EPOCH_TAG="e${TRAINER_TOTAL_EPOCHS}"
+case "$ALPHA" in
+    1|1.0|1.00)
+        LOSS_TAG="rkl"
+        ;;
+    0.5|0.50|.5)
+        LOSS_TAG="jsd"
+        ;;
+    0|0.0|0.00)
+        LOSS_TAG="fkl"
+        ;;
+    *)
+        LOSS_TAG="a${ALPHA}"
+        ;;
+esac
+case "$DATASET_VERSION" in
+    full)
+        DATASET_TAG="full5k"
+        ;;
+    quick)
+        DATASET_TAG="quick1p5k"
+        ;;
+    *)
+        DATASET_TAG="legacy"
+        ;;
+esac
+format_prob_tag() {
+    python3 - "$1" <<'PY' 2>/dev/null || echo "${1//./p}"
+import sys
+print(str(int(round(float(sys.argv[1]) * 100))))
+PY
+}
+NAME_TAGS=("${TEACHER_MODE}" "${LOSS_TAG}")
+case "${OPD_SELECTIVE_WEIGHT:-False}" in
+    True|true|TRUE|1|yes|YES|y|Y)
+        if [[ "$OPD_SELECTIVE_WEIGHT_MODE" == "risk_only_mask" ]]; then
+            NAME_TAGS+=("riskmask" "${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE}" "p$(format_prob_tag "$OPD_RISK_MASK_TOP_P")")
+        else
+            NAME_TAGS+=("sw" "${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE}")
+        fi
+        ;;
+esac
+if [[ "$OPD_TOKEN_MASK_PCT" != "0" && "$OPD_TOKEN_MASK_PCT" != "0.0" && "$OPD_TOKEN_MASK_PCT" != "0.00" ]]; then
+    NAME_TAGS+=("maskp$(format_prob_tag "$OPD_TOKEN_MASK_PCT")")
+fi
+NAME_TAGS+=("b${TRAIN_BATCH_SIZE}" "rn${ROLLOUT_N}" "$DATASET_TAG" "$EPOCH_TAG")
+IFS=-
+NAME_SUFFIX="${NAME_TAGS[*]}"
+unset IFS
 if [[ -n "${EXPERIMENT_NAME:-}" ]]; then
     : # Use externally provided EXPERIMENT_NAME
 else
     if [[ "$DEGRADATION_MODE" == "original" ]]; then
-        EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-orig-sr${STUDENT_RATIO}-tr${TEACHER_RATIO}-a${ALPHA}-${TEACHER_MODE}-${EPOCH_TAG}"
+        EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-orig-sr${STUDENT_RATIO}-tr${TEACHER_RATIO}-a${ALPHA}-${NAME_SUFFIX}"
     else
-        EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-s${STUDENT_PX}-t${TEACHER_PX}-a${ALPHA}-${TEACHER_MODE}-${EPOCH_TAG}"
+        EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-s${STUDENT_PX}-t${TEACHER_PX}-a${ALPHA}-${NAME_SUFFIX}"
     fi
 fi
 PROJECT_NAME="Res-OPD"
@@ -420,8 +467,12 @@ delete_experiment_dir() {
 get_oss_name() {
     local ckpt_dir_name="$1"
     local suffix
-    suffix="${ckpt_dir_name#Res-OPD-Qwen3VL-2B-Instruct-}"
-    if [[ "$suffix" == "$ckpt_dir_name" ]]; then
+    if [[ "$ckpt_dir_name" == Res-OPD-Qwen3VL-2B-Instruct-* ]]; then
+        # Backward-compatible path for existing Instruct checkpoints.
+        suffix="${ckpt_dir_name#Res-OPD-Qwen3VL-2B-Instruct-}"
+    elif [[ "$ckpt_dir_name" == Res-OPD-* ]]; then
+        suffix="${ckpt_dir_name#Res-OPD-}"
+    else
         suffix="$ckpt_dir_name"
     fi
 

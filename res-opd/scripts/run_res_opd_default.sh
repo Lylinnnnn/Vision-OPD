@@ -2,23 +2,22 @@
 # =============================================================================
 # Res-OPD Default Training Launcher
 #
-# Optimized defaults for 8x H20 GPUs with conservative settings.
+# Optimized defaults for current full5k tr0.75 frozen-RKL runs on 8x H20 GPUs.
 # All parameters can still be overridden via environment variables.
 #
 # Usage:
 #   bash res-opd/scripts/run_res_opd_default.sh
 #
 #   # Override specific params:
-#   TRAIN_BATCH_SIZE=16 ROLLOUT_N=8 bash res-opd/scripts/run_res_opd_default.sh
+#   TEACHER_RATIO=1.0 TRAIN_BATCH_SIZE=16 bash res-opd/scripts/run_res_opd_default.sh
 #
 #   # Run in tmux:
 #   tmux new-session -d -s opd_train "cd /path/to/Vision-OPD && bash res-opd/scripts/run_res_opd_default.sh 2>&1 | tee res-opd/logs/train_default.log"
 #
-#   # Server example: frozen RKL, tr=0.75, keep 90% token mask (mask top 10% student-teacher delta)
-#   cd /home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD && tmux new-session -d -s opd_frozen_rkl_tr075_mask10 "EXPERIMENT_NAME=Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-mask10-e1 FORCE_FRESH_START=True TRAINER_RESUME_MODE=disable TOTAL_EPOCHS=1 DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.75 TEACHER_MODE=frozen ALPHA=1.0 OPD_TOKEN_MASK_PCT=0.10 OPD_TOKEN_MASK_METRIC=student_teacher_delta OPD_BUCKET_METRICS=True OPD_TRAIN_METRICS=True OPD_METRICS_ENTROPY=True OPD_TRACE_TOKEN=False OPD_MINI_EVAL_TRACE=True OPD_MINI_EVAL_TEST_FREQ=10 OPD_MINI_EVAL_MAX_SAMPLES=50 bash res-opd/scripts/run_res_opd_default.sh 2>&1 | tee res-opd/logs/Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-mask10-e1.log"
-#
-#   # Server example: frozen RKL, tr=0.75, recall-safer selective weighting
-#   cd /home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD && tmux new-session -d -s opd_frozen_rkl_tr075_sw "EXPERIMENT_NAME=Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-sw-e1 FORCE_FRESH_START=True TRAINER_RESUME_MODE=disable TOTAL_EPOCHS=1 DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.75 TEACHER_MODE=frozen ALPHA=1.0 OPD_SELECTIVE_WEIGHT=True OPD_SELECTIVE_WEIGHT_PROTECT=0.5 OPD_SELECTIVE_WEIGHT_UNCLEAR=0.5 OPD_SELECTIVE_WEIGHT_RISK=1.0 OPD_SELECTIVE_WEIGHT_OTHER=1.0 OPD_BUCKET_METRICS=True OPD_TRAIN_METRICS=True OPD_TRACE_TOKEN=False OPD_MINI_EVAL_TRACE=True OPD_MINI_EVAL_TEST_FREQ=10 OPD_MINI_EVAL_MAX_SAMPLES=50 bash res-opd/scripts/run_res_opd_default.sh 2>&1 | tee res-opd/logs/Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-sw-e1.log"
+#   # Current run examples; EXPERIMENT_NAME is generated from parameters.
+#   bash res-opd/scripts/run_res_opd_default.sh
+#   OPD_SELECTIVE_WEIGHT=True OPD_SELECTIVE_WEIGHT_MODE=risk_only_mask \
+#     bash res-opd/scripts/run_res_opd_default.sh
 # =============================================================================
 
 set -euo pipefail
@@ -29,6 +28,24 @@ RES_OPD_ROOT="$(dirname "$SCRIPT_DIR")"
 # =============================================================================
 # OPTIMIZED DEFAULTS (conservative)
 # =============================================================================
+
+# --- Current experiment protocol ---
+export DATASET_VERSION="${DATASET_VERSION:-full}"
+export TOTAL_EPOCHS="${TOTAL_EPOCHS:-1}"
+export DEGRADATION_MODE="${DEGRADATION_MODE:-original}"
+export STUDENT_RATIO="${STUDENT_RATIO:-1.0}"
+export TEACHER_RATIO="${TEACHER_RATIO:-0.75}"
+export TEACHER_MODE="${TEACHER_MODE:-frozen}"
+export ALPHA="${ALPHA:-1.0}"
+
+export TRAINER_RESUME_MODE="${TRAINER_RESUME_MODE:-disable}"
+export FORCE_FRESH_START="${FORCE_FRESH_START:-True}"
+
+# --- OSS cleanup ---
+export POST_TRAIN_SYNC_TO_OSS="${POST_TRAIN_SYNC_TO_OSS:-True}"
+export POST_TRAIN_CLEAN_LOCAL="${POST_TRAIN_CLEAN_LOCAL:-True}"
+export POST_TRAIN_SYNC_ON_FAILURE="${POST_TRAIN_SYNC_ON_FAILURE:-True}"
+export POST_TRAIN_CLEAN_LOGS="${POST_TRAIN_CLEAN_LOGS:-False}"
 
 # --- Data loading ---
 # 4 workers: better throughput for 10k dataset on JuiceFS
@@ -117,6 +134,19 @@ fi
 echo "============================================================"
 echo " Res-OPD Default Training Launcher"
 echo "============================================================"
+echo "DATASET_VERSION             = $DATASET_VERSION"
+echo "TOTAL_EPOCHS                = $TOTAL_EPOCHS"
+echo "DEGRADATION_MODE            = $DEGRADATION_MODE"
+echo "STUDENT_RATIO               = $STUDENT_RATIO"
+echo "TEACHER_RATIO               = $TEACHER_RATIO"
+echo "TEACHER_MODE                = $TEACHER_MODE"
+echo "ALPHA                       = $ALPHA"
+echo "TRAINER_RESUME_MODE         = $TRAINER_RESUME_MODE"
+echo "FORCE_FRESH_START           = $FORCE_FRESH_START"
+echo "POST_TRAIN_SYNC_TO_OSS      = $POST_TRAIN_SYNC_TO_OSS"
+echo "POST_TRAIN_CLEAN_LOCAL      = $POST_TRAIN_CLEAN_LOCAL"
+echo "POST_TRAIN_SYNC_ON_FAILURE  = $POST_TRAIN_SYNC_ON_FAILURE"
+echo "POST_TRAIN_CLEAN_LOGS       = $POST_TRAIN_CLEAN_LOGS"
 echo "DATA_DATALOADER_NUM_WORKERS = $DATA_DATALOADER_NUM_WORKERS"
 echo "ACTOR_PARAM_OFFLOAD         = $ACTOR_PARAM_OFFLOAD"
 echo "ACTOR_OPTIMIZER_OFFLOAD     = $ACTOR_OPTIMIZER_OFFLOAD"
