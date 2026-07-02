@@ -610,7 +610,7 @@ prepare_vision_benchmark_data() {
 
         if [[ -s "$benchmark_json_path" ]]; then
             echo "  Found ${bench}: ${benchmark_json_path}"
-            if is_truthy "$VISION_BENCHMARK_CLEAN_SOURCE"; then
+            if is_truthy "$VISION_BENCHMARK_REFRESH_PROMPTS" || is_truthy "$VISION_BENCHMARK_CLEAN_SOURCE"; then
                 "$PYTHON_BIN" "${VISION_OPD_ROOT}/eval/prepare_data.py" "${prepare_args[@]}"
             fi
         else

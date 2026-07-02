@@ -40,6 +40,10 @@ RESULT_VERSION_TAG="${RESULT_VERSION_TAG:-}"
 EVAL_OPD_TRACE="${EVAL_OPD_TRACE:-False}"
 VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar}"
 VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}}"
+VISION_BENCHMARK_AUTO_DOWNLOAD="${VISION_BENCHMARK_AUTO_DOWNLOAD:-${BENCHMARK_AUTO_DOWNLOAD:-True}}"
+VISION_BENCHMARK_CLEAN_SOURCE="${VISION_BENCHMARK_CLEAN_SOURCE:-${BENCHMARK_CLEAN_SOURCE:-False}}"
+VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET="${VISION_BENCHMARK_REFRESH_PROMPTS+x}${BENCHMARK_REFRESH_PROMPTS+x}"
+VISION_BENCHMARK_REFRESH_PROMPTS="${VISION_BENCHMARK_REFRESH_PROMPTS:-${BENCHMARK_REFRESH_PROMPTS:-False}}"
 VISION_BENCHMARK_OUTPUT_SUFFIX="${VISION_BENCHMARK_OUTPUT_SUFFIX:-${BENCHMARK_OUTPUT_SUFFIX:-}}"
 RULE_ONLY_JUDGE="${RULE_ONLY_JUDGE:-}"
 MCQ_EXTRACT_MODE="${MCQ_EXTRACT_MODE:-}"
@@ -262,20 +266,23 @@ prepare_vision_benchmark_data_once() {
             exit 1
         fi
         local benchmark_json_path="${VISION_BENCHMARK_DATA_DIR}/${bench_json}"
-        if [[ -s "$benchmark_json_path" ]]; then
-            echo "  Found ${bench}: ${benchmark_json_path}"
-            continue
-        fi
-        if ! is_truthy "${VISION_BENCHMARK_AUTO_DOWNLOAD:-${BENCHMARK_AUTO_DOWNLOAD:-True}}"; then
-            echo "Error: benchmark JSON missing and auto-download is disabled: ${benchmark_json_path}" >&2
-            exit 1
-        fi
         local -a prepare_args=(--benchmark "$bench" --data_dir "$VISION_BENCHMARK_DATA_DIR")
-        if is_truthy "${VISION_BENCHMARK_REFRESH_PROMPTS:-${BENCHMARK_REFRESH_PROMPTS:-False}}"; then
+        if is_truthy "$VISION_BENCHMARK_REFRESH_PROMPTS"; then
             prepare_args+=(--refresh-prompts)
         fi
-        if is_truthy "${VISION_BENCHMARK_CLEAN_SOURCE:-${BENCHMARK_CLEAN_SOURCE:-False}}"; then
+        if is_truthy "$VISION_BENCHMARK_CLEAN_SOURCE"; then
             prepare_args+=(--clean-source)
+        fi
+        if [[ -s "$benchmark_json_path" ]]; then
+            echo "  Found ${bench}: ${benchmark_json_path}"
+            if is_truthy "$VISION_BENCHMARK_REFRESH_PROMPTS" || is_truthy "$VISION_BENCHMARK_CLEAN_SOURCE"; then
+                "$PYTHON_BIN" "${VISION_OPD_ROOT}/eval/prepare_data.py" "${prepare_args[@]}"
+            fi
+            continue
+        fi
+        if ! is_truthy "$VISION_BENCHMARK_AUTO_DOWNLOAD"; then
+            echo "Error: benchmark JSON missing and auto-download is disabled: ${benchmark_json_path}" >&2
+            exit 1
         fi
         "$PYTHON_BIN" "${VISION_OPD_ROOT}/eval/prepare_data.py" "${prepare_args[@]}"
         if [[ ! -s "$benchmark_json_path" ]]; then
@@ -310,6 +317,11 @@ if has_vision_eval_task "$EVAL_MODE"; then
     fi
     if [[ -z "$MCQ_EXTRACT_MODE" ]]; then
         MCQ_EXTRACT_MODE="official"
+    fi
+    if [[ ",${EFFECTIVE_VISION_BENCHMARK}," == *",mmstar,"* || ",${EFFECTIVE_VISION_BENCHMARK}," == *",cv-bench,"* ]]; then
+        if [[ -z "$VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET" ]]; then
+            VISION_BENCHMARK_REFRESH_PROMPTS="True"
+        fi
     fi
 fi
 
@@ -429,8 +441,10 @@ for shard_idx in $(seq 0 $((EVAL_SHARD_COUNT - 1))); do
         write_export /dev/stdout "VISION_BENCHMARK" "$EFFECTIVE_VISION_BENCHMARK"
         write_export /dev/stdout "VISION_BENCHMARK_AUTO_DOWNLOAD" "False"
         write_export /dev/stdout "VISION_BENCHMARK_CLEAN_SOURCE" "False"
+        write_export /dev/stdout "VISION_BENCHMARK_REFRESH_PROMPTS" "False"
         write_export /dev/stdout "BENCHMARK_AUTO_DOWNLOAD" "False"
         write_export /dev/stdout "BENCHMARK_CLEAN_SOURCE" "False"
+        write_export /dev/stdout "BENCHMARK_REFRESH_PROMPTS" "False"
         write_export /dev/stdout "EVAL_BACKEND" "single"
         if is_truthy "$SHARDED_EVAL_FORCE_TP1"; then
             write_export /dev/stdout "VLLM_TENSOR_PARALLEL_SIZE" "1"
