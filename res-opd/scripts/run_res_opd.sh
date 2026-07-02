@@ -90,6 +90,7 @@ VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
 
 CONFIG_NAME="res_opd"
 MODEL_PATH="${MODEL_PATH:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct}"
+PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
 
 # --- Resolution params (online degradation) ---
 STUDENT_PX="${STUDENT_PX:-224}"       # 0 = no degradation
@@ -213,8 +214,8 @@ OPD_TRACE_ENTROPY="${OPD_TRACE_ENTROPY:-True}"
 OPD_TRACE_ONLY_FIRST_PPO_EPOCH="${OPD_TRACE_ONLY_FIRST_PPO_EPOCH:-True}"
 
 # --- Training hyperparams ---
-TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-8}"
-PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-8}"
+TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-32}"
+PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-32}"
 ROLLOUT_N="${ROLLOUT_N:-4}"           # 4 = multi-rollout KD (no GRPO loss)
 ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE="${ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE:-1}"  # per rollout engine; training still uses trainer.n_gpus_per_node GPUs
 LR="${LR:-1e-6}"
@@ -235,7 +236,7 @@ ACTOR_OPTIMIZER_OFFLOAD="${ACTOR_OPTIMIZER_OFFLOAD:-False}"
 REF_PARAM_OFFLOAD="${REF_PARAM_OFFLOAD:-False}"
 TRAINER_N_GPUS_PER_NODE="${TRAINER_N_GPUS_PER_NODE:-8}"
 TRAINER_NNODES="${WORLD_SIZE:-1}"
-TRAINER_SAVE_FREQ="${SAVE_FREQ:-auto}"
+TRAINER_SAVE_FREQ="${SAVE_FREQ:-50}"
 TRAINER_TOTAL_EPOCHS="${TOTAL_EPOCHS:-1}"
 TRAINER_MAX_ACTOR_CKPT_TO_KEEP=1
 TRAINER_LOGGER='["console","swanlab"]'
@@ -308,7 +309,7 @@ auto_freq_from_steps() {
     echo "$rounded"
 }
 
-TRAIN_SAMPLE_COUNT="$(python3 - "$TASK_TRAIN_FILE" <<'PY' 2>/dev/null || echo "?"
+TRAIN_SAMPLE_COUNT="$("$PYTHON_BIN" - "$TASK_TRAIN_FILE" <<'PY' 2>/dev/null || echo "?"
 import sys
 try:
     import pandas as pd
@@ -405,7 +406,7 @@ OPD_TRACE_DIR="${OPD_TRACE_DIR:-${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}}"
 OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-False}"
 OPD_MINI_EVAL_GENERATION_DIR="${OPD_MINI_EVAL_GENERATION_DIR:-${RES_OPD_ROOT}/mini_eval_generations/${EXPERIMENT_NAME}}"
 OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-100}"
-OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-auto}"
+OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-50}"
 VAL_N="${VAL_N:-1}"
 VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-False}"
 VALIDATION_METRIC_MODE="${VALIDATION_METRIC_MODE:-mean_only}"
@@ -804,7 +805,6 @@ echo "============================================================"
 # =============================================================================
 # LAUNCH TRAINING
 # =============================================================================
-PYTHON_BIN="/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3"
 set +e
 "$PYTHON_BIN" -m verl.trainer.main_ppo --config-name "$CONFIG_NAME" \
     data.train_files="[\"$TASK_TRAIN_FILE\"]" \

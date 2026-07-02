@@ -9,7 +9,7 @@
 #   bash res-opd/scripts/run_res_opd_default.sh
 #
 #   # Override specific params:
-#   TEACHER_RATIO=1.0 TRAIN_BATCH_SIZE=16 bash res-opd/scripts/run_res_opd_default.sh
+#   TEACHER_RATIO=1.0 TRAIN_BATCH_SIZE=32 bash res-opd/scripts/run_res_opd_default.sh
 #
 #   # Run in tmux:
 #   tmux new-session -d -s opd_train "cd /path/to/Vision-OPD && bash res-opd/scripts/run_res_opd_default.sh 2>&1 | tee res-opd/logs/train_default.log"
@@ -79,16 +79,16 @@ export PPO_MAX_TOKEN_LEN_PER_GPU="${PPO_MAX_TOKEN_LEN_PER_GPU:-$(((MAX_PROMPT_LE
 export MAX_REPROMPT_LEN="${MAX_REPROMPT_LEN:-$((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH))}"
 
 # --- Batch size ---
-# 8: longer, comparable training curves for Instruct/Thinking full-5k runs.
-export TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-8}"
-export PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-8}"
+# 32 prompts/step keeps full-5k runs around 156 optimizer steps/epoch.
+export TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-32}"
+export PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-32}"
 export LR="${LR:-1e-6}"
-export SAVE_FREQ="${SAVE_FREQ:-auto}"
+export SAVE_FREQ="${SAVE_FREQ:-50}"
 
 # --- Mini eval ---
-# Mini eval: 100 samples from val2017; frequency is resolved from actual steps/epoch.
+# Mini eval: 100 samples from val2017 every 50 optimizer steps by default.
 export OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-True}"
-export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-auto}"
+export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-50}"
 export OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-100}"
 export VAL_N="${VAL_N:-1}"
 export VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-False}"
