@@ -90,6 +90,8 @@ VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
 
 CONFIG_NAME="res_opd"
 MODEL_PATH="${MODEL_PATH:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct}"
+MODEL_NAME=$(basename "$MODEL_PATH")
+MODEL_NAME_LC="$(echo "$MODEL_NAME" | tr '[:upper:]' '[:lower:]')"
 PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
 
 # --- Resolution params (online degradation) ---
@@ -226,7 +228,14 @@ TRAIN_MAX_MODEL_LEN=$((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH))
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-$TRAIN_MAX_MODEL_LEN}"
 ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.85}"
 ACTOR_USE_DYNAMIC_BSZ=True
-PPO_MAX_TOKEN_LEN_PER_GPU="${PPO_MAX_TOKEN_LEN_PER_GPU:-$((MAX_MODEL_LEN * 4))}"
+PPO_MAX_TOKEN_LEN_PER_GPU_WAS_SET="${PPO_MAX_TOKEN_LEN_PER_GPU+x}"
+if [[ -z "$PPO_MAX_TOKEN_LEN_PER_GPU_WAS_SET" ]]; then
+    if [[ "$MODEL_NAME_LC" == *"thinking"* ]]; then
+        PPO_MAX_TOKEN_LEN_PER_GPU=$((MAX_MODEL_LEN * 2))
+    else
+        PPO_MAX_TOKEN_LEN_PER_GPU=$((MAX_MODEL_LEN * 4))
+    fi
+fi
 ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-8}"
 REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-8}"
 ROLLOUT_MAX_NUM_BATCHED_TOKENS="${ROLLOUT_MAX_NUM_BATCHED_TOKENS:-$((MAX_MODEL_LEN * 8))}"
@@ -340,7 +349,6 @@ if [[ "$TRAINER_SAVE_FREQ" == "auto" ]]; then
 fi
 
 # --- Experiment naming ---
-MODEL_NAME=$(basename "$MODEL_PATH")
 EPOCH_TAG="e${TRAINER_TOTAL_EPOCHS}"
 case "$ALPHA" in
     1|1.0|1.00)
