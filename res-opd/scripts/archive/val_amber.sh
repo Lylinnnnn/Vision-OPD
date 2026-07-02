@@ -24,6 +24,7 @@ VERSION_TAG="${2:-${VERSION_TAG:-latest}}"
 PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
 PORT="${VLLM_PORT:-8000}"
 MODEL_NAME="${MODEL_NAME:-Res-OPD}"
+MODEL_PROFILE="${MODEL_PROFILE:-}"
 BENCHMARK_DATA_ROOT="${BENCHMARK_DATA_ROOT:-/home/liuyanlin.lyl/notebook/data}"
 BENCHMARK_OSS_BASE="${BENCHMARK_OSS_BASE:-}"
 AMBER_ROOT="${AMBER_ROOT:-${BENCHMARK_DATA_ROOT}/AMBER}"
@@ -32,7 +33,23 @@ AMBER_MODELSCOPE_ID="${AMBER_MODELSCOPE_ID:-}"
 KEEP_BENCHMARK_DATA="${KEEP_BENCHMARK_DATA:-False}"
 AMBER_EVAL_TYPE="${AMBER_EVAL_TYPE:-a}"
 AMBER_MAX_SAMPLES="${AMBER_MAX_SAMPLES:-0}"
+AMBER_PARALLEL_WORKERS_WAS_SET="${AMBER_PARALLEL_WORKERS+x}"
 AMBER_PARALLEL_WORKERS="${AMBER_PARALLEL_WORKERS:-64}"
+AMBER_MAX_NEW_TOKENS_GENERATIVE_WAS_SET="${AMBER_MAX_NEW_TOKENS_GENERATIVE+x}"
+AMBER_MAX_NEW_TOKENS_GENERATIVE="${AMBER_MAX_NEW_TOKENS_GENERATIVE:-384}"
+AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE_WAS_SET="${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE+x}"
+AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE:-16}"
+VLLM_GPU_MEMORY_UTILIZATION="${VLLM_GPU_MEMORY_UTILIZATION:-0.85}"
+VLLM_MAX_MODEL_LEN_WAS_SET="${VLLM_MAX_MODEL_LEN+x}"
+VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-9728}"
+VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-}"
+VLLM_MAX_NUM_SEQS_WAS_SET="${VLLM_MAX_NUM_SEQS+x}"
+VLLM_MAX_NUM_SEQS="${VLLM_MAX_NUM_SEQS:-}"
+ENABLE_THINKING_WAS_SET=""
+if [[ -n "${ENABLE_THINKING:-}" || -n "${VISION_ENABLE_THINKING:-}" ]]; then
+    ENABLE_THINKING_WAS_SET="yes"
+fi
+ENABLE_THINKING="${ENABLE_THINKING:-${VISION_ENABLE_THINKING:-}}"
 STUDENT_PX="${STUDENT_PX:-}"
 TARGET_PX="${TARGET_PX:-448}"
 DEGRADATION_MODE="${DEGRADATION_MODE:-}"
@@ -68,6 +85,69 @@ infer_eval_spec() {
 }
 
 infer_eval_spec "$EXPERIMENT_NAME"
+
+infer_model_profile() {
+    local explicit_profile="$1"
+    local path_lc
+    if [[ -n "$explicit_profile" ]]; then
+        echo "$explicit_profile"
+        return 0
+    fi
+    path_lc="$(echo "$MODEL_PATH" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$path_lc" == *"thinking"* ]]; then
+        if [[ "$path_lc" == *"8b"* ]]; then
+            echo "qwen3vl_8b_thinking"
+        elif [[ "$path_lc" == *"2b"* ]]; then
+            echo "qwen3vl_2b_thinking"
+        else
+            echo "generic_thinking"
+        fi
+    elif [[ "$path_lc" == *"instruct"* ]]; then
+        echo "qwen3vl_instruct"
+    else
+        echo "default"
+    fi
+}
+
+apply_model_profile_defaults() {
+    local profile="$1"
+    case "$profile" in
+        qwen3vl_2b_thinking)
+            if [[ -z "$ENABLE_THINKING_WAS_SET" ]]; then ENABLE_THINKING="True"; fi
+            if [[ -z "$VLLM_MAX_MODEL_LEN_WAS_SET" ]]; then VLLM_MAX_MODEL_LEN="${THINKING_2B_VLLM_MAX_MODEL_LEN:-12288}"; fi
+            if [[ -z "$VLLM_MAX_NUM_SEQS_WAS_SET" ]]; then VLLM_MAX_NUM_SEQS="${THINKING_2B_VLLM_MAX_NUM_SEQS:-32}"; fi
+            if [[ -z "$AMBER_MAX_NEW_TOKENS_GENERATIVE_WAS_SET" ]]; then AMBER_MAX_NEW_TOKENS_GENERATIVE="${THINKING_2B_AMBER_MAX_NEW_TOKENS_GENERATIVE:-1152}"; fi
+            if [[ -z "$AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE_WAS_SET" ]]; then AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="${THINKING_2B_AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE:-256}"; fi
+            if [[ -z "$AMBER_PARALLEL_WORKERS_WAS_SET" ]]; then AMBER_PARALLEL_WORKERS="${THINKING_2B_AMBER_PARALLEL_WORKERS:-8}"; fi
+            ;;
+        qwen3vl_8b_thinking)
+            if [[ -z "$ENABLE_THINKING_WAS_SET" ]]; then ENABLE_THINKING="True"; fi
+            if [[ -z "$VLLM_MAX_MODEL_LEN_WAS_SET" ]]; then VLLM_MAX_MODEL_LEN="${THINKING_8B_VLLM_MAX_MODEL_LEN:-12288}"; fi
+            if [[ -z "$VLLM_MAX_NUM_SEQS_WAS_SET" ]]; then VLLM_MAX_NUM_SEQS="${THINKING_8B_VLLM_MAX_NUM_SEQS:-8}"; fi
+            if [[ -z "$AMBER_MAX_NEW_TOKENS_GENERATIVE_WAS_SET" ]]; then AMBER_MAX_NEW_TOKENS_GENERATIVE="${THINKING_8B_AMBER_MAX_NEW_TOKENS_GENERATIVE:-1152}"; fi
+            if [[ -z "$AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE_WAS_SET" ]]; then AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="${THINKING_8B_AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE:-256}"; fi
+            if [[ -z "$AMBER_PARALLEL_WORKERS_WAS_SET" ]]; then AMBER_PARALLEL_WORKERS="${THINKING_8B_AMBER_PARALLEL_WORKERS:-4}"; fi
+            ;;
+        generic_thinking)
+            if [[ -z "$ENABLE_THINKING_WAS_SET" ]]; then ENABLE_THINKING="True"; fi
+            if [[ -z "$VLLM_MAX_MODEL_LEN_WAS_SET" ]]; then VLLM_MAX_MODEL_LEN="${THINKING_VLLM_MAX_MODEL_LEN:-12288}"; fi
+            if [[ -z "$VLLM_MAX_NUM_SEQS_WAS_SET" ]]; then VLLM_MAX_NUM_SEQS="${THINKING_VLLM_MAX_NUM_SEQS:-8}"; fi
+            if [[ -z "$AMBER_MAX_NEW_TOKENS_GENERATIVE_WAS_SET" ]]; then AMBER_MAX_NEW_TOKENS_GENERATIVE="${THINKING_AMBER_MAX_NEW_TOKENS_GENERATIVE:-1152}"; fi
+            if [[ -z "$AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE_WAS_SET" ]]; then AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="${THINKING_AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE:-256}"; fi
+            if [[ -z "$AMBER_PARALLEL_WORKERS_WAS_SET" ]]; then AMBER_PARALLEL_WORKERS="${THINKING_AMBER_PARALLEL_WORKERS:-4}"; fi
+            ;;
+        qwen3vl_instruct|default)
+            ;;
+        *)
+            echo "Error: unsupported MODEL_PROFILE=${profile}." >&2
+            exit 1
+            ;;
+    esac
+    return 0
+}
+
+MODEL_PROFILE="$(infer_model_profile "$MODEL_PROFILE")"
+apply_model_profile_defaults "$MODEL_PROFILE"
 
 stage_from_oss() {
     local oss_uri="$1"
@@ -165,18 +245,32 @@ echo "Model:     $MODEL_PATH"
 echo "AMBER:     $AMBER_ROOT"
 echo "AMBER OSS: ${AMBER_OSS_URI:-<none>}"
 echo "Eval type: $AMBER_EVAL_TYPE"
+echo "Model profile: $MODEL_PROFILE"
+echo "Enable thinking: ${ENABLE_THINKING:-<unset>}"
+echo "AMBER max tokens: generative=${AMBER_MAX_NEW_TOKENS_GENERATIVE}, discriminative=${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE}"
+echo "AMBER workers: $AMBER_PARALLEL_WORKERS"
 echo "Student:   mode=$DEGRADATION_MODE px=$STUDENT_PX target=$TARGET_PX ratio=$STUDENT_RATIO"
+echo "vLLM:      max_len=$VLLM_MAX_MODEL_LEN max_num_seqs=${VLLM_MAX_NUM_SEQS:-<default>} tp=${VLLM_TENSOR_PARALLEL_SIZE:-<default>}"
 echo "Output:    $OUTPUT_DIR"
 echo "============================================================"
 
-"$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
-    --model "$MODEL_PATH" \
-    --gpu-memory-utilization "${VLLM_GPU_MEMORY_UTILIZATION:-0.85}" \
-    --served-model-name "$MODEL_NAME" \
-    --trust-remote-code \
-    --port "$PORT" \
-    --max-model-len "${VLLM_MAX_MODEL_LEN:-9728}" \
-    --disable-frontend-multiprocessing &
+vllm_args=(
+    -m vllm.entrypoints.openai.api_server
+    --model "$MODEL_PATH"
+    --gpu-memory-utilization "$VLLM_GPU_MEMORY_UTILIZATION"
+    --served-model-name "$MODEL_NAME"
+    --trust-remote-code
+    --port "$PORT"
+    --max-model-len "$VLLM_MAX_MODEL_LEN"
+    --disable-frontend-multiprocessing
+)
+if [[ -n "$VLLM_TENSOR_PARALLEL_SIZE" ]]; then
+    vllm_args+=(--tensor-parallel-size "$VLLM_TENSOR_PARALLEL_SIZE")
+fi
+if [[ -n "$VLLM_MAX_NUM_SEQS" ]]; then
+    vllm_args+=(--max-num-seqs "$VLLM_MAX_NUM_SEQS")
+fi
+"$PYTHON_BIN" "${vllm_args[@]}" &
 VLLM_PID=$!
 
 cleanup() {
@@ -202,6 +296,7 @@ done
 amber_args=()
 [[ -n "${AMBER_IMAGE_ROOT:-}" ]] && amber_args+=(--image-root "$AMBER_IMAGE_ROOT")
 [[ "${AMBER_SKIP_OFFICIAL_EVAL:-False}" == "True" || "${AMBER_SKIP_OFFICIAL_EVAL:-False}" == "true" ]] && amber_args+=(--skip-official-eval)
+[[ -n "$ENABLE_THINKING" ]] && amber_args+=(--enable-thinking "$ENABLE_THINKING")
 
 "$PYTHON_BIN" "${RES_OPD_ROOT}/eval/eval_amber.py" \
     --api-base "http://localhost:$PORT/v1/" \
@@ -215,6 +310,8 @@ amber_args=()
     --degradation-mode "$DEGRADATION_MODE" \
     --student-ratio "$STUDENT_RATIO" \
     --evaluation-type "$AMBER_EVAL_TYPE" \
+    --max-new-tokens-generative "$AMBER_MAX_NEW_TOKENS_GENERATIVE" \
+    --max-new-tokens-discriminative "$AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE" \
     --max-samples "$AMBER_MAX_SAMPLES" \
     --parallel-workers "$AMBER_PARALLEL_WORKERS"
 

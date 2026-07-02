@@ -234,6 +234,7 @@ def main():
     parser.add_argument("--max-samples", type=int, default=0)
     parser.add_argument("--parallel-workers", type=int, default=64)
     parser.add_argument("--max-retries", type=int, default=3)
+    parser.add_argument("--enable-thinking", choices=["True", "False"], default=None)
     parser.add_argument("--skip-official-eval", action="store_true")
     parser.add_argument("--word-association", type=Path, default=None)
     parser.add_argument("--safe-words", type=Path, default=None)
@@ -295,11 +296,17 @@ def main():
         answer = ""
         for attempt in range(1, args.max_retries + 1):
             try:
+                request_kwargs = {}
+                if args.enable_thinking is not None:
+                    request_kwargs["extra_body"] = {
+                        "chat_template_kwargs": {"enable_thinking": args.enable_thinking == "True"}
+                    }
                 response = get_client().chat.completions.create(
                     model=args.model_name,
                     messages=messages,
                     max_tokens=max_tokens,
                     temperature=0.0,
+                    **request_kwargs,
                 )
                 answer = (response.choices[0].message.content or "").strip()
                 break
