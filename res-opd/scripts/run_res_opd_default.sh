@@ -44,23 +44,31 @@ export REF_PARAM_OFFLOAD="${REF_PARAM_OFFLOAD:-False}"
 # --- vLLM rollout ---
 # 0.8: balanced KV cache utilization on H20 98GB
 export ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.8}"
+export ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE="${ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE:-1}"
+
+# --- Sequence length ---
+# Thinking models need room for reasoning traces; Instruct can still stop early.
+export MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-8192}"
+export MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-5120}"
 
 # --- Logprob micro batch ---
 # 4: faster logprob scoring while staying conservative for both Instruct and Thinking runs.
 export ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-4}"
 export REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-4}"
+export ROLLOUT_MAX_NUM_BATCHED_TOKENS="${ROLLOUT_MAX_NUM_BATCHED_TOKENS:-$((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH))}"
+export MAX_REPROMPT_LEN="${MAX_REPROMPT_LEN:-$((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH))}"
 
 # --- Batch size ---
 # 8: longer, comparable training curves for Instruct/Thinking full-5k runs.
 export TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-8}"
 export PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-8}"
 export LR="${LR:-1e-6}"
-export SAVE_FREQ="${SAVE_FREQ:-50}"
+export SAVE_FREQ="${SAVE_FREQ:-auto}"
 
 # --- Mini eval ---
-# Mini eval: 100 samples from val2017, evaluate every 100 steps.
+# Mini eval: 100 samples from val2017; frequency is resolved from actual steps/epoch.
 export OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-True}"
-export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-100}"
+export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-auto}"
 export OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-100}"
 export VAL_N="${VAL_N:-1}"
 export VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-False}"
@@ -113,6 +121,11 @@ echo "ACTOR_PARAM_OFFLOAD         = $ACTOR_PARAM_OFFLOAD"
 echo "ACTOR_OPTIMIZER_OFFLOAD     = $ACTOR_OPTIMIZER_OFFLOAD"
 echo "REF_PARAM_OFFLOAD           = $REF_PARAM_OFFLOAD"
 echo "ROLLOUT_GPU_MEMORY_UTIL     = $ROLLOUT_GPU_MEMORY_UTILIZATION"
+echo "ROLLOUT_TENSOR_MP_SIZE      = $ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE"
+echo "MAX_PROMPT_LENGTH           = $MAX_PROMPT_LENGTH"
+echo "MAX_RESPONSE_LENGTH         = $MAX_RESPONSE_LENGTH"
+echo "ROLLOUT_MAX_BATCHED_TOKENS  = $ROLLOUT_MAX_NUM_BATCHED_TOKENS"
+echo "MAX_REPROMPT_LEN            = $MAX_REPROMPT_LEN"
 echo "ROLLOUT_LOGPROB_MICRO_BSZ   = $ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU"
 echo "REF_LOGPROB_MICRO_BSZ       = $REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU"
 echo "TRAIN_BATCH_SIZE            = $TRAIN_BATCH_SIZE"

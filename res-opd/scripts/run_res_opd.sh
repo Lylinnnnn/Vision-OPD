@@ -216,11 +216,11 @@ OPD_TRACE_ONLY_FIRST_PPO_EPOCH="${OPD_TRACE_ONLY_FIRST_PPO_EPOCH:-True}"
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-8}"
 PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-8}"
 ROLLOUT_N="${ROLLOUT_N:-4}"           # 4 = multi-rollout KD (no GRPO loss)
-ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE=1
+ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE="${ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE:-1}"
 LR="${LR:-1e-6}"
 DONT_REPROMPT_ON_SELF_SUCCESS=True
-MAX_PROMPT_LENGTH=8192
-MAX_RESPONSE_LENGTH=1024
+MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-8192}"
+MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-5120}"
 TRAIN_MAX_MODEL_LEN=$((MAX_PROMPT_LENGTH + MAX_RESPONSE_LENGTH))
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-$TRAIN_MAX_MODEL_LEN}"
 ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.7}"
@@ -228,12 +228,14 @@ ACTOR_USE_DYNAMIC_BSZ=True
 PPO_MAX_TOKEN_LEN_PER_GPU=$TRAIN_MAX_MODEL_LEN
 ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-4}"
 REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-4}"
+ROLLOUT_MAX_NUM_BATCHED_TOKENS="${ROLLOUT_MAX_NUM_BATCHED_TOKENS:-$MAX_MODEL_LEN}"
+MAX_REPROMPT_LEN="${MAX_REPROMPT_LEN:-$MAX_MODEL_LEN}"
 ACTOR_PARAM_OFFLOAD="${ACTOR_PARAM_OFFLOAD:-True}"
 ACTOR_OPTIMIZER_OFFLOAD="${ACTOR_OPTIMIZER_OFFLOAD:-True}"
 REF_PARAM_OFFLOAD="${REF_PARAM_OFFLOAD:-True}"
 TRAINER_N_GPUS_PER_NODE=8
 TRAINER_NNODES="${WORLD_SIZE:-1}"
-TRAINER_SAVE_FREQ="${SAVE_FREQ:-50}"
+TRAINER_SAVE_FREQ="${SAVE_FREQ:-auto}"
 TRAINER_TOTAL_EPOCHS="${TOTAL_EPOCHS:-1}"
 TRAINER_MAX_ACTOR_CKPT_TO_KEEP=1
 TRAINER_LOGGER='["console","swanlab"]'
@@ -275,6 +277,58 @@ else
 fi
 CUSTOM_DATASET_PATH="${RES_OPD_ROOT}/res_opd_dataset.py"
 
+round_up_to_10() {
+    local value="$1"
+    if [[ "$value" -le 0 ]]; then
+        echo 10
+    else
+        echo $(( ((value + 9) / 10) * 10 ))
+    fi
+}
+
+auto_freq_from_steps() {
+    local steps="$1"
+    local parts="$2"
+    local min_freq="$3"
+    local raw
+    local rounded
+    if ! [[ "$steps" =~ ^[0-9]+$ ]] || [[ "$steps" -le 0 ]]; then
+        echo "$min_freq"
+        return 0
+    fi
+    raw=$(( (steps + parts - 1) / parts ))
+    rounded="$(round_up_to_10 "$raw")"
+    if [[ "$rounded" -lt "$min_freq" ]]; then
+        rounded="$min_freq"
+    fi
+    if [[ "$rounded" -gt "$steps" ]]; then
+        rounded="$steps"
+    fi
+    echo "$rounded"
+}
+
+TRAIN_SAMPLE_COUNT="$(python3 - "$TASK_TRAIN_FILE" <<'PY' 2>/dev/null || echo "?"
+import sys
+try:
+    import pandas as pd
+    print(len(pd.read_parquet(sys.argv[1])))
+except Exception:
+    print("?")
+PY
+)"
+EXPECTED_STEPS_PER_EPOCH="?"
+if [[ "$TRAIN_SAMPLE_COUNT" =~ ^[0-9]+$ && "$TRAIN_BATCH_SIZE" =~ ^[0-9]+$ && "$TRAIN_BATCH_SIZE" -gt 0 ]]; then
+    # verl's PPO train dataloader uses drop_last=True.
+    EXPECTED_STEPS_PER_EPOCH=$(( TRAIN_SAMPLE_COUNT / TRAIN_BATCH_SIZE ))
+fi
+EXPECTED_TOTAL_STEPS="?"
+if [[ "$EXPECTED_STEPS_PER_EPOCH" =~ ^[0-9]+$ && "$TRAINER_TOTAL_EPOCHS" =~ ^[0-9]+$ ]]; then
+    EXPECTED_TOTAL_STEPS=$(( EXPECTED_STEPS_PER_EPOCH * TRAINER_TOTAL_EPOCHS ))
+fi
+if [[ "$TRAINER_SAVE_FREQ" == "auto" ]]; then
+    TRAINER_SAVE_FREQ="$(auto_freq_from_steps "$EXPECTED_STEPS_PER_EPOCH" 8 20)"
+fi
+
 # --- Experiment naming ---
 # Always include teacher_px in the name to avoid ambiguity (e.g. t0 vs t448)
 MODEL_NAME=$(basename "$MODEL_PATH")
@@ -295,7 +349,7 @@ OPD_TRACE_DIR="${OPD_TRACE_DIR:-${RES_OPD_ROOT}/traces/${EXPERIMENT_NAME}}"
 OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-False}"
 OPD_MINI_EVAL_GENERATION_DIR="${OPD_MINI_EVAL_GENERATION_DIR:-${RES_OPD_ROOT}/mini_eval_generations/${EXPERIMENT_NAME}}"
 OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-100}"
-OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-100}"
+OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-auto}"
 VAL_N="${VAL_N:-1}"
 VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-False}"
 VALIDATION_METRIC_MODE="${VALIDATION_METRIC_MODE:-mean_only}"
@@ -316,7 +370,13 @@ is_truthy() {
 
 if is_truthy "$OPD_MINI_EVAL_TRACE"; then
     TRAINER_VALIDATION_DATA_DIR="$OPD_MINI_EVAL_GENERATION_DIR"
-    TRAINER_TEST_FREQ="${TEST_FREQ:-$OPD_MINI_EVAL_TEST_FREQ}"
+    if [[ -n "${TEST_FREQ:-}" ]]; then
+        TRAINER_TEST_FREQ="$TEST_FREQ"
+    elif [[ "$OPD_MINI_EVAL_TEST_FREQ" == "auto" ]]; then
+        TRAINER_TEST_FREQ="$(auto_freq_from_steps "$EXPECTED_STEPS_PER_EPOCH" 4 20)"
+    else
+        TRAINER_TEST_FREQ="$OPD_MINI_EVAL_TEST_FREQ"
+    fi
     DATA_VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:-$OPD_MINI_EVAL_MAX_SAMPLES}"
 else
     TRAINER_VALIDATION_DATA_DIR="${TRAINER_VALIDATION_DATA_DIR:-null}"
@@ -648,6 +708,11 @@ fi
 echo "Rollout N:        $ROLLOUT_N (1=pure KD, >1=GRPO+KD)"
 echo "Learning rate:    $LR"
 echo "Batch size:       $TRAIN_BATCH_SIZE"
+echo "PPO mini batch:   $PPO_MINI_BATCH_SIZE"
+echo "Max lengths:      prompt=$MAX_PROMPT_LENGTH response=$MAX_RESPONSE_LENGTH model=$MAX_MODEL_LEN reprompt=$MAX_REPROMPT_LEN"
+echo "Rollout TP:       $ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE"
+echo "Rollout max batched tokens: $ROLLOUT_MAX_NUM_BATCHED_TOKENS"
+echo "Logprob micro bsz: rollout=$ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU ref=$REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU"
 echo "OPD metrics:      $OPD_TRAIN_METRICS (entropy curve=$OPD_METRICS_ENTROPY, train_verbose=$OPD_TRAIN_METRICS_VERBOSE, selective_verbose=$OPD_SELECTIVE_METRICS_VERBOSE)"
 echo "OPD token trace:  $OPD_TRACE_TOKEN (every ${OPD_TRACE_EVERY_N_STEPS} steps, max ${OPD_TRACE_MAX_SAMPLES}/rank, topk=${OPD_TRACE_TOPK})"
 echo "Trace dir:        $OPD_TRACE_DIR"
@@ -659,6 +724,9 @@ echo "OSS base:         $OSS_BASE"
 echo "Post-train OSS:   sync=$POST_TRAIN_SYNC_TO_OSS clean_local=$POST_TRAIN_CLEAN_LOCAL"
 echo "Experiment:       $EXPERIMENT_NAME"
 echo "Data:             $TASK_TRAIN_FILE"
+echo "Train samples:    $TRAIN_SAMPLE_COUNT"
+echo "Expected steps/epoch: $EXPECTED_STEPS_PER_EPOCH (drop_last=True)"
+echo "Expected total steps: $EXPECTED_TOTAL_STEPS"
 echo "Dataset class:    ResOPDDataset ($CUSTOM_DATASET_PATH)"
 echo "Checkpoints:      $TRAINER_DEFAULT_LOCAL_DIR"
 echo "============================================================"
@@ -709,7 +777,7 @@ set +e
     actor_rollout_ref.actor.policy_loss.loss_mode=$LOSS_MODE \
     actor_rollout_ref.actor.calculate_entropy=$OPD_METRICS_ENTROPY \
     actor_rollout_ref.actor.self_distillation.distillation_topk=$DISTILLATION_TOPK \
-    actor_rollout_ref.actor.self_distillation.max_reprompt_len=10240 \
+    actor_rollout_ref.actor.self_distillation.max_reprompt_len=$MAX_REPROMPT_LEN \
     actor_rollout_ref.actor.self_distillation.is_clip=2.0 \
     actor_rollout_ref.actor.self_distillation.teacher_always_on=True \
     actor_rollout_ref.actor.self_distillation.teacher_model_source=$TEACHER_MODEL_SOURCE \
@@ -770,7 +838,7 @@ set +e
     actor_rollout_ref.rollout.tensor_model_parallel_size=$ROLLOUT_TENSOR_MODEL_PARALLEL_SIZE \
     actor_rollout_ref.rollout.gpu_memory_utilization=$ROLLOUT_GPU_MEMORY_UTILIZATION \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=$ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU \
-    actor_rollout_ref.rollout.max_num_batched_tokens=$MAX_MODEL_LEN \
+    actor_rollout_ref.rollout.max_num_batched_tokens=$ROLLOUT_MAX_NUM_BATCHED_TOKENS \
     actor_rollout_ref.rollout.max_model_len=$MAX_MODEL_LEN \
     +actor_rollout_ref.rollout.engine_kwargs.vllm.compilation_config.pass_config.fuse_allreduce_rms=False \
     +actor_rollout_ref.rollout.engine_kwargs.vllm.kernel_config.enable_flashinfer_autotune=False \
