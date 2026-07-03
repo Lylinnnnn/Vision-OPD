@@ -27,8 +27,8 @@
 #   chair,pope       Default local COCO eval.
 #   chair / pope     Run one local COCO eval.
 #   vision           Run Vision-OPD auxiliary eval; controlled by --vision-benchmark.
-#   amber / mme      Optional final hallucination benchmarks; off by default.
-#   all              Run chair,pope,amber,mme.
+#   amber / mme      Optional final hallucination benchmarks; MME only runs when explicitly requested.
+#   all              Run chair,pope,vision,amber.
 #
 # Examples:
 #   # Evaluate by local experiment names; OSS names are derived with the same
@@ -281,13 +281,13 @@ normalize_eval_mode() {
     for token in "${tokens[@]}"; do
         case "$token" in
             all)
-                normalized+=(chair pope vision amber mme)
+                normalized+=(chair pope vision amber)
                 ;;
             frequent|coco)
                 normalized+=(chair pope)
                 ;;
             final|external)
-                normalized+=(amber mme)
+                normalized+=(amber)
                 ;;
             vision|vision-opd|aux|auxiliary)
                 normalized+=(vision)
