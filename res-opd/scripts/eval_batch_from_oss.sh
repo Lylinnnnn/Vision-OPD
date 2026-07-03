@@ -281,7 +281,7 @@ normalize_eval_mode() {
     for token in "${tokens[@]}"; do
         case "$token" in
             all)
-                normalized+=(chair pope amber mme)
+                normalized+=(chair pope vision amber mme)
                 ;;
             frequent|coco)
                 normalized+=(chair pope)

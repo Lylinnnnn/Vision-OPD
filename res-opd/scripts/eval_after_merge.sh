@@ -184,7 +184,7 @@ normalize_eval_mode() {
                 normalized+=(chair pope)
                 ;;
             all)
-                normalized+=(chair pope vision)
+                normalized+=(chair pope vision amber)
                 ;;
             cvbench|cv_bench|cv-bench)
                 normalized+=(cv-bench)
