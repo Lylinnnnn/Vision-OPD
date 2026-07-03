@@ -426,34 +426,34 @@ for shard_idx in $(seq 0 $((EVAL_SHARD_COUNT - 1))); do
         echo "#!/usr/bin/env bash"
         echo "set -uo pipefail"
         printf 'source %q\n' "$ENV_DUMP"
-        write_export /dev/stdout "CUDA_VISIBLE_DEVICES" "$gpu"
-        write_export /dev/stdout "VLLM_PORT" "$((VLLM_BASE_PORT + shard_idx))"
-        write_export /dev/stdout "EVAL_SHARD_COUNT" "$EVAL_SHARD_COUNT"
-        write_export /dev/stdout "EVAL_SHARD_INDEX" "$shard_idx"
-        write_export /dev/stdout "EVAL_OUTPUT_DIR" "${shard_dir}/out"
-        write_export /dev/stdout "EVAL_SHARDED_CHILD" "1"
-        write_export /dev/stdout "CLEANUP_LOCAL_CKPT" "False"
-        write_export /dev/stdout "BENCHMARK_SKIP_JUDGE" "True"
-        write_export /dev/stdout "AMBER_SKIP_OFFICIAL_EVAL" "True"
-        write_export /dev/stdout "RESULT_VERSION_TAG" "$RESULT_VERSION_TAG"
-        write_export /dev/stdout "RULE_ONLY_JUDGE" "$RULE_ONLY_JUDGE"
-        write_export /dev/stdout "MCQ_EXTRACT_MODE" "$MCQ_EXTRACT_MODE"
-        write_export /dev/stdout "VISION_BENCHMARK" "$EFFECTIVE_VISION_BENCHMARK"
-        write_export /dev/stdout "VISION_BENCHMARK_AUTO_DOWNLOAD" "False"
-        write_export /dev/stdout "VISION_BENCHMARK_CLEAN_SOURCE" "False"
-        write_export /dev/stdout "VISION_BENCHMARK_REFRESH_PROMPTS" "False"
-        write_export /dev/stdout "BENCHMARK_AUTO_DOWNLOAD" "False"
-        write_export /dev/stdout "BENCHMARK_CLEAN_SOURCE" "False"
-        write_export /dev/stdout "BENCHMARK_REFRESH_PROMPTS" "False"
-        write_export /dev/stdout "EVAL_BACKEND" "single"
+        printf 'export CUDA_VISIBLE_DEVICES=%q\n' "$gpu"
+        printf 'export VLLM_PORT=%q\n' "$((VLLM_BASE_PORT + shard_idx * 10))"
+        printf 'export EVAL_SHARD_COUNT=%q\n' "$EVAL_SHARD_COUNT"
+        printf 'export EVAL_SHARD_INDEX=%q\n' "$shard_idx"
+        printf 'export EVAL_OUTPUT_DIR=%q\n' "${shard_dir}/out"
+        printf 'export EVAL_SHARDED_CHILD=%q\n' "1"
+        printf 'export CLEANUP_LOCAL_CKPT=%q\n' "False"
+        printf 'export BENCHMARK_SKIP_JUDGE=%q\n' "True"
+        printf 'export AMBER_SKIP_OFFICIAL_EVAL=%q\n' "True"
+        printf 'export RESULT_VERSION_TAG=%q\n' "$RESULT_VERSION_TAG"
+        printf 'export RULE_ONLY_JUDGE=%q\n' "$RULE_ONLY_JUDGE"
+        printf 'export MCQ_EXTRACT_MODE=%q\n' "$MCQ_EXTRACT_MODE"
+        printf 'export VISION_BENCHMARK=%q\n' "$EFFECTIVE_VISION_BENCHMARK"
+        printf 'export VISION_BENCHMARK_AUTO_DOWNLOAD=%q\n' "False"
+        printf 'export VISION_BENCHMARK_CLEAN_SOURCE=%q\n' "False"
+        printf 'export VISION_BENCHMARK_REFRESH_PROMPTS=%q\n' "False"
+        printf 'export BENCHMARK_AUTO_DOWNLOAD=%q\n' "False"
+        printf 'export BENCHMARK_CLEAN_SOURCE=%q\n' "False"
+        printf 'export BENCHMARK_REFRESH_PROMPTS=%q\n' "False"
+        printf 'export EVAL_BACKEND=%q\n' "single"
         if is_truthy "$SHARDED_EVAL_FORCE_TP1"; then
-            write_export /dev/stdout "VLLM_TENSOR_PARALLEL_SIZE" "1"
+            printf 'export VLLM_TENSOR_PARALLEL_SIZE=%q\n' "1"
         fi
         if is_truthy "$EVAL_OPD_TRACE" && ! is_truthy "$SHARDED_EVAL_ALLOW_OPD_TRACE"; then
-            write_export /dev/stdout "EVAL_OPD_TRACE" "False"
+            printf 'export EVAL_OPD_TRACE=%q\n' "False"
         fi
         printf 'cd %q\n' "$VISION_OPD_ROOT"
-        printf 'echo "[shard %s/%s] gpu=%s port=%s" > %q\n' "$shard_idx" "$EVAL_SHARD_COUNT" "$gpu" "$((VLLM_BASE_PORT + shard_idx))" "$log_file"
+        printf 'echo "[shard %s/%s] gpu=%s port=%s" > %q\n' "$shard_idx" "$EVAL_SHARD_COUNT" "$gpu" "$((VLLM_BASE_PORT + shard_idx * 10))" "$log_file"
         printf 'bash %q %q %q %q %q >> %q 2>&1\n' "$EVAL_SCRIPT" "$MODEL_PATH" "$STUDENT_PX" "$VERSION_TAG" "$EVAL_MODE" "$log_file"
         echo 'status=$?'
         printf 'echo "$status" > %q\n' "$exit_file"
@@ -466,7 +466,8 @@ for shard_idx in $(seq 0 $((EVAL_SHARD_COUNT - 1))); do
     fi
     tmux new-session -d -s "$session" "bash '$runner'"
     sessions+=("$session")
-    echo "Started shard ${shard_idx}/${EVAL_SHARD_COUNT} on GPU ${gpu}, port $((VLLM_BASE_PORT + shard_idx)), tmux=${session}"
+    echo "Started shard ${shard_idx}/${EVAL_SHARD_COUNT} on GPU ${gpu}, port $((VLLM_BASE_PORT + shard_idx * 10)), tmux=${session}"
+    sleep 3
 done
 
 cleanup_sessions() {
