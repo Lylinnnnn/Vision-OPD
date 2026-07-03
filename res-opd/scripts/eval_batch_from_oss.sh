@@ -421,6 +421,10 @@ get_exp_name_from_oss_name() {
 apply_official_aux_defaults() {
     local benches="$1"
     if [[ ",${benches}," == *",mmstar,"* || ",${benches}," == *",cv-bench,"* ]]; then
+        local default_max_tokens="16"
+        if [[ "${VISION_ENABLE_THINKING}" == "True" || "${VISION_ENABLE_THINKING}" == "true" || "${VISION_ENABLE_THINKING}" == "1" ]]; then
+            default_max_tokens="${VISION_THINKING_MAX_TOKENS:-3072}"
+        fi
         if [[ -z "$VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET" ]]; then
             VISION_BENCHMARK_REFRESH_PROMPTS="True"
         fi
@@ -431,7 +435,7 @@ apply_official_aux_defaults() {
             MCQ_EXTRACT_MODE="official"
         fi
         if [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]]; then
-            VISION_MAX_TOKENS="16"
+            VISION_MAX_TOKENS="$default_max_tokens"
         fi
     fi
     return 0
@@ -587,6 +591,15 @@ eval_results_exist() {
 
 EVAL_MODE="$(normalize_eval_mode "$EVAL_MODE")"
 EFFECTIVE_VISION_BENCHMARK="$(resolve_vision_benchmarks "$EVAL_MODE")"
+if [[ -z "$VISION_ENABLE_THINKING" ]]; then
+    for candidate_name in "${EXPERIMENT_NAMES[@]:-}" "${OSS_NAMES[@]:-}" "${LOCAL_NAMES[@]:-}"; do
+        candidate_lc="$(echo "$candidate_name" | tr '[:upper:]' '[:lower:]')"
+        if [[ "$candidate_lc" == *"thinking"* ]]; then
+            VISION_ENABLE_THINKING="True"
+            break
+        fi
+    done
+fi
 apply_official_aux_defaults "$EFFECTIVE_VISION_BENCHMARK"
 if is_truthy "$EVAL_SHARDED"; then
     EVAL_BACKEND="sharded"
