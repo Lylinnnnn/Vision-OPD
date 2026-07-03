@@ -253,6 +253,16 @@ def official_light_stats(
     }
 
 
+def max_repeated_ngram(words: list[str], n: int = 5) -> tuple[str, int]:
+    if len(words) < n:
+        return "", 0
+    grams = [" ".join(words[i : i + n]) for i in range(len(words) - n + 1)]
+    if not grams:
+        return "", 0
+    gram, count = Counter(grams).most_common(1)[0]
+    return gram, count
+
+
 def is_generative(record: dict[str, Any], metadata: dict[str, Any]) -> bool:
     item_id = record.get("id")
     try:
@@ -307,6 +317,9 @@ def analyze_one(label: str, path: Path, metadata: dict[str, Any], extractor: Nou
         response = str(response or "")
         words = extractor.words(response)
         nouns = extractor.nouns(response)
+        repeat5_text, repeat5_count = max_repeated_ngram(words, 5)
+        raw_answer = str(record.get("model_answer", ""))
+        has_think_close = "</think>" in raw_answer
         stats = {
             "label": label,
             "id": item_id,
@@ -317,7 +330,11 @@ def analyze_one(label: str, path: Path, metadata: dict[str, Any], extractor: Nou
             "sentence_count": len([s for s in re.split(r"[.!?]+", response) if s.strip()]),
             "noun_count": len(nouns),
             "unique_noun_count": len(set(nouns)),
-            "has_think_close": "</think>" in str(record.get("model_answer", "")),
+            "has_think_close": has_think_close,
+            "missing_think_close": bool(raw_answer and not has_think_close and raw_answer.strip().lower().startswith(("so,", "let", "got it"))),
+            "repeat5_max_count": repeat5_count,
+            "repeat5_text": repeat5_text,
+            "loop_like": repeat5_count >= 20,
         }
         stats.update(official_light_stats(item_id, nouns, metadata))
         analyzed.append(stats)
@@ -335,12 +352,22 @@ def analyze_one(label: str, path: Path, metadata: dict[str, Any], extractor: Nou
         "sentence_count",
         "noun_count",
         "unique_noun_count",
+        "repeat5_max_count",
         "candidate_noun_count",
         "unknown_candidate_count",
         "safe_hit_count",
         "hallu_hit_count",
     ):
         summary[field] = summarize_values(analyzed, field)
+    summary["has_think_close_rate"] = (
+        sum(1 for r in analyzed if r.get("has_think_close")) / len(analyzed) if analyzed else None
+    )
+    summary["missing_think_close_count"] = sum(1 for r in analyzed if r.get("missing_think_close"))
+    summary["missing_think_close_rate"] = (
+        summary["missing_think_close_count"] / len(analyzed) if analyzed else None
+    )
+    summary["loop_like_count"] = sum(1 for r in analyzed if r.get("loop_like"))
+    summary["loop_like_rate"] = summary["loop_like_count"] / len(analyzed) if analyzed else None
     for numer, denom, out_name in (
         ("unknown_candidate_count", "candidate_noun_count", "unknown_candidate_rate"),
         ("truth_covered_exact", "truth_count", "truth_cover_exact_rate"),
@@ -381,6 +408,9 @@ def write_markdown(path: Path, summaries: list[dict[str, Any]], baseline_label: 
         ("word_count", "Words"),
         ("noun_count", "Nouns"),
         ("unique_noun_count", "Unique nouns"),
+        ("missing_think_close_rate", "Missing think close"),
+        ("loop_like_rate", "Loop-like"),
+        ("repeat5_max_count", "Max repeated 5gram"),
         ("candidate_noun_count", "AMBER candidate nouns"),
         ("unknown_candidate_count", "Unknown candidate nouns"),
         ("unknown_candidate_rate", "Unknown/candidate"),
