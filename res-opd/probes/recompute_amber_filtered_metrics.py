@@ -66,6 +66,15 @@ def parse_args() -> argparse.Namespace:
             "missing_or_loop also drops loop-like rows with high repeated ngrams."
         ),
     )
+    parser.add_argument(
+        "--drop-id-mode",
+        default="per_input",
+        choices=["per_input", "union"],
+        help=(
+            "per_input drops bad rows independently for each model. "
+            "union first collects bad ids across all inputs, then drops the same ids from every model."
+        ),
+    )
     parser.add_argument("--loop-repeat-threshold", type=int, default=20)
     parser.add_argument(
         "--output-dir",
@@ -182,6 +191,7 @@ def build_filtered_response_file(
     filter_scope: str,
     filter_mode: str,
     loop_threshold: int,
+    forced_drop_ids: set[int] | None = None,
 ) -> dict[str, Any]:
     rows = read_jsonl(raw_path)
     kept = []
@@ -192,7 +202,9 @@ def build_filtered_response_file(
         should_check = filter_scope == "all" or generative
         bad = False
         reason = ""
-        if should_check:
+        if forced_drop_ids is not None and item_id in forced_drop_ids and should_check:
+            bad, reason = True, "union_forced_drop"
+        elif should_check:
             bad, reason = is_bad_thinking_row(row, loop_threshold, filter_mode)
         if bad:
             dropped.append(
@@ -226,6 +238,31 @@ def build_filtered_response_file(
         "dropped_generative_n": sum(1 for r in dropped if r["is_generative"]),
         "dropped_discriminative_n": sum(1 for r in dropped if not r["is_generative"]),
     }
+
+
+def collect_bad_ids(
+    raw_paths: list[Path],
+    annotations: dict[int, dict[str, Any]],
+    filter_scope: str,
+    filter_mode: str,
+    loop_threshold: int,
+) -> tuple[set[int], dict[str, Any]]:
+    bad_ids: set[int] = set()
+    per_path = {}
+    for raw_path in raw_paths:
+        path_bad = []
+        for row in read_jsonl(raw_path):
+            item_id = int(row["id"])
+            generative = is_generative(row, annotations)
+            should_check = filter_scope == "all" or generative
+            if not should_check:
+                continue
+            bad, reason = is_bad_thinking_row(row, loop_threshold, filter_mode)
+            if bad:
+                bad_ids.add(item_id)
+                path_bad.append({"id": item_id, "reason": reason, "is_generative": generative})
+        per_path[str(raw_path)] = path_bad
+    return bad_ids, {"bad_ids": sorted(bad_ids), "per_path": per_path}
 
 
 def run_amber_eval(response_path: Path, out_dir: Path, args: argparse.Namespace) -> dict[str, Any]:
@@ -325,6 +362,18 @@ def main() -> None:
     output_root = Path(args.output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
     annotations = load_annotations(Path(args.amber_root))
+    forced_drop_ids = None
+    union_payload = None
+    if args.drop_id_mode == "union":
+        forced_drop_ids, union_payload = collect_bad_ids(
+            [raw_path for _, raw_path in inputs],
+            annotations=annotations,
+            filter_scope=args.filter_scope,
+            filter_mode=args.filter_mode,
+            loop_threshold=args.loop_repeat_threshold,
+        )
+        with (output_root / "union_drop_ids.json").open("w", encoding="utf-8") as f:
+            json.dump(union_payload, f, ensure_ascii=False, indent=2)
 
     summaries = []
     for label, raw_path in inputs:
@@ -337,6 +386,7 @@ def main() -> None:
             filter_scope=args.filter_scope,
             filter_mode=args.filter_mode,
             loop_threshold=args.loop_repeat_threshold,
+            forced_drop_ids=forced_drop_ids,
         )
         eval_summary = run_amber_eval(Path(summary["response_path"]), label_dir, args)
         summary.update(eval_summary)
@@ -351,6 +401,8 @@ def main() -> None:
         "evaluation_type": args.evaluation_type,
         "filter_scope": args.filter_scope,
         "filter_mode": args.filter_mode,
+        "drop_id_mode": args.drop_id_mode,
+        "union_drop_ids": sorted(forced_drop_ids) if forced_drop_ids is not None else None,
         "summaries": summaries,
     }
     with (output_root / "summary.json").open("w", encoding="utf-8") as f:
