@@ -98,11 +98,17 @@ SHARDED_EVAL_KEEP_SHARDS="${SHARDED_EVAL_KEEP_SHARDS:-False}"
 PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
 VLLM_PORT_CLEANUP="${VLLM_PORT_CLEANUP:-True}"
 VLLM_PORT_CLEANUP_WAIT="${VLLM_PORT_CLEANUP_WAIT:-20}"
+CHAIR_MAX_NEW_TOKENS_WAS_SET="${CHAIR_MAX_NEW_TOKENS+x}"
 CHAIR_MAX_NEW_TOKENS="${CHAIR_MAX_NEW_TOKENS:-384}"
 CHAIR_PARALLEL_WORKERS="${CHAIR_PARALLEL_WORKERS:-8}"
 CHAIR_MAX_SAMPLES="${CHAIR_MAX_SAMPLES:-0}"
 CHAIR_SAVE_LOGPROBS="${CHAIR_SAVE_LOGPROBS:-False}"
 CHAIR_TOP_LOGPROBS="${CHAIR_TOP_LOGPROBS:-5}"
+POPE_MAX_NEW_TOKENS_WAS_SET="${POPE_MAX_NEW_TOKENS+x}"
+POPE_MAX_NEW_TOKENS="${POPE_MAX_NEW_TOKENS:-16}"
+POPE_PARALLEL_WORKERS="${POPE_PARALLEL_WORKERS:-64}"
+POPE_MAX_SAMPLES="${POPE_MAX_SAMPLES:-0}"
+POPE_USE_PREPARED_QUERY="${POPE_USE_PREPARED_QUERY:-False}"
 EVAL_OPD_TRACE="${EVAL_OPD_TRACE:-False}"
 EVAL_OPD_TRACE_TOPK="${EVAL_OPD_TRACE_TOPK:-50}"
 EVAL_OPD_TRACE_ENTROPY="${EVAL_OPD_TRACE_ENTROPY:-True}"
@@ -137,7 +143,9 @@ AMBER_EVAL_TYPE="${AMBER_EVAL_TYPE:-a}"
 AMBER_MAX_SAMPLES="${AMBER_MAX_SAMPLES:-0}"
 AMBER_PARALLEL_WORKERS="${AMBER_PARALLEL_WORKERS:-64}"
 AMBER_OFFICIAL_EVAL_WORKERS="${AMBER_OFFICIAL_EVAL_WORKERS:-16}"
+AMBER_MAX_NEW_TOKENS_GENERATIVE_WAS_SET="${AMBER_MAX_NEW_TOKENS_GENERATIVE+x}"
 AMBER_MAX_NEW_TOKENS_GENERATIVE="${AMBER_MAX_NEW_TOKENS_GENERATIVE:-384}"
+AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE_WAS_SET="${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE+x}"
 AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE:-16}"
 AMBER_SKIP_OFFICIAL_EVAL="${AMBER_SKIP_OFFICIAL_EVAL:-False}"
 AMBER_WORD_ASSOCIATION="${AMBER_WORD_ASSOCIATION:-}"
@@ -200,6 +208,10 @@ while [[ $# -gt 0 ]]; do
         --chair-max-samples) CHAIR_MAX_SAMPLES="$2"; shift 2 ;;
         --chair-save-logprobs) CHAIR_SAVE_LOGPROBS="$2"; shift 2 ;;
         --chair-top-logprobs) CHAIR_TOP_LOGPROBS="$2"; shift 2 ;;
+        --pope-max-new-tokens) POPE_MAX_NEW_TOKENS="$2"; POPE_MAX_NEW_TOKENS_WAS_SET=arg; shift 2 ;;
+        --pope-parallel-workers) POPE_PARALLEL_WORKERS="$2"; shift 2 ;;
+        --pope-max-samples) POPE_MAX_SAMPLES="$2"; shift 2 ;;
+        --pope-use-prepared-query) POPE_USE_PREPARED_QUERY="$2"; shift 2 ;;
         --eval-opd-trace) EVAL_OPD_TRACE="$2"; shift 2 ;;
         --eval-opd-trace-topk) EVAL_OPD_TRACE_TOPK="$2"; shift 2 ;;
         --eval-opd-trace-entropy) EVAL_OPD_TRACE_ENTROPY="$2"; shift 2 ;;
@@ -212,7 +224,7 @@ while [[ $# -gt 0 ]]; do
         --vision-benchmark-clean-source|--benchmark-clean-source) VISION_BENCHMARK_CLEAN_SOURCE="$2"; shift 2 ;;
         --vision-benchmark-refresh-prompts|--benchmark-refresh-prompts) VISION_BENCHMARK_REFRESH_PROMPTS="$2"; shift 2 ;;
         --vision-benchmark-output-suffix|--benchmark-output-suffix) VISION_BENCHMARK_OUTPUT_SUFFIX="$2"; shift 2 ;;
-        --vision-max-tokens) VISION_MAX_TOKENS="$2"; shift 2 ;;
+        --vision-max-tokens) VISION_MAX_TOKENS="$2"; VISION_MAX_TOKENS_WAS_SET=arg; shift 2 ;;
         --vision-parallel-workers) VISION_PARALLEL_WORKERS="$2"; shift 2 ;;
         --vision-max-retries) VISION_MAX_RETRIES="$2"; shift 2 ;;
         --vision-enable-thinking) VISION_ENABLE_THINKING="$2"; shift 2 ;;
@@ -230,8 +242,8 @@ while [[ $# -gt 0 ]]; do
         --amber-max-samples) AMBER_MAX_SAMPLES="$2"; shift 2 ;;
         --amber-parallel-workers) AMBER_PARALLEL_WORKERS="$2"; shift 2 ;;
         --amber-official-eval-workers) AMBER_OFFICIAL_EVAL_WORKERS="$2"; shift 2 ;;
-        --amber-max-new-tokens-generative) AMBER_MAX_NEW_TOKENS_GENERATIVE="$2"; shift 2 ;;
-        --amber-max-new-tokens-discriminative) AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="$2"; shift 2 ;;
+        --amber-max-new-tokens-generative) AMBER_MAX_NEW_TOKENS_GENERATIVE="$2"; AMBER_MAX_NEW_TOKENS_GENERATIVE_WAS_SET=arg; shift 2 ;;
+        --amber-max-new-tokens-discriminative) AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="$2"; AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE_WAS_SET=arg; shift 2 ;;
         --amber-skip-official-eval) AMBER_SKIP_OFFICIAL_EVAL="$2"; shift 2 ;;
         --amber-word-association) AMBER_WORD_ASSOCIATION="$2"; shift 2 ;;
         --amber-safe-words) AMBER_SAFE_WORDS="$2"; shift 2 ;;
@@ -441,6 +453,28 @@ apply_official_aux_defaults() {
     return 0
 }
 
+apply_thinking_eval_defaults() {
+    if [[ "${VISION_ENABLE_THINKING}" != "True" && "${VISION_ENABLE_THINKING}" != "true" && "${VISION_ENABLE_THINKING}" != "1" ]]; then
+        return 0
+    fi
+    local thinking_max_tokens="${EVAL_THINKING_MAX_TOKENS:-${MAX_RESPONSE_LENGTH:-5120}}"
+    if [[ -z "$CHAIR_MAX_NEW_TOKENS_WAS_SET" ]]; then
+        CHAIR_MAX_NEW_TOKENS="$thinking_max_tokens"
+    fi
+    if [[ -z "$POPE_MAX_NEW_TOKENS_WAS_SET" ]]; then
+        POPE_MAX_NEW_TOKENS="$thinking_max_tokens"
+    fi
+    if [[ -z "$VISION_MAX_TOKENS_WAS_SET" ]]; then
+        VISION_MAX_TOKENS="$thinking_max_tokens"
+    fi
+    if [[ -z "$AMBER_MAX_NEW_TOKENS_GENERATIVE_WAS_SET" ]]; then
+        AMBER_MAX_NEW_TOKENS_GENERATIVE="$thinking_max_tokens"
+    fi
+    if [[ -z "$AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE_WAS_SET" ]]; then
+        AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE="$thinking_max_tokens"
+    fi
+}
+
 realpath_for_cleanup() {
     "$PYTHON_BIN" - "$1" <<'PY'
 import os
@@ -601,6 +635,7 @@ if [[ -z "$VISION_ENABLE_THINKING" ]]; then
     done
 fi
 apply_official_aux_defaults "$EFFECTIVE_VISION_BENCHMARK"
+apply_thinking_eval_defaults
 if is_truthy "$EVAL_SHARDED"; then
     EVAL_BACKEND="sharded"
 fi
@@ -637,6 +672,8 @@ echo " Version tag: ${VERSION_TAG}"
 echo " Result tag override: ${RESULT_VERSION_TAG:-<auto by model profile>}"
 echo " Eval mode: ${EVAL_MODE}"
 echo " Eval backend: ${EVAL_BACKEND}"
+echo " Enable thinking: ${VISION_ENABLE_THINKING:-<auto/off>}"
+echo " Max tokens: chair=${CHAIR_MAX_NEW_TOKENS}, pope=${POPE_MAX_NEW_TOKENS}, vision=${VISION_MAX_TOKENS}, amber_gen=${AMBER_MAX_NEW_TOKENS_GENERATIVE}, amber_disc=${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE}"
 if [[ "$EVAL_BACKEND" == "sharded" ]]; then
     echo " Sharded eval: shards=${EVAL_SHARD_COUNT}, gpu_list=${GPU_LIST}, keep_shards=${SHARDED_EVAL_KEEP_SHARDS}"
 fi
@@ -750,6 +787,10 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
             CHAIR_MAX_SAMPLES="$CHAIR_MAX_SAMPLES"
             CHAIR_SAVE_LOGPROBS="$CHAIR_SAVE_LOGPROBS"
             CHAIR_TOP_LOGPROBS="$CHAIR_TOP_LOGPROBS"
+            POPE_MAX_NEW_TOKENS="$POPE_MAX_NEW_TOKENS"
+            POPE_PARALLEL_WORKERS="$POPE_PARALLEL_WORKERS"
+            POPE_MAX_SAMPLES="$POPE_MAX_SAMPLES"
+            POPE_USE_PREPARED_QUERY="$POPE_USE_PREPARED_QUERY"
             EVAL_OPD_TRACE="$EVAL_OPD_TRACE"
             EVAL_OPD_TRACE_TOPK="$EVAL_OPD_TRACE_TOPK"
             EVAL_OPD_TRACE_ENTROPY="$EVAL_OPD_TRACE_ENTROPY"
@@ -810,6 +851,10 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         CHAIR_MAX_SAMPLES="$CHAIR_MAX_SAMPLES" \
         CHAIR_SAVE_LOGPROBS="$CHAIR_SAVE_LOGPROBS" \
         CHAIR_TOP_LOGPROBS="$CHAIR_TOP_LOGPROBS" \
+        POPE_MAX_NEW_TOKENS="$POPE_MAX_NEW_TOKENS" \
+        POPE_PARALLEL_WORKERS="$POPE_PARALLEL_WORKERS" \
+        POPE_MAX_SAMPLES="$POPE_MAX_SAMPLES" \
+        POPE_USE_PREPARED_QUERY="$POPE_USE_PREPARED_QUERY" \
         EVAL_OPD_TRACE="$EVAL_OPD_TRACE" \
         EVAL_OPD_TRACE_TOPK="$EVAL_OPD_TRACE_TOPK" \
         EVAL_OPD_TRACE_ENTROPY="$EVAL_OPD_TRACE_ENTROPY" \
