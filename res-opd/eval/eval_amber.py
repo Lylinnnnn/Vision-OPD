@@ -255,7 +255,7 @@ def main():
     parser.add_argument("--degradation-mode", choices=["square", "original"], default="square")
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--evaluation-type", choices=sorted(QUERY_MAP), default="a")
-    parser.add_argument("--max-new-tokens-generative", type=int, default=384)
+    parser.add_argument("--max-new-tokens-generative", type=int, default=4096)
     parser.add_argument("--max-new-tokens-discriminative", type=int, default=16)
     parser.add_argument("--max-samples", type=int, default=0)
     parser.add_argument("--shard-count", type=int, default=1)
