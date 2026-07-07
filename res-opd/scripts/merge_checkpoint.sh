@@ -36,8 +36,27 @@ echo "============================================================"
 echo "Source:  ${ACTOR_DIR}"
 echo "Target:  ${BASE_DIR}"
 
-# Remove previously merged top-level files for clean overwrite
-find "${BASE_DIR}" -mindepth 1 -maxdepth 1 -type f -print -delete
+# Remove previously merged top-level files for clean overwrite.
+#
+# Do not delete arbitrary top-level files here: FSDP checkpoints keep metadata
+# such as data.pt in BASE_DIR, and the watcher uses marker files in the same
+# directory. Only remove known HuggingFace merge outputs and partial leftovers.
+find "${BASE_DIR}" -mindepth 1 -maxdepth 1 -type f \( \
+    -name "*.safetensors" -o \
+    -name "*.safetensors.index.json" -o \
+    -name "*.bin" -o \
+    -name "*.bin.index.json" -o \
+    -name "config.json" -o \
+    -name "generation_config.json" -o \
+    -name "preprocessor_config.json" -o \
+    -name "processor_config.json" -o \
+    -name "tokenizer.json" -o \
+    -name "tokenizer_config.json" -o \
+    -name "special_tokens_map.json" -o \
+    -name "chat_template.jinja" -o \
+    -name "merges.txt" -o \
+    -name "vocab.json" \
+\) -print -delete
 
 /home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3 -m verl.model_merger merge \
     --backend fsdp \

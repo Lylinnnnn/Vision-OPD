@@ -104,6 +104,7 @@ if [[ "$MODEL_NAME_LC" == *"8b"* ]]; then
     DEFAULT_ACTOR_PARAM_OFFLOAD=False
     DEFAULT_ACTOR_OPTIMIZER_OFFLOAD=True
     DEFAULT_REF_PARAM_OFFLOAD=True
+    DEFAULT_ACTOR_CKPT_SAVE_CONTENTS="model,extra"
 else
     MODEL_SIZE_PROFILE="${MODEL_SIZE_PROFILE:-2b_or_smaller}"
     DEFAULT_TRAIN_BATCH_SIZE=32
@@ -115,6 +116,7 @@ else
     DEFAULT_ACTOR_PARAM_OFFLOAD=False
     DEFAULT_ACTOR_OPTIMIZER_OFFLOAD=False
     DEFAULT_REF_PARAM_OFFLOAD=False
+    DEFAULT_ACTOR_CKPT_SAVE_CONTENTS="model,optimizer,extra"
 fi
 
 # --- Resolution params (online degradation) ---
@@ -286,6 +288,13 @@ POST_TRAIN_CLEAN_LOGS="${POST_TRAIN_CLEAN_LOGS:-False}"
 AUTO_TEE_LOG="${AUTO_TEE_LOG:-False}"
 ROLLOUT_AGENT_NUM_WORKERS="${ROLLOUT_AGENT_NUM_WORKERS:-$TRAINER_N_GPUS_PER_NODE}"
 DATA_DATALOADER_NUM_WORKERS="${DATA_DATALOADER_NUM_WORKERS:-0}"
+ACTOR_CKPT_SAVE_CONTENTS="${ACTOR_CKPT_SAVE_CONTENTS:-$DEFAULT_ACTOR_CKPT_SAVE_CONTENTS}"
+ACTOR_CKPT_LOAD_CONTENTS="${ACTOR_CKPT_LOAD_CONTENTS:-$ACTOR_CKPT_SAVE_CONTENTS}"
+TRAINER_TOTAL_TRAINING_STEPS="${TRAINER_TOTAL_TRAINING_STEPS:-}"
+CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE="${CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE:-True}"
+CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD="${CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD:-False}"
+CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE="${CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE:-True}"
+CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE="${CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE:-False}"
 
 case "$TRAINER_RESUME_MODE" in
     auto|disable|resume_path)
@@ -360,6 +369,9 @@ fi
 EXPECTED_TOTAL_STEPS="?"
 if [[ "$EXPECTED_STEPS_PER_EPOCH" =~ ^[0-9]+$ && "$TRAINER_TOTAL_EPOCHS" =~ ^[0-9]+$ ]]; then
     EXPECTED_TOTAL_STEPS=$(( EXPECTED_STEPS_PER_EPOCH * TRAINER_TOTAL_EPOCHS ))
+fi
+if [[ -n "$TRAINER_TOTAL_TRAINING_STEPS" ]]; then
+    EXPECTED_TOTAL_STEPS="$TRAINER_TOTAL_TRAINING_STEPS"
 fi
 EFFECTIVE_ROLLOUT_BATCH_SIZE="?"
 EFFECTIVE_PPO_BATCH_SIZE="?"
@@ -463,6 +475,42 @@ is_truthy() {
             ;;
     esac
 }
+
+csv_to_hydra_list() {
+    local csv="$1"
+    local items item out first
+    IFS=',' read -ra items <<< "$csv"
+    out="["
+    first=true
+    for item in "${items[@]}"; do
+        item="${item//[[:space:]]/}"
+        [[ -z "$item" ]] && continue
+        case "$item" in
+            model|optimizer|extra|hf_model)
+                ;;
+            *)
+                echo "Error: unsupported checkpoint content '${item}' in '${csv}'." >&2
+                echo "Supported: model, optimizer, extra, hf_model" >&2
+                exit 1
+                ;;
+        esac
+        if $first; then
+            first=false
+        else
+            out+=","
+        fi
+        out+="'${item}'"
+    done
+    out+="]"
+    if [[ "$out" == "[]" ]]; then
+        echo "Error: checkpoint content list is empty: '${csv}'." >&2
+        exit 1
+    fi
+    echo "$out"
+}
+
+ACTOR_CKPT_SAVE_CONTENTS_HYDRA="$(csv_to_hydra_list "$ACTOR_CKPT_SAVE_CONTENTS")"
+ACTOR_CKPT_LOAD_CONTENTS_HYDRA="$(csv_to_hydra_list "$ACTOR_CKPT_LOAD_CONTENTS")"
 
 if is_truthy "$OPD_MINI_EVAL_TRACE"; then
     TRAINER_VALIDATION_DATA_DIR="$OPD_MINI_EVAL_GENERATION_DIR"
@@ -756,7 +804,13 @@ if [[ -f "$WATCHER_SCRIPT" ]]; then
     else
         echo "Starting per-experiment ckpt_watcher for ${EXPERIMENT_NAME} ..."
         mkdir -p "$TRAINER_DEFAULT_LOCAL_DIR"
-        OSS_BASE="$OSS_BASE" nohup bash "$WATCHER_SCRIPT" --watch-dir "$TRAINER_DEFAULT_LOCAL_DIR" > /dev/null 2>&1 &
+        env \
+            OSS_BASE="$OSS_BASE" \
+            CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE="$CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE" \
+            CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD="$CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD" \
+            CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE="$CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE" \
+            CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE="$CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE" \
+            nohup bash "$WATCHER_SCRIPT" --watch-dir "$TRAINER_DEFAULT_LOCAL_DIR" > /dev/null 2>&1 &
         echo $! > "$WATCHER_PID_FILE"
         echo "  Watcher PID: $! (monitoring: $TRAINER_DEFAULT_LOCAL_DIR)"
     fi
@@ -827,11 +881,16 @@ echo "Val metric mode:  $VALIDATION_METRIC_MODE"
 echo "Resume mode:      $TRAINER_RESUME_MODE (force fresh=$FORCE_FRESH_START)"
 echo "OSS base:         $OSS_BASE"
 echo "Post-train OSS:   sync=$POST_TRAIN_SYNC_TO_OSS clean_local=$POST_TRAIN_CLEAN_LOCAL"
+echo "Ckpt contents:    save=$ACTOR_CKPT_SAVE_CONTENTS load=$ACTOR_CKPT_LOAD_CONTENTS"
+echo "Ckpt watcher:     prune_optim=$CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE keep_fsdp=$CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD delete_fsdp_on_merge_fail=$CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE"
 echo "Experiment:       $EXPERIMENT_NAME"
 echo "Data:             $TASK_TRAIN_FILE"
 echo "Train samples:    $TRAIN_SAMPLE_COUNT"
 echo "Expected steps/epoch: $EXPECTED_STEPS_PER_EPOCH (drop_last=True)"
 echo "Expected total steps: $EXPECTED_TOTAL_STEPS"
+if [[ -n "$TRAINER_TOTAL_TRAINING_STEPS" ]]; then
+    echo "Step override:    trainer.total_training_steps=$TRAINER_TOTAL_TRAINING_STEPS"
+fi
 echo "Dataset class:    ResOPDDataset ($CUSTOM_DATASET_PATH)"
 echo "Checkpoints:      $TRAINER_DEFAULT_LOCAL_DIR"
 echo "============================================================"
@@ -965,11 +1024,14 @@ set +e
     trainer.test_freq="$TRAINER_TEST_FREQ" \
     trainer.validation_data_dir="$TRAINER_VALIDATION_DATA_DIR" \
     trainer.resume_mode=$TRAINER_RESUME_MODE \
+    trainer.total_training_steps="${TRAINER_TOTAL_TRAINING_STEPS:-null}" \
     +trainer.save_at_epoch_end="${SAVE_AT_EPOCH_END:-True}" \
     +trainer.test_at_epoch_end="${TEST_AT_EPOCH_END:-False}" \
     actor_rollout_ref.rollout.val_kwargs.n="$VAL_N" \
     actor_rollout_ref.rollout.val_kwargs.do_sample="$VAL_DO_SAMPLE" \
     +trainer.validation_metric_mode="$VALIDATION_METRIC_MODE" \
+    actor_rollout_ref.actor.checkpoint.save_contents="$ACTOR_CKPT_SAVE_CONTENTS_HYDRA" \
+    actor_rollout_ref.actor.checkpoint.load_contents="$ACTOR_CKPT_LOAD_CONTENTS_HYDRA" \
     trainer.max_actor_ckpt_to_keep=$TRAINER_MAX_ACTOR_CKPT_TO_KEEP \
     trainer.total_epochs=$TRAINER_TOTAL_EPOCHS \
     trainer.val_before_train=False \

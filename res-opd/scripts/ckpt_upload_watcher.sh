@@ -46,6 +46,12 @@ done
 
 OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
 SCAN_INTERVAL="${SCAN_INTERVAL:-30}"  # seconds between scans
+CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE="${CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE:-True}"
+CKPT_WATCHER_MIN_FREE_MODEL_PCT="${CKPT_WATCHER_MIN_FREE_MODEL_PCT:-60}"
+CKPT_WATCHER_MIN_FREE_FIXED_BYTES="${CKPT_WATCHER_MIN_FREE_FIXED_BYTES:-1073741824}"  # 1 GiB
+CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD="${CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD:-False}"
+CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE="${CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE:-True}"
+CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE="${CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE:-False}"
 
 if [[ -n "$WATCH_DIR" ]]; then
     # Single-experiment mode: monitor only the specified directory
@@ -63,6 +69,17 @@ mkdir -p "$(dirname "$LOG_FILE")"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
+}
+
+is_truthy() {
+    case "${1:-}" in
+        True|true|TRUE|1|yes|YES|y|Y)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
 }
 
 # Map checkpoint dir name pattern to OSS name
@@ -97,17 +114,153 @@ get_oss_name() {
     echo "$oss_name"
 }
 
+file_size_bytes() {
+    local path="$1"
+    stat -c%s "$path" 2>/dev/null || stat -f%z "$path" 2>/dev/null || echo 0
+}
+
+available_bytes() {
+    local path="$1"
+    df -Pk "$path" | awk 'NR==2 {print $4 * 1024}'
+}
+
+sum_actor_model_shard_bytes() {
+    local step_dir="$1"
+    local actor_dir="${step_dir}/actor"
+    local total=0
+    local f size
+    [[ -d "$actor_dir" ]] || {
+        echo 0
+        return 0
+    }
+    while IFS= read -r -d '' f; do
+        size="$(file_size_bytes "$f")"
+        total=$((total + size))
+    done < <(find "$actor_dir" -maxdepth 1 -type f -name 'model_world_size_*_rank_*.pt' -print0)
+    echo "$total"
+}
+
+cleanup_partial_merged_files() {
+    local step_dir="$1"
+    find "$step_dir" -mindepth 1 -maxdepth 1 -type f \( \
+        -name 'model.safetensors' -o \
+        -name 'model.safetensors.sha256' -o \
+        -name '*.safetensors' -o \
+        -name '*.safetensors.index.json' \
+    \) -print -delete >> "$LOG_FILE" 2>&1 || true
+}
+
+cleanup_uploaded_fsdp_shards() {
+    local step_dir="$1"
+    local reason="${2:-uploaded}"
+    if [[ ! -d "$step_dir" ]]; then
+        return 0
+    fi
+    if [[ -d "${step_dir}/actor" || -d "${step_dir}/critic" || -d "${step_dir}/ref" ]]; then
+        log "Cleaning FSDP shards: $(basename "$step_dir") (${reason})"
+        rm -rf "${step_dir}/actor" "${step_dir}/critic" "${step_dir}/ref"
+        log "  Freed FSDP shard dirs from $(basename "$step_dir")"
+    fi
+}
+
+cleanup_old_uploaded_shards() {
+    local step_dir="$1"
+    local ckpt_parent
+    ckpt_parent="$(dirname "$step_dir")"
+    local current_step_num
+    current_step_num="$(basename "$step_dir" | sed 's/global_step_//')"
+    local old_step_dir old_step_num
+    for old_step_dir in "${ckpt_parent}"/global_step_*; do
+        [[ -d "$old_step_dir" ]] || continue
+        [[ "$old_step_dir" == "$step_dir" ]] && continue
+        old_step_num="$(basename "$old_step_dir" | sed 's/global_step_//')"
+        if [[ "$old_step_num" -lt "$current_step_num" && -f "${old_step_dir}/.oss_uploaded" ]]; then
+            cleanup_uploaded_fsdp_shards "$old_step_dir" "older uploaded step"
+        fi
+    done
+}
+
+all_steps_uploaded() {
+    local ckpt_parent="$1"
+    local found=false
+    local step_dir
+    for step_dir in "${ckpt_parent}"/global_step_*; do
+        [[ -d "$step_dir" ]] || continue
+        found=true
+        if [[ ! -f "${step_dir}/.oss_uploaded" ]]; then
+            return 1
+        fi
+    done
+    $found
+}
+
+prune_optimizer_state_for_merge() {
+    local step_dir="$1"
+    local total=0
+    local f size
+    if ! is_truthy "$CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE"; then
+        return 0
+    fi
+    while IFS= read -r -d '' f; do
+        size="$(file_size_bytes "$f")"
+        total=$((total + size))
+        rm -f "$f"
+    done < <(find "$step_dir" -type f \( \
+        -name 'optim_world_size_*_rank_*.pt' -o \
+        -name 'optimizer_world_size_*_rank_*.pt' -o \
+        -name 'optim*.pt' -o \
+        -name '*optimizer*.pt' \
+    \) -print0)
+    if (( total > 0 )); then
+        log "Pruned optimizer shards before merge: $(basename "$step_dir") freed ${total} bytes"
+        touch "${step_dir}/.optimizer_pruned_for_merge"
+    fi
+}
+
+ensure_merge_space() {
+    local step_dir="$1"
+    local model_bytes available required
+    model_bytes="$(sum_actor_model_shard_bytes "$step_dir")"
+    available="$(available_bytes "$step_dir")"
+    required=$((model_bytes * CKPT_WATCHER_MIN_FREE_MODEL_PCT / 100 + CKPT_WATCHER_MIN_FREE_FIXED_BYTES))
+
+    log "Disk preflight for $(basename "$step_dir"): actor_model_shards=${model_bytes} available=${available} required=${required}"
+    if (( model_bytes <= 0 )); then
+        log "ERROR: no actor model shards found under ${step_dir}/actor; cannot merge"
+        return 1
+    fi
+    if (( available < required )); then
+        log "ERROR: insufficient free disk for merge: available=${available}, required=${required}"
+        return 1
+    fi
+    return 0
+}
+
 merge_and_upload() {
     local step_dir="$1"
     local oss_name="$2"
     local step_name=$(basename "$step_dir")
     local oss_step_path="${OSS_BASE}/${oss_name}/${step_name}"
 
-    log "Merging ${oss_name}/${step_name} ..."
-    bash res-opd/scripts/merge_checkpoint.sh "$step_dir" >> "$LOG_FILE" 2>&1
+    cleanup_partial_merged_files "$step_dir"
+    cleanup_old_uploaded_shards "$step_dir"
+    prune_optimizer_state_for_merge "$step_dir"
+    if ! ensure_merge_space "$step_dir"; then
+        log "ERROR: preflight failed for ${step_dir}, skipping merge this scan"
+        return 1
+    fi
 
-    if [[ ! -f "${step_dir}/model.safetensors" ]]; then
-        log "ERROR: merge failed for ${step_dir}, skipping upload"
+    log "Merging ${oss_name}/${step_name} ..."
+    local merge_status=0
+    bash res-opd/scripts/merge_checkpoint.sh "$step_dir" >> "$LOG_FILE" 2>&1 || merge_status=$?
+
+    if [[ "$merge_status" -ne 0 || ! -s "${step_dir}/model.safetensors" ]]; then
+        log "ERROR: merge failed for ${step_dir} (exit=${merge_status}), skipping upload"
+        cleanup_partial_merged_files "$step_dir"
+        if is_truthy "$CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE"; then
+            log "WARNING: CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE=True; deleting local FSDP shards after merge failure."
+            cleanup_uploaded_fsdp_shards "$step_dir" "merge failed and deletion explicitly enabled"
+        fi
         return 1
     fi
 
@@ -121,19 +274,41 @@ merge_and_upload() {
     log "  sha256=${local_sha256}  size=${local_size}"
 
     log "Uploading to ${oss_step_path}/ ..."
-    ossutil cp "$ckpt_file" "${oss_step_path}/model.safetensors" -f >> "$LOG_FILE" 2>&1
+    local upload_status=0
+    ossutil cp "$ckpt_file" "${oss_step_path}/model.safetensors" -f >> "$LOG_FILE" 2>&1 || upload_status=$?
     # Upload sha256 file alongside
-    ossutil cp "$sha256_file" "${oss_step_path}/model.safetensors.sha256" -f >> "$LOG_FILE" 2>&1
-    for f in config.json tokenizer_config.json tokenizer.json chat_template.jinja generation_config.json processor_config.json; do
+    ossutil cp "$sha256_file" "${oss_step_path}/model.safetensors.sha256" -f >> "$LOG_FILE" 2>&1 || upload_status=$?
+    for f in \
+        config.json \
+        tokenizer_config.json \
+        tokenizer.json \
+        chat_template.jinja \
+        generation_config.json \
+        processor_config.json \
+        preprocessor_config.json \
+        image_processor_config.json \
+        video_processor_config.json \
+        special_tokens_map.json \
+        tokenizer.model \
+        merges.txt \
+        vocab.json; do
         if [[ -f "${step_dir}/actor/huggingface/$f" ]]; then
-            ossutil cp "${step_dir}/actor/huggingface/$f" "${oss_step_path}/$f" -f >> "$LOG_FILE" 2>&1
+            ossutil cp "${step_dir}/actor/huggingface/$f" "${oss_step_path}/$f" -f >> "$LOG_FILE" 2>&1 || upload_status=$?
         fi
     done
 
     # Upload eval results if present
     if [[ -d "${step_dir}/eval_results" ]]; then
         log "Uploading eval results for ${step_name} ..."
-        ossutil cp -r "${step_dir}/eval_results/" "${oss_step_path}/eval_results/" -f >> "$LOG_FILE" 2>&1
+        ossutil cp -r "${step_dir}/eval_results/" "${oss_step_path}/eval_results/" -f >> "$LOG_FILE" 2>&1 || upload_status=$?
+    fi
+
+    if [[ "$upload_status" -ne 0 ]]; then
+        log "ERROR: upload failed for ${step_dir} (exit=${upload_status}); keeping model shards for retry"
+        if is_truthy "$CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE"; then
+            cleanup_partial_merged_files "$step_dir"
+        fi
+        return 1
     fi
 
     # Verify upload by checking OSS file size matches local
@@ -142,7 +317,21 @@ merge_and_upload() {
         log "  ✅ Upload verified: OSS size=${oss_size} matches local size=${local_size}"
     else
         log "  ⚠️  Size mismatch! OSS=${oss_size} vs local=${local_size} — re-uploading ..."
-        ossutil cp "$ckpt_file" "${oss_step_path}/model.safetensors" -f >> "$LOG_FILE" 2>&1
+        ossutil cp "$ckpt_file" "${oss_step_path}/model.safetensors" -f >> "$LOG_FILE" 2>&1 || {
+            log "ERROR: re-upload failed for ${step_dir}; keeping model shards for retry"
+            if is_truthy "$CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE"; then
+                cleanup_partial_merged_files "$step_dir"
+            fi
+            return 1
+        }
+        oss_size=$(ossutil stat "${oss_step_path}/model.safetensors" 2>/dev/null | grep "Content-Length" | awk -F: '{gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}')
+        if [[ "$oss_size" != "$local_size" ]]; then
+            log "ERROR: OSS size still mismatched after re-upload: OSS=${oss_size}, local=${local_size}"
+            if is_truthy "$CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE"; then
+                cleanup_partial_merged_files "$step_dir"
+            fi
+            return 1
+        fi
     fi
 
     # Upload traces if present (once per experiment, on first step upload)
@@ -161,34 +350,16 @@ merge_and_upload() {
     touch "${step_dir}/.oss_uploaded"
     log "DONE: ${oss_step_path}/ (sha256=${local_sha256})"
 
-    # Clean up old FSDP shards: keep only the latest uploaded step per experiment
+    # Clean up old uploaded FSDP shards and, by default, the current uploaded
+    # shard dirs too. The merged HF checkpoint is now verified in OSS; keeping
+    # local FSDP shards is only useful for local resume and costs tens of GB.
     local ckpt_parent=$(dirname "$step_dir")
-    local current_step_num=$(basename "$step_dir" | sed 's/global_step_//')
-    local all_uploaded=true
-    for old_step_dir in "${ckpt_parent}"/global_step_*; do
-        [[ -d "$old_step_dir" ]] || continue
-        [[ "$old_step_dir" == "$step_dir" ]] && continue
-        local old_step_num=$(basename "$old_step_dir" | sed 's/global_step_//')
-        # Only clean steps older than current AND already uploaded
-        if [[ "$old_step_num" -lt "$current_step_num" && -f "${old_step_dir}/.oss_uploaded" ]]; then
-            log "Cleaning old FSDP shards: $(basename "$old_step_dir") (uploaded, keeping only latest)"
-            rm -rf "${old_step_dir}/actor" "${old_step_dir}/critic" "${old_step_dir}/ref"
-            # Keep data.pt and .oss_uploaded marker for reference
-            log "  Freed space from $(basename "$old_step_dir")"
-        fi
-        # Track whether any step is NOT yet uploaded
-        if [[ ! -f "${old_step_dir}/.oss_uploaded" ]]; then
-            all_uploaded=false
-        fi
-    done
+    cleanup_old_uploaded_shards "$step_dir"
+    if ! is_truthy "$CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD"; then
+        cleanup_uploaded_fsdp_shards "$step_dir" "current uploaded step"
+    fi
 
-    # If ALL steps in this experiment are uploaded, also clean current step's FSDP shards
-    if $all_uploaded; then
-        log "All steps uploaded for $(basename "$ckpt_parent"), cleaning current FSDP shards: $(basename "$step_dir")"
-        rm -rf "${step_dir}/actor" "${step_dir}/critic" "${step_dir}/ref"
-        log "  Freed space from $(basename "$step_dir")"
-
-        # Clean up local trace directory after all steps are uploaded
+    if all_steps_uploaded "$ckpt_parent"; then
         if [[ -d "$trace_dir" ]]; then
             log "All steps uploaded, cleaning local trace dir: ${trace_dir}"
             rm -rf "$trace_dir"
