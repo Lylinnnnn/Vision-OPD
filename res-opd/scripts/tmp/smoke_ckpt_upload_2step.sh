@@ -69,6 +69,51 @@ count_files() {
     find "$path" -type f "$@" 2>/dev/null | wc -l | tr -d '[:space:]'
 }
 
+count_csv_entries() {
+    local csv="${1:-}"
+    csv="${csv//[[:space:]]/}"
+    if [[ -z "$csv" ]]; then
+        echo ""
+        return 0
+    fi
+    echo "$(( $(awk -F, '{print NF}' <<< "$csv") ))"
+}
+
+infer_num_gpus() {
+    if [[ -n "${SMOKE_NUM_GPUS:-}" ]]; then
+        echo "$SMOKE_NUM_GPUS"
+        return 0
+    fi
+    if [[ -n "${TRAINER_N_GPUS_PER_NODE:-}" ]]; then
+        echo "$TRAINER_N_GPUS_PER_NODE"
+        return 0
+    fi
+    if [[ -n "${GPU_LIST:-}" ]]; then
+        count_csv_entries "$GPU_LIST"
+        return 0
+    fi
+    if [[ -n "${CUDA_VISIBLE_DEVICES:-}" && "${CUDA_VISIBLE_DEVICES}" != "NoDevFiles" ]]; then
+        count_csv_entries "$CUDA_VISIBLE_DEVICES"
+        return 0
+    fi
+    echo 8
+}
+
+SMOKE_NUM_GPUS="$(infer_num_gpus)"
+SMOKE_ROLLOUT_N="${ROLLOUT_N:-1}"
+SMOKE_MIN_PPO_MINI_BATCH_SIZE="$(( (SMOKE_NUM_GPUS + SMOKE_ROLLOUT_N - 1) / SMOKE_ROLLOUT_N ))"
+SMOKE_PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-$SMOKE_MIN_PPO_MINI_BATCH_SIZE}"
+SMOKE_TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-$SMOKE_PPO_MINI_BATCH_SIZE}"
+if (( SMOKE_PPO_MINI_BATCH_SIZE < SMOKE_MIN_PPO_MINI_BATCH_SIZE )); then
+    log "WARNING: PPO_MINI_BATCH_SIZE=${SMOKE_PPO_MINI_BATCH_SIZE} is too small for ${SMOKE_NUM_GPUS} GPU(s) and rollout_n=${SMOKE_ROLLOUT_N}; using ${SMOKE_MIN_PPO_MINI_BATCH_SIZE}."
+    SMOKE_PPO_MINI_BATCH_SIZE="$SMOKE_MIN_PPO_MINI_BATCH_SIZE"
+fi
+if (( SMOKE_TRAIN_BATCH_SIZE < SMOKE_PPO_MINI_BATCH_SIZE )); then
+    log "WARNING: TRAIN_BATCH_SIZE=${SMOKE_TRAIN_BATCH_SIZE} is smaller than PPO_MINI_BATCH_SIZE=${SMOKE_PPO_MINI_BATCH_SIZE}; using ${SMOKE_PPO_MINI_BATCH_SIZE}."
+    SMOKE_TRAIN_BATCH_SIZE="$SMOKE_PPO_MINI_BATCH_SIZE"
+fi
+SMOKE_NORMALIZED_PPO_MINI_BATCH_SIZE="$(( SMOKE_PPO_MINI_BATCH_SIZE * SMOKE_ROLLOUT_N / SMOKE_NUM_GPUS ))"
+
 OSS_NAME="$(get_oss_name "$EXPERIMENT_NAME")"
 OSS_STEP_PATH="${OSS_BASE%/}/${OSS_NAME}/${STEP}"
 
@@ -77,39 +122,43 @@ log "2-step checkpoint upload smoke test"
 log "Experiment: ${EXPERIMENT_NAME}"
 log "Model:      ${MODEL_PATH}"
 log "OSS step:   ${OSS_STEP_PATH}"
+log "GPUs:       ${SMOKE_NUM_GPUS}"
+log "Batch:      train=${SMOKE_TRAIN_BATCH_SIZE}, ppo_mini=${SMOKE_PPO_MINI_BATCH_SIZE}, rollout_n=${SMOKE_ROLLOUT_N}, normalized_ppo_mini=${SMOKE_NORMALIZED_PPO_MINI_BATCH_SIZE}"
 log "Log file:   ${LOG_FILE}"
 log "============================================================"
 
-log "[1/4] Running 2-step training and checkpoint upload ..."
+log "[1/4] Running 3-step training and validating the step-2 periodic checkpoint ..."
 env \
     MODEL_PATH="$MODEL_PATH" \
     MODEL_PROFILE="$MODEL_PROFILE" \
     EXPERIMENT_NAME="$EXPERIMENT_NAME" \
     FORCE_FRESH_START=True \
     TRAINER_RESUME_MODE=disable \
+    TRAINER_N_GPUS_PER_NODE="$SMOKE_NUM_GPUS" \
     DATASET_VERSION="${DATASET_VERSION:-full}" \
     TOTAL_EPOCHS=1 \
-    TRAINER_TOTAL_TRAINING_STEPS=2 \
+    TRAINER_TOTAL_TRAINING_STEPS=3 \
     SAVE_FREQ=2 \
     SAVE_AT_EPOCH_END=False \
     TEST_AT_EPOCH_END=False \
     TEST_FREQ=-1 \
     OPD_MINI_EVAL_TRACE=False \
-    TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-1}" \
-    PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-1}" \
-    ROLLOUT_N="${ROLLOUT_N:-1}" \
+    TRAIN_BATCH_SIZE="$SMOKE_TRAIN_BATCH_SIZE" \
+    PPO_MINI_BATCH_SIZE="$SMOKE_PPO_MINI_BATCH_SIZE" \
+    ROLLOUT_N="$SMOKE_ROLLOUT_N" \
     MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-128}" \
     ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${ROLLOUT_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-1}" \
     REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU="${REF_LOGPROB_MICRO_BATCH_SIZE_PER_GPU:-1}" \
     POST_TRAIN_SYNC_TO_OSS=True \
     POST_TRAIN_SYNC_ON_FAILURE=True \
     POST_TRAIN_CLEAN_LOCAL=False \
-    POST_TRAIN_UPLOAD_WAIT_SECONDS="${POST_TRAIN_UPLOAD_WAIT_SECONDS:-1800}" \
+    POST_TRAIN_UPLOAD_WAIT_SECONDS="${POST_TRAIN_UPLOAD_WAIT_SECONDS:-900}" \
     ACTOR_CKPT_SAVE_CONTENTS="${ACTOR_CKPT_SAVE_CONTENTS:-model,extra}" \
     ACTOR_CKPT_LOAD_CONTENTS="${ACTOR_CKPT_LOAD_CONTENTS:-model,extra}" \
     CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE=True \
     CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD=False \
     CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE=False \
+    TRAINER_LOGGER="${TRAINER_LOGGER:-[\"console\"]}" \
     AUTO_TEE_LOG=True \
     bash res-opd/scripts/run_res_opd_default.sh 2>&1 | tee -a "$LOG_FILE"
 
