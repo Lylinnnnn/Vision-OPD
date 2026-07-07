@@ -140,6 +140,67 @@ sum_actor_model_shard_bytes() {
     echo "$total"
 }
 
+count_actor_model_shards() {
+    local step_dir="$1"
+    local actor_dir="${step_dir}/actor"
+    if [[ ! -d "$actor_dir" ]]; then
+        echo 0
+        return 0
+    fi
+    find "$actor_dir" -maxdepth 1 -type f -name 'model_world_size_*_rank_*.pt' | wc -l | tr -d '[:space:]'
+}
+
+expected_actor_world_size() {
+    local step_dir="$1"
+    local fsdp_config="${step_dir}/actor/fsdp_config.json"
+    if [[ ! -f "$fsdp_config" ]]; then
+        echo ""
+        return 0
+    fi
+    grep -o '"world_size"[[:space:]]*:[[:space:]]*[0-9]\+' "$fsdp_config" 2>/dev/null \
+        | grep -o '[0-9]\+' \
+        | head -n 1 || true
+}
+
+fsdp_checkpoint_missing_reason() {
+    local step_dir="$1"
+    local actor_dir="${step_dir}/actor"
+    local hf_config="${actor_dir}/huggingface/config.json"
+    local fsdp_config="${actor_dir}/fsdp_config.json"
+    local shard_count expected_world_size
+
+    if [[ ! -f "${step_dir}/data.pt" ]]; then
+        echo "missing data.pt"
+        return 0
+    fi
+    if [[ ! -d "$actor_dir" ]]; then
+        echo "missing actor/"
+        return 0
+    fi
+    if [[ ! -f "$fsdp_config" ]]; then
+        echo "missing actor/fsdp_config.json"
+        return 0
+    fi
+    if [[ ! -f "$hf_config" ]]; then
+        echo "missing actor/huggingface/config.json"
+        return 0
+    fi
+
+    shard_count="$(count_actor_model_shards "$step_dir")"
+    if [[ "$shard_count" == "0" ]]; then
+        echo "missing actor model shards"
+        return 0
+    fi
+
+    expected_world_size="$(expected_actor_world_size "$step_dir")"
+    if [[ -n "$expected_world_size" && "$shard_count" -lt "$expected_world_size" ]]; then
+        echo "only ${shard_count}/${expected_world_size} actor model shards present"
+        return 0
+    fi
+
+    return 1
+}
+
 cleanup_partial_merged_files() {
     local step_dir="$1"
     find "$step_dir" -mindepth 1 -maxdepth 1 -type f \( \
@@ -241,6 +302,12 @@ merge_and_upload() {
     local oss_name="$2"
     local step_name=$(basename "$step_dir")
     local oss_step_path="${OSS_BASE}/${oss_name}/${step_name}"
+    local missing_reason
+
+    if missing_reason="$(fsdp_checkpoint_missing_reason "$step_dir")"; then
+        log "Checkpoint not ready, skip merge: ${step_name} (${missing_reason})"
+        return 1
+    fi
 
     cleanup_partial_merged_files "$step_dir"
     cleanup_old_uploaded_shards "$step_dir"
@@ -395,11 +462,16 @@ if [[ -n "$WATCH_DIR" ]]; then
                 continue
             fi
 
-            # Check if FSDP checkpoint is complete (actor dir + data.pt exist)
-            if [[ -d "${step_dir}/actor" && -f "${step_dir}/data.pt" ]]; then
-                log "Found FSDP checkpoint: ${EXPERIMENT_NAME}/$(basename "$step_dir")"
-                merge_and_upload "$step_dir" "$oss_name"
+            missing_reason="$(fsdp_checkpoint_missing_reason "$step_dir")"
+            if [[ "$?" -eq 0 ]]; then
+                if [[ -d "${step_dir}/actor" || -f "${step_dir}/data.pt" ]]; then
+                    log "Checkpoint not ready: ${EXPERIMENT_NAME}/$(basename "$step_dir") (${missing_reason})"
+                fi
+                continue
             fi
+
+            log "Found FSDP checkpoint: ${EXPERIMENT_NAME}/$(basename "$step_dir")"
+            merge_and_upload "$step_dir" "$oss_name"
         done
 
         if $ONCE; then
@@ -436,11 +508,16 @@ else
                     continue
                 fi
 
-                # Check if FSDP checkpoint is complete (actor dir + data.pt exist)
-                if [[ -d "${step_dir}/actor" && -f "${step_dir}/data.pt" ]]; then
-                    log "Found FSDP checkpoint: $(basename "$ckpt_dir")/$(basename "$step_dir")"
-                    merge_and_upload "$step_dir" "$oss_name"
+                missing_reason="$(fsdp_checkpoint_missing_reason "$step_dir")"
+                if [[ "$?" -eq 0 ]]; then
+                    if [[ -d "${step_dir}/actor" || -f "${step_dir}/data.pt" ]]; then
+                        log "Checkpoint not ready: $(basename "$ckpt_dir")/$(basename "$step_dir") (${missing_reason})"
+                    fi
+                    continue
                 fi
+
+                log "Found FSDP checkpoint: $(basename "$ckpt_dir")/$(basename "$step_dir")"
+                merge_and_upload "$step_dir" "$oss_name"
             done
         done
 

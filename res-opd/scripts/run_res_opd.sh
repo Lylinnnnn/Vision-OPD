@@ -105,6 +105,7 @@ if [[ "$MODEL_NAME_LC" == *"8b"* ]]; then
     DEFAULT_ACTOR_OPTIMIZER_OFFLOAD=True
     DEFAULT_REF_PARAM_OFFLOAD=True
     DEFAULT_ACTOR_CKPT_SAVE_CONTENTS="model,extra"
+    DEFAULT_MAX_ACTOR_CKPT_TO_KEEP=2
 else
     MODEL_SIZE_PROFILE="${MODEL_SIZE_PROFILE:-2b_or_smaller}"
     DEFAULT_TRAIN_BATCH_SIZE=32
@@ -117,6 +118,7 @@ else
     DEFAULT_ACTOR_OPTIMIZER_OFFLOAD=False
     DEFAULT_REF_PARAM_OFFLOAD=False
     DEFAULT_ACTOR_CKPT_SAVE_CONTENTS="model,optimizer,extra"
+    DEFAULT_MAX_ACTOR_CKPT_TO_KEEP=1
 fi
 
 # --- Resolution params (online degradation) ---
@@ -274,8 +276,8 @@ TRAINER_N_GPUS_PER_NODE="${TRAINER_N_GPUS_PER_NODE:-8}"
 TRAINER_NNODES="${WORLD_SIZE:-1}"
 TRAINER_SAVE_FREQ="${SAVE_FREQ:-50}"
 TRAINER_TOTAL_EPOCHS="${TOTAL_EPOCHS:-1}"
-TRAINER_MAX_ACTOR_CKPT_TO_KEEP=1
-TRAINER_LOGGER='["console","swanlab"]'
+TRAINER_MAX_ACTOR_CKPT_TO_KEEP="${TRAINER_MAX_ACTOR_CKPT_TO_KEEP:-$DEFAULT_MAX_ACTOR_CKPT_TO_KEEP}"
+TRAINER_LOGGER="${TRAINER_LOGGER:-[\"console\",\"swanlab\"]}"
 TRAINER_RESUME_MODE="${TRAINER_RESUME_MODE:-auto}"  # auto / disable / resume_path
 FORCE_FRESH_START="${FORCE_FRESH_START:-False}"
 OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
@@ -574,15 +576,85 @@ get_oss_name() {
     echo "ResOPD_${suffix//-/_}${epoch_tag}"
 }
 
+count_actor_model_shards_for_upload() {
+    local step_dir="$1"
+    local actor_dir="${step_dir}/actor"
+    if [[ ! -d "$actor_dir" ]]; then
+        echo 0
+        return 0
+    fi
+    find "$actor_dir" -maxdepth 1 -type f -name 'model_world_size_*_rank_*.pt' | wc -l | tr -d '[:space:]'
+}
+
+expected_actor_world_size_for_upload() {
+    local step_dir="$1"
+    local fsdp_config="${step_dir}/actor/fsdp_config.json"
+    if [[ ! -f "$fsdp_config" ]]; then
+        echo ""
+        return 0
+    fi
+    grep -o '"world_size"[[:space:]]*:[[:space:]]*[0-9]\+' "$fsdp_config" 2>/dev/null \
+        | grep -o '[0-9]\+' \
+        | head -n 1 || true
+}
+
+checkpoint_upload_missing_reason() {
+    local step_dir="$1"
+    local actor_dir="${step_dir}/actor"
+    local fsdp_config="${actor_dir}/fsdp_config.json"
+    local hf_config="${actor_dir}/huggingface/config.json"
+    local shard_count expected_world_size
+
+    if [[ ! -f "${step_dir}/data.pt" ]]; then
+        echo "missing data.pt"
+        return 0
+    fi
+    if [[ ! -d "$actor_dir" ]]; then
+        echo "missing actor/"
+        return 0
+    fi
+    if [[ ! -f "$fsdp_config" ]]; then
+        echo "missing actor/fsdp_config.json"
+        return 0
+    fi
+    if [[ ! -f "$hf_config" ]]; then
+        echo "missing actor/huggingface/config.json"
+        return 0
+    fi
+
+    shard_count="$(count_actor_model_shards_for_upload "$step_dir")"
+    if [[ "$shard_count" == "0" ]]; then
+        echo "missing actor model shards"
+        return 0
+    fi
+
+    expected_world_size="$(expected_actor_world_size_for_upload "$step_dir")"
+    if [[ -n "$expected_world_size" && "$shard_count" -lt "$expected_world_size" ]]; then
+        echo "only ${shard_count}/${expected_world_size} actor model shards present"
+        return 0
+    fi
+
+    return 1
+}
+
 all_checkpoint_steps_uploaded() {
-    local step_dir
+    local step_dir found_uploaded=false missing_reason=""
+    local found=false
     for step_dir in "${TRAINER_DEFAULT_LOCAL_DIR}"/global_step_*; do
         [[ -d "$step_dir" ]] || continue
-        if [[ ! -f "${step_dir}/.oss_uploaded" ]]; then
+        found=true
+        if [[ -f "${step_dir}/.oss_uploaded" ]]; then
+            found_uploaded=true
+            continue
+        fi
+        if ! missing_reason="$(checkpoint_upload_missing_reason "$step_dir")"; then
             return 1
         fi
+        if [[ -d "${step_dir}/actor" || -f "${step_dir}/data.pt" ]]; then
+            echo "Skipping non-uploadable checkpoint step during post-train wait: $(basename "$step_dir") (${missing_reason})"
+        fi
     done
-    return 0
+    $found && $found_uploaded
 }
 
 wait_for_checkpoint_uploads() {
@@ -675,7 +747,12 @@ sync_training_artifacts_to_oss() {
         if ! wait_for_checkpoint_uploads "$POST_TRAIN_UPLOAD_WAIT_SECONDS"; then
             echo "Checkpoint watcher did not finish before timeout; running one-shot upload scan."
             OSS_BASE="$OSS_BASE" bash "$WATCHER_SCRIPT" --watch-dir "$TRAINER_DEFAULT_LOCAL_DIR" --once
-            wait_for_checkpoint_uploads 300
+            if ! wait_for_checkpoint_uploads 300; then
+                echo "ERROR: checkpoint upload did not complete after one-shot scan." >&2
+                echo "Checkpoint dir: $TRAINER_DEFAULT_LOCAL_DIR" >&2
+                echo "Watcher log: ${RES_OPD_ROOT}/logs/ckpt_watcher_${EXPERIMENT_NAME}.log" >&2
+                return 1
+            fi
         fi
     else
         echo "WARNING: ckpt_upload_watcher.sh not found; checkpoint upload cannot be finalized." >&2

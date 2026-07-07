@@ -25,13 +25,14 @@ MODEL_BASENAME="$(basename "$MODEL_PATH")"
 MODEL_TAG="$(printf '%s' "$MODEL_BASENAME" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-')"
 SMOKE_STAMP="${SMOKE_STAMP:-$(date '+%Y%m%d%H%M%S')}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-Res-OPD-smoke-${MODEL_TAG}-ckpt-upload-2step-${SMOKE_STAMP}}"
-STEP="${SMOKE_STEP:-global_step_2}"
+REQUESTED_STEP="${SMOKE_STEP:-}"
+STEP="${REQUESTED_STEP:-auto}"
 LOG_DIR="${RES_OPD_ROOT}/logs"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/smoke_ckpt_upload_2step_${SMOKE_STAMP}.log}"
 TRAIN_LOG="${LOG_DIR}/${EXPERIMENT_NAME}.log"
 WATCHER_LOG="${LOG_DIR}/ckpt_watcher_${EXPERIMENT_NAME}.log"
 CKPT_DIR="${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
-STEP_DIR="${CKPT_DIR}/${STEP}"
+STEP_DIR=""
 RESULT_VERSION_TAG="${RESULT_VERSION_TAG:-smoke_ckpt_upload}"
 
 mkdir -p "$LOG_DIR"
@@ -67,6 +68,25 @@ count_files() {
         return 0
     fi
     find "$path" -type f "$@" 2>/dev/null | wc -l | tr -d '[:space:]'
+}
+
+select_uploaded_step() {
+    if [[ -n "$REQUESTED_STEP" ]]; then
+        echo "$REQUESTED_STEP"
+        return 0
+    fi
+
+    local step_dir selected=""
+    while IFS= read -r step_dir; do
+        if [[ -f "${step_dir}/.oss_uploaded" ]]; then
+            selected="$(basename "$step_dir")"
+        fi
+    done < <(find "$CKPT_DIR" -mindepth 1 -maxdepth 1 -type d -name 'global_step_*' 2>/dev/null | sort -V)
+
+    if [[ -z "$selected" ]]; then
+        return 1
+    fi
+    echo "$selected"
 }
 
 count_csv_entries() {
@@ -121,7 +141,13 @@ log "============================================================"
 log "2-step checkpoint upload smoke test"
 log "Experiment: ${EXPERIMENT_NAME}"
 log "Model:      ${MODEL_PATH}"
-log "OSS step:   ${OSS_STEP_PATH}"
+if [[ -n "$REQUESTED_STEP" ]]; then
+    log "Step:       ${REQUESTED_STEP}"
+    log "OSS step:   ${OSS_STEP_PATH}"
+else
+    log "Step:       auto (latest uploaded checkpoint after training)"
+    log "OSS prefix: ${OSS_BASE%/}/${OSS_NAME}"
+fi
 log "GPUs:       ${SMOKE_NUM_GPUS}"
 log "Batch:      train=${SMOKE_TRAIN_BATCH_SIZE}, ppo_mini=${SMOKE_PPO_MINI_BATCH_SIZE}, rollout_n=${SMOKE_ROLLOUT_N}, normalized_ppo_mini=${SMOKE_NORMALIZED_PPO_MINI_BATCH_SIZE}"
 log "Log file:   ${LOG_FILE}"
@@ -162,7 +188,17 @@ env \
     AUTO_TEE_LOG=True \
     bash res-opd/scripts/run_res_opd_default.sh 2>&1 | tee -a "$LOG_FILE"
 
+if ! STEP="$(select_uploaded_step)"; then
+    log "ERROR: no uploaded checkpoint step found under ${CKPT_DIR}"
+    find "$CKPT_DIR" -maxdepth 2 -type f \( -name '.oss_uploaded' -o -name 'model.safetensors' -o -name 'config.json' \) -print 2>/dev/null | tee -a "$LOG_FILE" || true
+    [[ -f "$WATCHER_LOG" ]] && tail -n 120 "$WATCHER_LOG" | tee -a "$LOG_FILE"
+    exit 1
+fi
+STEP_DIR="${CKPT_DIR}/${STEP}"
+OSS_STEP_PATH="${OSS_BASE%/}/${OSS_NAME}/${STEP}"
+
 log "[2/4] Verifying local checkpoint cleanup state ..."
+log "Selected step: ${STEP}"
 if [[ ! -d "$STEP_DIR" ]]; then
     log "ERROR: expected checkpoint step dir not found: $STEP_DIR"
     exit 1
