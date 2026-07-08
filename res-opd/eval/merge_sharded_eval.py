@@ -20,6 +20,7 @@ from robust_chair_analysis import (  # noqa: E402
     parse_official_synonyms,
 )
 from eval_chair import extract_final_response_text as chair_final_text  # noqa: E402
+from eval_chair import record_final_answer_available  # noqa: E402
 from eval_pope import compute_metrics as pope_compute_metrics  # noqa: E402
 from eval_pope import parse_benchmarks as parse_pope_benchmarks  # noqa: E402
 from eval_amber import parse_official_stdout  # noqa: E402
@@ -147,12 +148,34 @@ def merge_chair(args, shard_dirs):
     final_path = args.final_output_dir / "eval_results.jsonl"
     write_jsonl(final_path, rows)
 
-    scored_rows = [
+    strict_final_answer = any(
+        row.get("raw_generated_caption") is not None
+        or row.get("thinking_status") is not None
+        or row.get("final_answer_available") is not None
+        for row in rows
+    )
+    candidate_rows = [
         row for row in rows
         if row.get("image_id") is not None
         and row.get("generated_caption")
         and not str(row.get("generated_caption")).startswith("[ERROR]")
     ]
+    scored_rows = [
+        row for row in candidate_rows
+        if record_final_answer_available(row, strict_final_answer)
+    ]
+    invalid_rows = [
+        row for row in candidate_rows
+        if not record_final_answer_available(row, strict_final_answer)
+    ]
+    invalid_final_answer = len(invalid_rows)
+    unclosed_thinking = len(
+        [
+            row for row in invalid_rows
+            if row.get("thinking_status") == "unclosed"
+            or "</think>" not in str(row.get("raw_generated_caption") or row.get("generated_caption") or "")
+        ]
+    )
     mscoco_objects, inverse_synonym_dict = parse_official_synonyms()
     double_word_dict = build_double_word_dict()
     eval_records = [
@@ -173,6 +196,11 @@ def merge_chair(args, shard_dirs):
     metrics.update(
         {
             "num_samples": len(scored_rows),
+            "total_results": len(rows),
+            "invalid_final_answer": invalid_final_answer,
+            "unclosed_thinking": unclosed_thinking,
+            "final_answer_valid_rate": len(scored_rows) / len(rows) if rows else 0.0,
+            "strict_final_answer": strict_final_answer,
             "merged_from_shards": True,
             "shard_count": len(shard_dirs),
         }

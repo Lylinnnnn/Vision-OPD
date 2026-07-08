@@ -59,6 +59,8 @@ PROMPT_TEXT = (
     "their spatial relationships, colors, sizes, and any text or fine details."
 )
 
+THINK_CLOSE = "</think>"
+
 
 def extract_final_response_text(text):
     """Return the final answer/caption after an optional thinking block."""
@@ -76,6 +78,46 @@ def extract_final_response_text(text):
             final = final.split(marker, 1)[1].strip()
             break
     return final
+
+
+def finalize_generation(raw_text, final_answer_only=False):
+    """Return JSON fields for a raw generation, preserving unclosed thinking."""
+    raw_text = raw_text or ""
+    result = {
+        "generated_caption": raw_text,
+        "thinking_status": "not_requested",
+        "final_answer_available": True,
+    }
+    if not final_answer_only:
+        return result
+
+    result["raw_generated_caption"] = raw_text
+    if THINK_CLOSE not in raw_text:
+        result["thinking_status"] = "unclosed"
+        result["final_answer_available"] = False
+        return result
+
+    final_text = extract_final_response_text(raw_text)
+    result["generated_caption"] = final_text
+    result["thinking_status"] = "closed"
+    result["final_answer_available"] = bool(final_text.strip())
+    return result
+
+
+def record_final_answer_available(record, final_answer_only=False):
+    """Infer final-answer availability for old and new CHAIR result rows."""
+    if not final_answer_only:
+        return True
+    explicit = record.get("final_answer_available")
+    if explicit is not None:
+        return bool(explicit)
+    raw = str(record.get("raw_generated_caption", "") or "")
+    generated = str(record.get("generated_caption", "") or "")
+    if THINK_CLOSE in raw or THINK_CLOSE in generated:
+        return True
+    # Legacy final-answer-only rows without a closed tag are ambiguous. Treat
+    # them as invalid for CHAIR instead of silently scoring reasoning traces.
+    return False
 
 
 def infer_student_px_from_path(path_str):
@@ -176,7 +218,13 @@ def load_existing_results(eval_results_path):
                 image_id = record.get("image_id")
                 caption = record.get("generated_caption", "")
                 # Skip empty or error captions
-                if image_id is not None and caption and not caption.startswith("[ERROR]"):
+                if (
+                    image_id is not None
+                    and caption
+                    and not caption.startswith("[ERROR]")
+                    and record.get("thinking_status") != "unclosed"
+                    and record.get("final_answer_available") is not False
+                ):
                     completed[image_id] = record
             except json.JSONDecodeError:
                 continue
@@ -324,12 +372,7 @@ def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
             response = client.chat.completions.create(**request_kwargs)
             choice = response.choices[0]
             raw_caption = choice.message.content or ""
-            final_caption = extract_final_response_text(raw_caption) if final_answer_only else raw_caption
-            result = {
-                "generated_caption": final_caption,
-            }
-            if raw_caption != final_caption:
-                result["raw_generated_caption"] = raw_caption
+            result = finalize_generation(raw_caption, final_answer_only)
             if save_logprobs:
                 result.update(serialize_api_logprobs(choice))
             return result
@@ -389,10 +432,7 @@ def generate_via_model(model, processor, image_path, prompt, max_new_tokens,
     generated_text = processor.decode(generated_ids,
                                       skip_special_tokens=True)
 
-    final_text = extract_final_response_text(generated_text) if final_answer_only else generated_text
-    result = {"generated_caption": final_text}
-    if generated_text != final_text:
-        result["raw_generated_caption"] = generated_text
+    result = finalize_generation(generated_text, final_answer_only)
     if save_logprobs:
         token_logprobs = []
         serialized_top_logprobs = []
@@ -599,7 +639,14 @@ def main():
     double_word_dict = build_double_word_dict()
 
     eval_records = []
+    invalid_final_answer = 0
+    unclosed_thinking = 0
     for r in results_list:
+        if not record_final_answer_available(r, args.final_answer_only):
+            invalid_final_answer += 1
+            if args.final_answer_only:
+                unclosed_thinking += 1
+            continue
         eval_records.append({
             "image_id": r["image_id"],
             "generated_text": extract_final_response_text(r["generated_caption"]),
@@ -616,7 +663,9 @@ def main():
     print("\n" + "=" * 70)
     print("  CHAIR Evaluation Results")
     print("=" * 70)
-    print(f"  Samples:    {len(results_list)}")
+    print(f"  Samples:    {len(eval_records)} scored / {len(results_list)} total")
+    if invalid_final_answer:
+        print(f"  Invalid final answers skipped: {invalid_final_answer}")
     for key, val in metrics.items():
         if isinstance(val, float):
             print(f"  {key:12s}: {val:.4f}")
@@ -624,7 +673,13 @@ def main():
 
     # Save metrics
     metrics_path = os.path.join(args.output_dir, "chair_metrics.json")
-    metrics["num_samples"] = len(results_list)
+    metrics["num_samples"] = len(eval_records)
+    metrics["total_results"] = len(results_list)
+    metrics["invalid_final_answer"] = invalid_final_answer
+    metrics["unclosed_thinking"] = unclosed_thinking
+    metrics["final_answer_valid_rate"] = (
+        len(eval_records) / len(results_list) if results_list else 0.0
+    )
     metrics["student_px"] = args.student_px
     metrics["target_px"] = args.target_px
     metrics["degradation_mode"] = args.degradation_mode
