@@ -129,8 +129,10 @@ export LR="${LR:-1e-6}"
 export SAVE_FREQ="${SAVE_FREQ:-50}"
 
 # --- Mini eval ---
-# Mini eval: 100 samples from val2017 every 50 optimizer steps by default.
-export OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-True}"
+# Keep long 8B reruns focused on training/checkpointing.  Set
+# OPD_MINI_EVAL_TRACE=True explicitly when step-wise validation generations are
+# needed.
+export OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-False}"
 export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-50}"
 export OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-100}"
 export VAL_N="${VAL_N:-1}"
