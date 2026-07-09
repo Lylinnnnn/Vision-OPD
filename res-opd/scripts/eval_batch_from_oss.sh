@@ -27,6 +27,12 @@
 #   - Omit --step to evaluate every OSS global_step_* checkpoint serially.
 #   - Pass --step global_step_50 (or --step 50) to evaluate one checkpoint.
 #
+# Experiment name behavior:
+#   - Pass --experiment-names / --oss-names for explicit paths.
+#   - Omit both to construct one experiment name from current protocol params
+#     such as MODEL_PATH, STUDENT_RATIO, TEACHER_RATIO, TEACHER_MODE, ALPHA,
+#     TRAIN_BATCH_SIZE, ROLLOUT_N, OPD_SELECTIVE_WEIGHT, and DATASET_VERSION.
+#
 # eval-mode:
 #   chair,pope       Default local COCO eval.
 #   chair / pope     Run one local COCO eval.
@@ -100,6 +106,18 @@ EVAL_SHARD_COUNT="${EVAL_SHARD_COUNT:-8}"
 GPU_LIST="${GPU_LIST:-${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}}"
 SHARDED_EVAL_KEEP_SHARDS="${SHARDED_EVAL_KEEP_SHARDS:-False}"
 PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
+MODEL_PATH="${MODEL_PATH:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct}"
+MODEL_NAME="${MODEL_NAME:-}"
+TOTAL_EPOCHS="${TOTAL_EPOCHS:-}"
+TEACHER_MODE="${TEACHER_MODE:-}"
+ALPHA="${ALPHA:-}"
+TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-}"
+ROLLOUT_N="${ROLLOUT_N:-}"
+OPD_SELECTIVE_WEIGHT="${OPD_SELECTIVE_WEIGHT:-}"
+OPD_SELECTIVE_WEIGHT_MODE="${OPD_SELECTIVE_WEIGHT_MODE:-}"
+OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE="${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE:-}"
+OPD_RISK_MASK_TOP_P="${OPD_RISK_MASK_TOP_P:-}"
+OPD_TOKEN_MASK_PCT="${OPD_TOKEN_MASK_PCT:-}"
 VLLM_PORT_CLEANUP="${VLLM_PORT_CLEANUP:-True}"
 VLLM_PORT_CLEANUP_WAIT="${VLLM_PORT_CLEANUP_WAIT:-20}"
 EVAL_MAX_TOKENS="${EVAL_MAX_TOKENS:-8192}"
@@ -201,6 +219,18 @@ while [[ $# -gt 0 ]]; do
         --degradation-mode) DEGRADATION_MODE="$2"; shift 2 ;;
         --student-ratio) STUDENT_RATIO="$2"; shift 2 ;;
         --teacher-ratio) TEACHER_RATIO="$2"; shift 2 ;;
+        --model-path) MODEL_PATH="$2"; shift 2 ;;
+        --model-name) MODEL_NAME="$2"; shift 2 ;;
+        --total-epochs) TOTAL_EPOCHS="$2"; shift 2 ;;
+        --teacher-mode) TEACHER_MODE="$2"; shift 2 ;;
+        --alpha) ALPHA="$2"; shift 2 ;;
+        --train-batch-size) TRAIN_BATCH_SIZE="$2"; shift 2 ;;
+        --rollout-n) ROLLOUT_N="$2"; shift 2 ;;
+        --opd-selective-weight) OPD_SELECTIVE_WEIGHT="$2"; shift 2 ;;
+        --opd-selective-weight-mode) OPD_SELECTIVE_WEIGHT_MODE="$2"; shift 2 ;;
+        --opd-selective-weight-uncertainty-mode) OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE="$2"; shift 2 ;;
+        --opd-risk-mask-top-p) OPD_RISK_MASK_TOP_P="$2"; shift 2 ;;
+        --opd-token-mask-pct) OPD_TOKEN_MASK_PCT="$2"; shift 2 ;;
         --version-tag) VERSION_TAG="$2"; shift 2 ;;
         --result-version-tag) RESULT_VERSION_TAG="$2"; shift 2 ;;
         --eval-mode)  EVAL_MODE="$2"; shift 2 ;;
@@ -259,12 +289,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ ${#OSS_NAMES[@]} -eq 0 && ${#EXPERIMENT_NAMES[@]} -eq 0 ]]; then
-    echo "Error: --experiment-names or --oss-names is required" >&2
-    echo "Usage: $0 --experiment-names <exp1> [exp2] ... [--step STEP] [--student-ratio RATIO] [--degradation-mode original] [--version-tag TAG]" >&2
-    exit 1
-fi
-
 case "${DEGRADATION_MODE:-original}" in
     original)
         ;;
@@ -277,6 +301,107 @@ esac
 is_truthy() {
     [[ "${1:-}" == "True" || "${1:-}" == "true" || "${1:-}" == "1" || "${1:-}" == "yes" || "${1:-}" == "Y" || "${1:-}" == "y" ]]
 }
+
+format_prob_tag() {
+    "$PYTHON_BIN" - "$1" <<'PY' 2>/dev/null || echo "${1//./p}"
+import sys
+print(str(int(round(float(sys.argv[1]) * 100))))
+PY
+}
+
+loss_tag_from_alpha() {
+    case "${1:-1.0}" in
+        1|1.0|1.00)
+            echo "rkl"
+            ;;
+        0.5|0.50|.5)
+            echo "jsd"
+            ;;
+        0|0.0|0.00)
+            echo "fkl"
+            ;;
+        *)
+            echo "a${1:-1.0}"
+            ;;
+    esac
+}
+
+dataset_tag_from_version() {
+    case "${1:-full}" in
+        full)
+            echo "full5k"
+            ;;
+        quick)
+            echo "quick1p5k"
+            ;;
+        *)
+            echo "legacy"
+            ;;
+    esac
+}
+
+default_train_batch_size_for_model() {
+    local model_name_lc="$1"
+    if [[ "$model_name_lc" == *"8b"* ]]; then
+        echo 16
+    else
+        echo 32
+    fi
+}
+
+build_experiment_name_from_params() {
+    local model_name="${MODEL_NAME:-$(basename "$MODEL_PATH")}"
+    local model_name_lc
+    model_name_lc="$(echo "$model_name" | tr '[:upper:]' '[:lower:]')"
+    local student_ratio="${STUDENT_RATIO:-1.0}"
+    local teacher_ratio="${TEACHER_RATIO:-0.75}"
+    local teacher_mode="${TEACHER_MODE:-frozen}"
+    local alpha="${ALPHA:-1.0}"
+    local train_batch_size="${TRAIN_BATCH_SIZE:-$(default_train_batch_size_for_model "$model_name_lc")}"
+    local rollout_n="${ROLLOUT_N:-4}"
+    local total_epochs="${TOTAL_EPOCHS:-1}"
+    local dataset_tag
+    local loss_tag
+    local name_tags
+    local name_suffix
+
+    dataset_tag="$(dataset_tag_from_version "$DATASET_VERSION")"
+    loss_tag="$(loss_tag_from_alpha "$alpha")"
+    name_tags=("${teacher_mode}" "${loss_tag}")
+
+    if is_truthy "${OPD_SELECTIVE_WEIGHT:-False}"; then
+        local sw_mode="${OPD_SELECTIVE_WEIGHT_MODE:-entropy_rkl_bucket}"
+        local uncertainty_mode
+        if [[ "$sw_mode" == "risk_only_mask" ]]; then
+            uncertainty_mode="${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE:-nll}"
+            name_tags+=("riskmask" "${uncertainty_mode}" "p$(format_prob_tag "${OPD_RISK_MASK_TOP_P:-0.30}")")
+        else
+            uncertainty_mode="${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE:-entropy}"
+            name_tags+=("sw" "${uncertainty_mode}")
+        fi
+    fi
+
+    case "${OPD_TOKEN_MASK_PCT:-0.0}" in
+        0|0.0|0.00|"")
+            ;;
+        *)
+            name_tags+=("maskp$(format_prob_tag "$OPD_TOKEN_MASK_PCT")")
+            ;;
+    esac
+
+    name_tags+=("b${train_batch_size}" "rn${rollout_n}" "$dataset_tag" "e${total_epochs}")
+    IFS=-
+    name_suffix="${name_tags[*]}"
+    unset IFS
+    echo "Res-OPD-${model_name}-orig-sr${student_ratio}-tr${teacher_ratio}-a${alpha}-${name_suffix}"
+}
+
+if [[ ${#OSS_NAMES[@]} -eq 0 && ${#EXPERIMENT_NAMES[@]} -eq 0 ]]; then
+    constructed_exp_name="$(build_experiment_name_from_params)"
+    EXPERIMENT_NAMES+=("$constructed_exp_name")
+    echo "No --experiment-names/--oss-names provided; constructed from params:"
+    echo "  ${constructed_exp_name}"
+fi
 
 normalize_step_name() {
     local value="$1"
