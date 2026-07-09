@@ -8,8 +8,8 @@ defaults:
 #
 # Extends Vision-OPD for resolution-based self-distillation.
 # All Vision-OPD features are preserved. Additional features:
-#   - Online image degradation via custom ResOPDDataset
-#   - Configurable student_px / target_px resolution
+#   - Online original-ratio image degradation via custom ResOPDDataset
+#   - Configurable student_ratio / teacher_ratio views
 #   - Configurable teacher mode: ema / frozen / co-evolving
 #   - Configurable loss alpha: 0.5=JSD, 1.0=RKL, 0.0=FKL
 #
@@ -101,13 +101,13 @@ data:
   custom_cls:
     path: null            # set via CLI: res-opd/res_opd_dataset.py
     name: ResOPDDataset
-  # Resolution params consumed by ResOPDDataset
-  student_px: 224         # 0 = no degradation (student sees original)
-  teacher_px: 0           # 0 = gray/blank teacher image
+  # Original-ratio params consumed by ResOPDDataset.
+  # *_px fields are kept only for legacy CLI/OSS compatibility and are ignored
+  # by original-ratio degradation.
+  student_px: 0
+  teacher_px: 448
   target_px: 448
-  # square: resize to *_px then back to target_px x target_px
-  # original: resize by *_ratio then back to original width/height
-  degradation_mode: square
+  degradation_mode: original
   student_ratio: 1.0
   teacher_ratio: 1.0
 

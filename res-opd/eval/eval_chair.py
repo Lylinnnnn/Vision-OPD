@@ -8,7 +8,6 @@ Generates captions for COCO test images using either:
 Features:
   - Concurrent API inference via ThreadPoolExecutor (default 8 workers)
   - Checkpoint/resume: skips already-generated samples, appends incrementally
-  - Auto-detects student_px from checkpoint directory name (e.g. s224 → 224)
 
 Then computes CHAIR metrics (CHAIRi, CHAIRs, ObjPrec, ObjRecall, ObjF1, RepRate).
 
@@ -25,7 +24,7 @@ Usage:
         --model-path /path/to/merged/checkpoint \
         --test-json data/test.json \
         --output-dir eval_results/ \
-        --student-px 224 --target-px 448
+        --student-ratio 1.0
 """
 
 import argparse
@@ -120,19 +119,6 @@ def record_final_answer_available(record, final_answer_only=False):
     return False
 
 
-def infer_student_px_from_path(path_str):
-    """Try to extract student resolution from a checkpoint path like '...-s224-...'."""
-    match = re.search(r"-s(\d+)", os.path.basename(path_str))
-    if match:
-        return int(match.group(1))
-    # Also check parent directories
-    for part in path_str.split(os.sep):
-        match = re.search(r"-s(\d+)", part)
-        if match:
-            return int(match.group(1))
-    return None
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="CHAIR evaluation for Res-OPD models")
     group = parser.add_mutually_exclusive_group(required=True)
@@ -142,12 +128,12 @@ def parse_args():
     parser.add_argument("--model-name", default="Res-OPD", help="Model name for API mode")
     parser.add_argument("--test-json", required=True, help="Path to test.json from prepare_data.py")
     parser.add_argument("--output-dir", default="./eval_results", help="Output directory")
-    parser.add_argument("--student-px", type=int, default=-1,
-                        help="Student resolution for eval (-1 = auto-detect from ckpt name, 0 = original image)")
+    parser.add_argument("--student-px", type=int, default=0,
+                        help="Legacy metadata only; original-ratio eval ignores this value")
     parser.add_argument("--target-px", type=int, default=448,
-                        help="Target resolution for resizing (only used with --student-px > 0)")
-    parser.add_argument("--degradation-mode", choices=["square", "original"], default="square",
-                        help="square: student_px -> target_px square; original: ratio down/up at original size")
+                        help="Legacy metadata only; original-ratio eval ignores this value")
+    parser.add_argument("--degradation-mode", choices=["original"], default="original",
+                        help="Only original-ratio degradation is supported")
     parser.add_argument("--student-ratio", type=float, default=1.0,
                         help="Original-mode degradation ratio (1.0 = original, 0.75/0.5/0.25 = down/up sample)")
     parser.add_argument("--max-new-tokens", type=int, default=384)
@@ -171,14 +157,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def make_degraded_image(image_path, student_px, target_px):
-    """Degrade image: resize down then back up to simulate low resolution."""
-    img = Image.open(image_path).convert("RGB")
-    small = img.resize((student_px, student_px), Image.LANCZOS)
-    degraded = small.resize((target_px, target_px), Image.LANCZOS)
-    return degraded
-
-
 def make_ratio_degraded_image(image_path, ratio):
     """Degrade original image by ratio, then restore original width/height."""
     img = Image.open(image_path).convert("RGB")
@@ -196,11 +174,9 @@ def make_ratio_degraded_image(image_path, ratio):
 
 
 def load_eval_image(image_path, degradation_mode, student_px, target_px, student_ratio):
-    if degradation_mode == "original":
-        return make_ratio_degraded_image(image_path, student_ratio)
-    if student_px > 0:
-        return make_degraded_image(image_path, student_px, target_px)
-    return Image.open(image_path).convert("RGB")
+    if degradation_mode != "original":
+        raise ValueError(f"Only degradation_mode=original is supported, got {degradation_mode!r}")
+    return make_ratio_degraded_image(image_path, student_ratio)
 
 
 def load_existing_results(eval_results_path):
@@ -318,7 +294,7 @@ def serialize_api_logprobs(choice):
 
 def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
                      max_new_tokens, student_px, target_px, max_retries,
-                     degradation_mode="square", student_ratio=1.0,
+                     degradation_mode="original", student_ratio=1.0,
                      save_logprobs=False, top_logprobs=5,
                      enable_thinking=None, final_answer_only=False):
     """Generate a single caption via API with retry logic. Thread-safe."""
@@ -331,20 +307,16 @@ def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
         thread_local.client = client
 
     # Prepare image data
-    if degradation_mode == "original" or student_px > 0:
-        image = load_eval_image(
-            image_path,
-            degradation_mode,
-            student_px,
-            target_px,
-            student_ratio,
-        )
-        buf = io.BytesIO()
-        image.save(buf, format="JPEG")
-        image_data = base64.b64encode(buf.getvalue()).decode("utf-8")
-    else:
-        with open(image_path, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode("utf-8")
+    image = load_eval_image(
+        image_path,
+        degradation_mode,
+        student_px,
+        target_px,
+        student_ratio,
+    )
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG")
+    image_data = base64.b64encode(buf.getvalue()).decode("utf-8")
     image_url = f"data:image/jpeg;base64,{image_data}"
 
     for attempt in range(1, max_retries + 1):
@@ -385,7 +357,7 @@ def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
 
 def generate_via_model(model, processor, image_path, prompt, max_new_tokens,
                        device, student_px=0, target_px=448,
-                       degradation_mode="square", student_ratio=1.0,
+                       degradation_mode="original", student_ratio=1.0,
                        save_logprobs=False, top_logprobs=5,
                        enable_thinking=None, final_answer_only=False):
     """Generate caption via direct model inference (sequential only)."""
@@ -474,29 +446,11 @@ def main():
     if not 0 <= args.shard_index < args.shard_count:
         raise ValueError("--shard-index must satisfy 0 <= index < shard-count")
 
-    # --- Resolve student degradation ---
-    if args.degradation_mode == "original":
-        print(
-            f"degradation_mode=original: student_ratio={args.student_ratio} "
-            "(down/up sample at original width/height)"
-        )
-    elif args.student_px < 0:
-        # Auto-detect from model path or output dir
-        detected = None
-        if args.model_path:
-            detected = infer_student_px_from_path(args.model_path)
-        if detected is None:
-            detected = infer_student_px_from_path(args.output_dir)
-        if detected is not None:
-            args.student_px = detected
-            print(f"Auto-detected student_px={args.student_px} from path")
-        else:
-            args.student_px = 0
-            print("Could not auto-detect student_px, using 0 (original image)")
-    elif args.student_px == 0:
-        print("student_px=0: using original image (no degradation)")
-    else:
-        print(f"student_px={args.student_px} → target_px={args.target_px}")
+    print(
+        f"degradation_mode=original: student_ratio={args.student_ratio} "
+        "(down/up sample at original width/height); "
+        f"legacy_px=student:{args.student_px},target:{args.target_px}"
+    )
 
     # Load test data
     with open(args.test_json) as f:

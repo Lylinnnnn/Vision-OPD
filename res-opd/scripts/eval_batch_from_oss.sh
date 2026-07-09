@@ -12,13 +12,13 @@
 #
 # Usage:
 #   bash scripts/eval_batch_from_oss.sh --experiment-names <exp1> [exp2] ... \
-#       [--step global_step_92] [--student-px 448] [--target-px 448] [--degradation-mode square] \
+#       [--step global_step_92] [--student-ratio 1.0] [--degradation-mode original] \
 #       [--student-ratio 1.0] [--version-tag v5] [--eval-mode chair,pope] \
 #       [--vision-benchmark mmstar,cv-bench] [--vision-benchmark-data-dir /home/liuyanlin.lyl/notebook/data] \
 #       [--chair-save-logprobs true] [--chair-top-logprobs 5]
 #
 #   bash scripts/eval_batch_from_oss.sh --oss-names <name1> [name2] ... \
-#       [--step global_step_92] [--student-px 448] [--target-px 448] [--degradation-mode square] \
+#       [--step global_step_92] [--student-ratio 1.0] [--degradation-mode original] \
 #       [--student-ratio 1.0] [--version-tag v5] [--eval-mode chair,pope] \
 #       [--vision-benchmark mmstar,cv-bench] [--vision-benchmark-data-dir /home/liuyanlin.lyl/notebook/data] \
 #       [--chair-save-logprobs true] [--chair-top-logprobs 5]
@@ -257,15 +257,15 @@ done
 
 if [[ ${#OSS_NAMES[@]} -eq 0 && ${#EXPERIMENT_NAMES[@]} -eq 0 ]]; then
     echo "Error: --experiment-names or --oss-names is required" >&2
-    echo "Usage: $0 --experiment-names <exp1> [exp2] ... [--step STEP] [--student-px PX] [--target-px PX] [--degradation-mode square|original] [--student-ratio RATIO] [--version-tag TAG]" >&2
+    echo "Usage: $0 --experiment-names <exp1> [exp2] ... [--step STEP] [--student-ratio RATIO] [--degradation-mode original] [--version-tag TAG]" >&2
     exit 1
 fi
 
-case "${DEGRADATION_MODE:-square}" in
-    square|original)
+case "${DEGRADATION_MODE:-original}" in
+    original)
         ;;
     *)
-        echo "Error: --degradation-mode must be square or original. Got: $DEGRADATION_MODE" >&2
+        echo "Error: --degradation-mode must be original. Got: $DEGRADATION_MODE" >&2
         exit 1
         ;;
 esac
@@ -556,24 +556,21 @@ cleanup_checkpoint() {
 
 infer_eval_spec() {
     local exp_name="$1"
-    local inferred_mode="square"
-    local inferred_student_px="448"
+    local inferred_mode="original"
+    local inferred_student_px="0"
     local inferred_teacher_px="$TARGET_PX"
     local inferred_student_ratio="1.0"
     local inferred_teacher_ratio="1.0"
 
     if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr([0-9.]+) ]]; then
-        inferred_mode="original"
         inferred_student_px="0"
         inferred_student_ratio="${BASH_REMATCH[1]}"
         inferred_teacher_ratio="${BASH_REMATCH[2]}"
     elif [[ "$exp_name" =~ -s([0-9]+)-t([0-9]+) ]]; then
-        inferred_mode="square"
         inferred_student_px="${BASH_REMATCH[1]}"
         inferred_teacher_px="${BASH_REMATCH[2]}"
         inferred_student_ratio="1.0"
     elif [[ "$exp_name" =~ -s([0-9]+)(-|_) ]]; then
-        inferred_mode="square"
         inferred_student_px="${BASH_REMATCH[1]}"
         inferred_student_ratio="1.0"
     fi

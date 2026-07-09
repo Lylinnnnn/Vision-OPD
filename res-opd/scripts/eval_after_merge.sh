@@ -17,7 +17,7 @@ set -euo pipefail
 #   3. Shut down vLLM server
 #
 # Usage:
-#   bash scripts/eval_after_merge.sh <merged_checkpoint_path> [student_px] [version_tag] [eval_mode]
+#   bash scripts/eval_after_merge.sh <merged_checkpoint_path> [legacy_student_px] [version_tag] [eval_mode]
 #
 # eval_mode:
 #   chair              Run CHAIR only (default; preserves the original behavior)
@@ -37,14 +37,9 @@ set -euo pipefail
 #
 # Examples:
 #   # Default version tag "latest"
-#   bash scripts/eval_after_merge.sh \
-#       ./checkpoints/Res-OPD-Qwen3VL-2B-Instruct-s448-t200-a0.5-ema-e2/global_step_92/ \
-#       448
-#   # → eval_results/latest/Res-OPD-...-s448-t200-..._global_step_92/train1500_test300/
-#
 #   # Custom version tag
 #   bash scripts/eval_after_merge.sh \
-#       ./checkpoints/Res-OPD-.../global_step_92/ 448 v5
+#       ./checkpoints/Res-OPD-.../global_step_92/ 0 v5
 #   # → eval_results/v5/Res-OPD-..._global_step_92/train1500_test300/
 # =============================================================================
 
@@ -54,7 +49,7 @@ VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
 
 export PYTHONPATH="$VISION_OPD_ROOT:${PYTHONPATH:-}"
 
-MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [student_px] [version_tag]}"
+MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [legacy_student_px] [version_tag]}"
 STUDENT_PX="${2:-${STUDENT_PX:-}}"
 VERSION_TAG="${3:-latest}"
 RESULT_VERSION_TAG="${RESULT_VERSION_TAG:-}"
@@ -669,22 +664,19 @@ fi
 
 infer_eval_spec() {
     local exp_name="$1"
-    local inferred_mode="square"
+    local inferred_mode="original"
     local inferred_student_px="0"
     local inferred_teacher_px="$TARGET_PX"
     local inferred_student_ratio="1.0"
     local inferred_teacher_ratio="1.0"
     if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr([0-9.]+) ]]; then
-        inferred_mode="original"
         inferred_student_px="0"
         inferred_student_ratio="${BASH_REMATCH[1]}"
         inferred_teacher_ratio="${BASH_REMATCH[2]}"
     elif [[ "$exp_name" =~ -s([0-9]+)-t([0-9]+) ]]; then
-        inferred_mode="square"
         inferred_student_px="${BASH_REMATCH[1]}"
         inferred_teacher_px="${BASH_REMATCH[2]}"
     elif [[ "$exp_name" =~ -s([0-9]+)(-|_) ]]; then
-        inferred_mode="square"
         inferred_student_px="${BASH_REMATCH[1]}"
     fi
     DEGRADATION_MODE="${DEGRADATION_MODE:-$inferred_mode}"
@@ -697,10 +689,10 @@ infer_eval_spec() {
 infer_eval_spec "$EXPERIMENT_NAME"
 
 case "$DEGRADATION_MODE" in
-    square|original)
+    original)
         ;;
     *)
-        echo "Error: DEGRADATION_MODE must be square or original. Got: $DEGRADATION_MODE" >&2
+        echo "Error: DEGRADATION_MODE must be original. Got: $DEGRADATION_MODE" >&2
         exit 1
         ;;
 esac
@@ -747,11 +739,9 @@ echo " Res-OPD Evaluation"
 echo "============================================================"
 echo "Model:       $MODEL_PATH"
 echo "Deg mode:    $DEGRADATION_MODE"
-echo "Student px:  $STUDENT_PX (0 = original image)"
-echo "Teacher px:  $TEACHER_PX (square-mode offline OPD trace)"
-echo "Target px:   $TARGET_PX"
+echo "Legacy px:   student=$STUDENT_PX teacher=$TEACHER_PX target=$TARGET_PX (metadata only)"
 echo "Student ratio: $STUDENT_RATIO (original mode)"
-echo "Teacher ratio: $TEACHER_RATIO (original-mode offline OPD trace)"
+echo "Teacher ratio: $TEACHER_RATIO (original mode)"
 echo "Eval mode:   $EVAL_MODE"
 if has_eval_task "$EVAL_MODE" "chair"; then
     echo "CHAIR data:  $TEST_JSON"

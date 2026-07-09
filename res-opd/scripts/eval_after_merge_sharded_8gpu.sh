@@ -195,7 +195,7 @@ resolve_result_version_tag() {
 
 infer_eval_spec() {
     local exp_name="$1"
-    local inferred_mode="square"
+    local inferred_mode="original"
     local inferred_student_px="0"
     local inferred_teacher_px="$TARGET_PX"
     local inferred_student_ratio="1.0"
@@ -210,16 +210,13 @@ infer_eval_spec() {
     esac
 
     if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr([0-9.]+) ]]; then
-        inferred_mode="original"
         inferred_student_px="0"
         inferred_student_ratio="${BASH_REMATCH[1]}"
         inferred_teacher_ratio="${BASH_REMATCH[2]}"
     elif [[ "$exp_name" =~ -s([0-9]+)-t([0-9]+) ]]; then
-        inferred_mode="square"
         inferred_student_px="${BASH_REMATCH[1]}"
         inferred_teacher_px="${BASH_REMATCH[2]}"
     elif [[ "$exp_name" =~ -s([0-9]+)(-|_) ]]; then
-        inferred_mode="square"
         inferred_student_px="${BASH_REMATCH[1]}"
     fi
 
@@ -345,10 +342,10 @@ fi
 infer_eval_spec "$EXPERIMENT_NAME"
 
 case "$DEGRADATION_MODE" in
-    square|original)
+    original)
         ;;
     *)
-        echo "Error: DEGRADATION_MODE must be square or original. Got: $DEGRADATION_MODE" >&2
+        echo "Error: DEGRADATION_MODE must be original. Got: $DEGRADATION_MODE" >&2
         exit 1
         ;;
 esac

@@ -77,7 +77,7 @@ def parse_args():
     parser.add_argument("--prompt-suffix", default=DEFAULT_PROMPT_SUFFIX)
     parser.add_argument("--save-logprobs", action="store_true")
     parser.add_argument("--top-logprobs", type=int, default=20)
-    parser.add_argument("--degradation-mode", choices=["original", "square"], default="original")
+    parser.add_argument("--degradation-mode", choices=["original"], default="original")
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--student-px", type=int, default=0)
     parser.add_argument("--target-px", type=int, default=448)
@@ -219,19 +219,10 @@ def make_ratio_degraded_image(image_path, ratio):
     return small.resize((width, height), Image.LANCZOS)
 
 
-def make_square_degraded_image(image_path, student_px, target_px):
-    image = Image.open(image_path).convert("RGB")
-    if student_px <= 0:
-        return image
-    small = image.resize((student_px, student_px), Image.LANCZOS)
-    return small.resize((target_px, target_px), Image.LANCZOS)
-
-
 def image_to_data_uri(image_path, args):
-    if args.degradation_mode == "original":
-        image = make_ratio_degraded_image(image_path, args.student_ratio)
-    else:
-        image = make_square_degraded_image(image_path, args.student_px, args.target_px)
+    if args.degradation_mode != "original":
+        raise ValueError(f"Only degradation_mode=original is supported, got {args.degradation_mode!r}")
+    image = make_ratio_degraded_image(image_path, args.student_ratio)
     buf = io.BytesIO()
     image.save(buf, format="JPEG")
     b64 = base64.b64encode(buf.getvalue()).decode("utf-8")

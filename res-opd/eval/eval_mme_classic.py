@@ -7,7 +7,6 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import io
 import json
-import mimetypes
 import os
 from pathlib import Path
 import threading
@@ -157,40 +156,33 @@ def load_existing(path: Path) -> dict[str, dict]:
 
 def load_eval_image(path: str, degradation_mode: str, student_px: int, target_px: int, student_ratio: float):
     image = Image.open(path).convert("RGB")
-    if degradation_mode == "original":
-        width, height = image.size
-        if student_ratio <= 0:
-            return Image.new("RGB", (width, height), color=(128, 128, 128))
-        if student_ratio >= 1.0:
-            return image
-        small_size = (
-            max(1, int(round(width * student_ratio))),
-            max(1, int(round(height * student_ratio))),
-        )
-        return image.resize(small_size, Image.LANCZOS).resize((width, height), Image.LANCZOS)
-    if student_px > 0:
-        return image.resize((student_px, student_px), Image.LANCZOS).resize((target_px, target_px), Image.LANCZOS)
-    return image
+    if degradation_mode != "original":
+        raise ValueError(f"Only degradation_mode=original is supported, got {degradation_mode!r}")
+    width, height = image.size
+    if student_ratio <= 0:
+        return Image.new("RGB", (width, height), color=(128, 128, 128))
+    if student_ratio >= 1.0:
+        return image
+    small_size = (
+        max(1, int(round(width * student_ratio))),
+        max(1, int(round(height * student_ratio))),
+    )
+    return image.resize(small_size, Image.LANCZOS).resize((width, height), Image.LANCZOS)
 
 
 def image_to_data_uri(
     path: str,
-    degradation_mode: str = "square",
+    degradation_mode: str = "original",
     student_px: int = 0,
     target_px: int = 448,
     student_ratio: float = 1.0,
 ) -> str:
     p = Path(path)
-    if degradation_mode == "original" or student_px > 0:
-        image = load_eval_image(str(p), degradation_mode, student_px, target_px, student_ratio)
-        buf = io.BytesIO()
-        image.save(buf, format="JPEG")
-        payload = buf.getvalue()
-        mime = "image/jpeg"
-    else:
-        with open(p, "rb") as f:
-            payload = f.read()
-        mime = mimetypes.guess_type(str(p))[0] or "image/jpeg"
+    image = load_eval_image(str(p), degradation_mode, student_px, target_px, student_ratio)
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG")
+    payload = buf.getvalue()
+    mime = "image/jpeg"
     return f"data:{mime};base64,{base64.b64encode(payload).decode('utf-8')}"
 
 
@@ -282,9 +274,9 @@ def main():
         help="Comma-separated MME categories.",
     )
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--student-px", type=int, default=0)
-    parser.add_argument("--target-px", type=int, default=448)
-    parser.add_argument("--degradation-mode", choices=["square", "original"], default="square")
+    parser.add_argument("--student-px", type=int, default=0, help="Legacy metadata only; original-ratio eval ignores this value")
+    parser.add_argument("--target-px", type=int, default=448, help="Legacy metadata only; original-ratio eval ignores this value")
+    parser.add_argument("--degradation-mode", choices=["original"], default="original")
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--max-new-tokens", type=int, default=16)
     parser.add_argument("--max-samples", type=int, default=0)

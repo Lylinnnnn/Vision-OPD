@@ -211,12 +211,12 @@ def parse_args():
     parser.add_argument("--torch-dtype", choices=["bfloat16", "float16", "float32"], default="bfloat16")
     parser.add_argument("--kl-chunk-size", type=int, default=16)
     parser.add_argument("--topk", type=int, default=20, help="Store top-k diagnostics; 0 disables top-k fields.")
-    parser.add_argument("--degradation-mode", choices=["original", "square"], default="original")
+    parser.add_argument("--degradation-mode", choices=["original"], default="original")
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--teacher-ratio", type=float, default=1.0)
-    parser.add_argument("--student-px", type=int, default=0)
-    parser.add_argument("--teacher-px", type=int, default=0)
-    parser.add_argument("--target-px", type=int, default=448)
+    parser.add_argument("--student-px", type=int, default=0, help="Legacy metadata only; original-ratio scoring ignores this value.")
+    parser.add_argument("--teacher-px", type=int, default=0, help="Legacy metadata only; original-ratio scoring ignores this value.")
+    parser.add_argument("--target-px", type=int, default=448, help="Legacy metadata only; original-ratio scoring ignores this value.")
     parser.add_argument(
         "--print-server-paths",
         action="store_true",

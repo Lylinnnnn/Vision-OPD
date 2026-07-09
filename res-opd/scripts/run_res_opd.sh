@@ -18,11 +18,10 @@ set -eo pipefail
 # Resolution-Aware On-Policy Self-Distillation
 #
 # All Vision-OPD features preserved. Additional knobs for resolution distillation:
-#   - STUDENT_PX:          student resolution (0 = no degradation)
-#   - DEGRADATION_MODE:    square / original
-#   - STUDENT_RATIO:       original-mode student degradation ratio
-#   - TEACHER_RATIO:       original-mode teacher degradation ratio
-#   - TARGET_PX:           target resolution for upsampling
+#   - DEGRADATION_MODE:    original
+#   - STUDENT_RATIO:       student original-ratio degradation
+#   - TEACHER_RATIO:       teacher original-ratio degradation
+#   - STUDENT_PX/TEACHER_PX/TARGET_PX: legacy metadata/CLI compatibility only
 #   - TEACHER_MODE:        ema / frozen / coevolving
 #   - ALPHA:               loss interpolation (0.5=JSD, 1.0=RKL, 0.0=FKL)
 #   - ROLLOUT_N:           number of rollouts per sample (1=pure KD, 8=GRPO+KD)
@@ -32,20 +31,11 @@ set -eo pipefail
 #   - OPD_SELECTIVE_WEIGHT: soft-weight RKL/JSD tokens by entropy/loss buckets
 #
 # Examples:
-#   # Default: student=224, teacher=EMA, loss=JSD
-#   bash res-opd/scripts/run_res_opd.sh
-#
-#   # RKL loss, frozen teacher, 336px student
-#   STUDENT_PX=336 ALPHA=1.0 TEACHER_MODE=frozen bash res-opd/scripts/run_res_opd.sh
-#
 #   # Co-evolving teacher (student=teacher same weights, different images)
 #   TEACHER_MODE=coevolving bash res-opd/scripts/run_res_opd.sh
 #
 #   # Full Vision-OPD style: 8 rollouts with GRPO advantage
 #   ROLLOUT_N=8 bash res-opd/scripts/run_res_opd.sh
-#
-#   # No degradation (student sees original images, only teacher signal)
-#   STUDENT_PX=0 bash res-opd/scripts/run_res_opd.sh
 #
 #   # Original-size degradation: teacher sees 50% down/up sampled original image
 #   DEGRADATION_MODE=original STUDENT_RATIO=1.0 TEACHER_RATIO=0.5 bash res-opd/scripts/run_res_opd.sh
@@ -121,19 +111,19 @@ else
     DEFAULT_MAX_ACTOR_CKPT_TO_KEEP=1
 fi
 
-# --- Resolution params (online degradation) ---
-STUDENT_PX="${STUDENT_PX:-224}"       # 0 = no degradation
-TARGET_PX="${TARGET_PX:-448}"
-TEACHER_PX="${TEACHER_PX:-448}"       # 0 = gray/blank image (no visual info), >=target_px = original image
-DEGRADATION_MODE="${DEGRADATION_MODE:-square}"  # square / original
-STUDENT_RATIO="${STUDENT_RATIO:-1.0}"           # original mode: 1.0 = original, 0.75/0.5/0.25 = down/up sample
-TEACHER_RATIO="${TEACHER_RATIO:-1.0}"           # original mode: 0 = gray/blank, 1.0 = original
+# --- Original-ratio params (online degradation) ---
+STUDENT_PX="${STUDENT_PX:-0}"         # legacy metadata only
+TARGET_PX="${TARGET_PX:-448}"         # legacy metadata only
+TEACHER_PX="${TEACHER_PX:-448}"       # legacy metadata only
+DEGRADATION_MODE="${DEGRADATION_MODE:-original}"
+STUDENT_RATIO="${STUDENT_RATIO:-1.0}"           # 1.0 = original, 0.75/0.5/0.25 = down/up sample
+TEACHER_RATIO="${TEACHER_RATIO:-1.0}"           # 0 = gray/blank, 1.0 = original
 
 case "$DEGRADATION_MODE" in
-    square|original)
+    original)
         ;;
     *)
-        echo "Error: Unknown DEGRADATION_MODE=$DEGRADATION_MODE (expected: square or original)" >&2
+        echo "Error: Unknown DEGRADATION_MODE=$DEGRADATION_MODE (expected: original)" >&2
         exit 1
         ;;
 esac
@@ -440,11 +430,7 @@ unset IFS
 if [[ -n "${EXPERIMENT_NAME:-}" ]]; then
     : # Use externally provided EXPERIMENT_NAME
 else
-    if [[ "$DEGRADATION_MODE" == "original" ]]; then
-        EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-orig-sr${STUDENT_RATIO}-tr${TEACHER_RATIO}-a${ALPHA}-${NAME_SUFFIX}"
-    else
-        EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-s${STUDENT_PX}-t${TEACHER_PX}-a${ALPHA}-${NAME_SUFFIX}"
-    fi
+    EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-orig-sr${STUDENT_RATIO}-tr${TEACHER_RATIO}-a${ALPHA}-${NAME_SUFFIX}"
 fi
 PROJECT_NAME="Res-OPD"
 TRAINER_DEFAULT_LOCAL_DIR="${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}"
@@ -919,9 +905,7 @@ echo "============================================================"
 echo "Model:            $MODEL_PATH"
 echo "Model size prof.: $MODEL_SIZE_PROFILE"
 echo "Degradation mode: $DEGRADATION_MODE"
-echo "Student px:       $STUDENT_PX (0=no degradation)"
-echo "Teacher px:       $TEACHER_PX (0=gray/blank visual input)"
-echo "Target px:        $TARGET_PX"
+echo "Legacy px args:   student=$STUDENT_PX teacher=$TEACHER_PX target=$TARGET_PX (metadata only)"
 echo "Student ratio:    $STUDENT_RATIO (original mode)"
 echo "Teacher ratio:    $TEACHER_RATIO (original mode)"
 echo "Teacher mode:     $TEACHER_MODE (src=$TEACHER_MODEL_SOURCE, reg=$TEACHER_REGULARIZATION, rate=$TEACHER_UPDATE_RATE)"

@@ -298,14 +298,6 @@ def load_jsonl(path: Path) -> dict[str, dict]:
     return records
 
 
-def degrade_image(image_path: str, student_px: int, target_px: int) -> Image.Image:
-    image = Image.open(image_path).convert("RGB")
-    if student_px <= 0:
-        return image
-    small = image.resize((student_px, student_px), Image.LANCZOS)
-    return small.resize((target_px, target_px), Image.LANCZOS)
-
-
 def degrade_image_by_ratio(image_path: str, ratio: float) -> Image.Image:
     image = Image.open(image_path).convert("RGB")
     width, height = image.size
@@ -328,10 +320,9 @@ def image_to_data_uri(
     degradation_mode: str,
     student_ratio: float,
 ) -> str:
-    if degradation_mode == "original":
-        image = degrade_image_by_ratio(image_path, student_ratio)
-    else:
-        image = degrade_image(image_path, student_px, target_px)
+    if degradation_mode != "original":
+        raise ValueError(f"Only degradation_mode=original is supported, got {degradation_mode!r}")
+    image = degrade_image_by_ratio(image_path, student_ratio)
     buf = io.BytesIO()
     image.save(buf, format="JPEG")
     b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -585,9 +576,9 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--vision-opd-root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--output-dir", type=Path, default=Path("./eval_results"))
-    parser.add_argument("--student-px", type=int, default=0)
-    parser.add_argument("--target-px", type=int, default=448)
-    parser.add_argument("--degradation-mode", choices=["square", "original"], default="square")
+    parser.add_argument("--student-px", type=int, default=0, help="Legacy metadata only; original-ratio eval ignores this value")
+    parser.add_argument("--target-px", type=int, default=448, help="Legacy metadata only; original-ratio eval ignores this value")
+    parser.add_argument("--degradation-mode", choices=["original"], default="original")
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--max-new-tokens", type=int, default=16)
     parser.add_argument("--max-samples", type=int, default=0)

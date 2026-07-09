@@ -63,15 +63,13 @@ OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${VERSION_TAG}/${EXPERIMENT_NAME}/final
 
 infer_eval_spec() {
     local exp_name="$1"
-    local inferred_mode="square"
+    local inferred_mode="original"
     local inferred_student_px="0"
     local inferred_student_ratio="1.0"
     if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr ]]; then
-        inferred_mode="original"
         inferred_student_px="0"
         inferred_student_ratio="${BASH_REMATCH[1]}"
     elif [[ "$exp_name" =~ -s([0-9]+)(-|_) ]]; then
-        inferred_mode="square"
         inferred_student_px="${BASH_REMATCH[1]}"
     fi
     DEGRADATION_MODE="${DEGRADATION_MODE:-$inferred_mode}"

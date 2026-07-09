@@ -65,10 +65,10 @@ def parse_args():
         default="auto",
         help="Caption field to score. auto tries generated_caption, output, response_text, caption.",
     )
-    parser.add_argument("--degradation-mode", choices=["square", "original"], default="square")
-    parser.add_argument("--student-px", type=int, default=0)
-    parser.add_argument("--teacher-px", type=int, default=0)
-    parser.add_argument("--target-px", type=int, default=448)
+    parser.add_argument("--degradation-mode", choices=["original"], default="original")
+    parser.add_argument("--student-px", type=int, default=0, help="Legacy metadata only; original-ratio scoring ignores this value")
+    parser.add_argument("--teacher-px", type=int, default=0, help="Legacy metadata only; original-ratio scoring ignores this value")
+    parser.add_argument("--target-px", type=int, default=448, help="Legacy metadata only; original-ratio scoring ignores this value")
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--teacher-ratio", type=float, default=1.0)
     parser.add_argument("--topk", type=int, default=50)
@@ -265,14 +265,6 @@ def normalize_generation_record(record, test_index, caption_field):
     return normalized
 
 
-def make_square_degraded_image(image_path, px, target_px):
-    image = Image.open(image_path).convert("RGB")
-    if px <= 0:
-        return Image.new("RGB", (target_px, target_px), color=(128, 128, 128))
-    small = image.resize((px, px), Image.LANCZOS)
-    return small.resize((target_px, target_px), Image.LANCZOS)
-
-
 def make_ratio_degraded_image(image_path, ratio):
     image = Image.open(image_path).convert("RGB")
     width, height = image.size
@@ -289,13 +281,9 @@ def make_ratio_degraded_image(image_path, ratio):
 
 
 def load_view_image(image_path, degradation_mode, px, target_px, ratio, *, blank_when_px_zero=False):
-    if degradation_mode == "original":
-        return make_ratio_degraded_image(image_path, ratio)
-    if px <= 0:
-        if blank_when_px_zero:
-            return Image.new("RGB", (target_px, target_px), color=(128, 128, 128))
-        return Image.open(image_path).convert("RGB")
-    return make_square_degraded_image(image_path, px, target_px)
+    if degradation_mode != "original":
+        raise ValueError(f"Only degradation_mode=original is supported, got {degradation_mode!r}")
+    return make_ratio_degraded_image(image_path, ratio)
 
 
 def load_jsonl(path):

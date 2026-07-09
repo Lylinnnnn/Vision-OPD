@@ -3,11 +3,11 @@ Prepare COCO val2017 data for Resolution-Aware Self-Distillation training.
 
 Creates parquet files compatible with verl's RLHFDataset, containing:
   - images:        original COCO image paths (student degradation is done
-                   ONLINE by ResOPDDataset, so student_px can be changed freely)
+                   ONLINE by ResOPDDataset, so student_ratio can be changed freely)
   - hires_images:  same original COCO image paths as ``images``; teacher
                    degradation is also applied ONLINE by ResOPDDataset via
-                   _degrade_teacher(), supporting both square and original
-                   degradation modes without pre-storing teacher images on disk
+                   _degrade_teacher(), using original-ratio degradation without
+                   pre-storing teacher images on disk
   - prompt:        caption generation prompt in chat format
   - reward_model:  ground truth captions for CHAIR evaluation
   - extra_info:    metadata (image_id, original captions, object categories)
@@ -49,8 +49,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare COCO data for Res-OPD training.")
     parser.add_argument("--data-dir", default="./data", help="Output directory for processed data")
     parser.add_argument("--target-px", type=int, default=448,
-                        help="Target spatial dimension after up-scaling in square degradation mode "
-                             "(used by ResOPDDataset at runtime, not for pre-resizing teacher images)")
+                        help="Legacy metadata retained for old configs; ResOPDDataset ignores it at runtime")
     parser.add_argument("--train-count", type=int, default=1500, help="Number of training samples")
     parser.add_argument("--eval-count", type=int, default=30, help="Number of eval samples (reserved)")
     parser.add_argument("--test-count", type=int, default=300, help="Number of test samples (reserved)")
