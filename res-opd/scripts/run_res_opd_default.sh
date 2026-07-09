@@ -38,7 +38,10 @@ if [[ "$DEFAULT_MODEL_NAME_LC" == *"8b"* ]]; then
     RES_OPD_DEFAULT_ROLLOUT_GPU_MEMORY_UTILIZATION=0.65
     RES_OPD_DEFAULT_LOGPROB_MICRO_BSZ=1
     RES_OPD_DEFAULT_ROLLOUT_BATCHED_FACTOR=2
-    RES_OPD_DEFAULT_PPO_TOKEN_FACTOR=1
+    # 8B teacher forward can OOM with the historical non-thinking *4 budget,
+    # but *1 is too tight for the current 8192+5120 protocol.  Use the same
+    # conservative token budget as 8B Thinking.
+    RES_OPD_DEFAULT_PPO_TOKEN_FACTOR=2
     RES_OPD_DEFAULT_ACTOR_PARAM_OFFLOAD=False
     RES_OPD_DEFAULT_ACTOR_OPTIMIZER_OFFLOAD=True
     RES_OPD_DEFAULT_REF_PARAM_OFFLOAD=True
