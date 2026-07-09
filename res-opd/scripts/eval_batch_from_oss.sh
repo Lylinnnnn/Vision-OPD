@@ -23,6 +23,10 @@
 #       [--vision-benchmark mmstar,cv-bench] [--vision-benchmark-data-dir /home/liuyanlin.lyl/notebook/data] \
 #       [--chair-save-logprobs true] [--chair-top-logprobs 5]
 #
+# Step behavior:
+#   - Omit --step to evaluate every OSS global_step_* checkpoint serially.
+#   - Pass --step global_step_50 (or --step 50) to evaluate one checkpoint.
+#
 # eval-mode:
 #   chair,pope       Default local COCO eval.
 #   chair / pope     Run one local COCO eval.
@@ -79,7 +83,7 @@ HF_FILES=(
 )
 
 # Defaults
-STEP="global_step_92"
+STEP="${STEP:-}"
 STUDENT_PX="${STUDENT_PX:-}"
 TEACHER_PX="${TEACHER_PX:-}"
 TARGET_PX="${TARGET_PX:-448}"
@@ -272,6 +276,15 @@ esac
 
 is_truthy() {
     [[ "${1:-}" == "True" || "${1:-}" == "true" || "${1:-}" == "1" || "${1:-}" == "yes" || "${1:-}" == "Y" || "${1:-}" == "y" ]]
+}
+
+normalize_step_name() {
+    local value="$1"
+    if [[ "$value" =~ ^[0-9]+$ ]]; then
+        echo "global_step_${value}"
+    else
+        echo "$value"
+    fi
 }
 
 normalize_eval_mode() {
@@ -554,6 +567,39 @@ cleanup_checkpoint() {
     fi
 }
 
+list_oss_steps() {
+    local oss_exp_path="${1%/}"
+    local output
+    local steps
+
+    if ! output="$(ossutil ls "${oss_exp_path}/" 2>&1)"; then
+        echo "Error: failed to list OSS checkpoints under ${oss_exp_path}/" >&2
+        echo "$output" >&2
+        return 1
+    fi
+
+    steps="$(
+        printf '%s\n' "$output" \
+            | grep -oE 'global_step_[0-9]+' \
+            | sort -t_ -k3,3n -u || true
+    )"
+    if [[ -z "$steps" ]]; then
+        echo "Error: no global_step_* checkpoints found under ${oss_exp_path}/" >&2
+        echo "Pass --step explicitly if the OSS layout is nonstandard." >&2
+        return 1
+    fi
+    printf '%s\n' "$steps"
+}
+
+resolve_steps_for_experiment() {
+    local oss_exp_path="$1"
+    if [[ -n "$STEP" ]]; then
+        normalize_step_name "$STEP"
+        return 0
+    fi
+    list_oss_steps "$oss_exp_path"
+}
+
 infer_eval_spec() {
     local exp_name="$1"
     local inferred_mode="original"
@@ -664,7 +710,11 @@ fi
 
 echo "=========================================="
 echo " Batch Eval from OSS"
-echo " Step: ${STEP}"
+if [[ -n "$STEP" ]]; then
+    echo " Step: $(normalize_step_name "$STEP")"
+else
+    echo " Step: all OSS global_step_* checkpoints, serial per experiment"
+fi
 echo " Student spec: auto from experiment name unless overridden"
 echo " Target PX: ${TARGET_PX}"
 echo " Version tag: ${VERSION_TAG}"
@@ -726,41 +776,55 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         echo "  Student ratio: ${STUDENT_RATIO}"
     fi
     result_version_tag="$(resolve_result_version_tag "$local_exp_name")"
-
-    oss_path="${OSS_BASE}/${oss_name}/${STEP}"
-    local_ckpt_dir="${CKPT_BASE}/${local_exp_name}/${STEP}"
     IFS='|' read -r effective_degradation_mode effective_student_px effective_teacher_px effective_target_px effective_student_ratio effective_teacher_ratio < <(
         infer_eval_spec "$local_exp_name"
     )
 
+    oss_exp_path="${OSS_BASE}/${oss_name}"
+    mapfile -t steps_to_eval < <(resolve_steps_for_experiment "$oss_exp_path")
+    if [[ ${#steps_to_eval[@]} -eq 0 ]]; then
+        echo "Error: no checkpoint steps resolved for ${oss_name}" >&2
+        exit 1
+    fi
     echo ""
     echo "=========================================="
-    echo " Processing: ${oss_name}"
-    echo " Local exp: ${local_exp_name}"
+    echo " Experiment: ${oss_name}"
+    echo " Local exp:  ${local_exp_name}"
     echo " Result tag: ${result_version_tag}"
-    echo " OSS: ${oss_path}"
+    echo " Steps:      ${steps_to_eval[*]}"
     echo " Student: mode=${effective_degradation_mode} px=${effective_student_px} target=${effective_target_px} ratio=${effective_student_ratio}"
     echo " Teacher: px=${effective_teacher_px} ratio=${effective_teacher_ratio}"
     echo "=========================================="
 
-    # Check if eval results already exist
-    if [[ "$DATASET_VERSION" == "full" ]]; then
-        existing_result_root="${RES_OPD_ROOT}/eval_results/${result_version_tag}/full/${local_exp_name}_${STEP}"
-    else
-        existing_result_root="${RES_OPD_ROOT}/eval_results/${result_version_tag}/${local_exp_name}_${STEP}"
-    fi
-    if eval_results_exist "$existing_result_root"; then
-        echo "⚠️  Eval results already exist, skipping."
-        continue
-    fi
+    for step in "${steps_to_eval[@]}"; do
+        oss_path="${oss_exp_path}/${step}"
+        local_ckpt_dir="${CKPT_BASE}/${local_exp_name}/${step}"
 
-    # Step 1: Download checkpoint from OSS
-    echo "[1/4] Downloading from OSS ..."
-    download_checkpoint "$oss_path" "$local_ckpt_dir"
-    echo "  ✅ Download complete"
+        echo ""
+        echo "=========================================="
+        echo " Processing: ${oss_name}/${step}"
+        echo " Local exp: ${local_exp_name}_${step}"
+        echo " OSS: ${oss_path}"
+        echo "=========================================="
 
-    # Step 2: Run evaluation
-    echo "[2/4] Running evaluation ..."
+        # Check if eval results already exist
+        if [[ "$DATASET_VERSION" == "full" ]]; then
+            existing_result_root="${RES_OPD_ROOT}/eval_results/${result_version_tag}/full/${local_exp_name}_${step}"
+        else
+            existing_result_root="${RES_OPD_ROOT}/eval_results/${result_version_tag}/${local_exp_name}_${step}"
+        fi
+        if eval_results_exist "$existing_result_root"; then
+            echo "⚠️  Eval results already exist for ${step}, skipping."
+            continue
+        fi
+
+        # Step 1: Download checkpoint from OSS
+        echo "[1/4] Downloading from OSS ..."
+        download_checkpoint "$oss_path" "$local_ckpt_dir"
+        echo "  ✅ Download complete"
+
+        # Step 2: Run evaluation
+        echo "[2/4] Running evaluation ..."
     if [[ "$EVAL_BACKEND" == "sharded" ]]; then
         if has_eval_task "$EVAL_MODE" "mme"; then
             echo "Error: sharded backend does not support legacy MME script. Run MME separately or use --eval-backend single." >&2
@@ -950,9 +1014,9 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
     # Step 4: Verify eval results
     echo "[4/4] Verifying eval results ..."
     if [[ "$DATASET_VERSION" == "full" ]]; then
-        result_dir="${RES_OPD_ROOT}/eval_results/${result_version_tag}/full/${local_exp_name}_${STEP}"
+        result_dir="${RES_OPD_ROOT}/eval_results/${result_version_tag}/full/${local_exp_name}_${step}"
     else
-        result_dir="${RES_OPD_ROOT}/eval_results/${result_version_tag}/${local_exp_name}_${STEP}"
+        result_dir="${RES_OPD_ROOT}/eval_results/${result_version_tag}/${local_exp_name}_${step}"
     fi
     if eval_results_exist "$result_dir"; then
         echo "  ✅ Eval results saved:"
@@ -969,7 +1033,11 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
     fi
 
     echo ""
-    echo "✅ Done: ${oss_name}"
+    echo "✅ Done: ${oss_name}/${step}"
+    done
+
+    echo ""
+    echo "✅ Done experiment: ${oss_name}"
 done
 
 echo ""
