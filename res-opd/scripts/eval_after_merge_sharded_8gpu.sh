@@ -23,6 +23,8 @@ MERGE_SCRIPT="${RES_OPD_ROOT}/eval/merge_sharded_eval.py"
 EVAL_SHARD_COUNT="${EVAL_SHARD_COUNT:-8}"
 GPU_LIST="${GPU_LIST:-${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}}"
 VLLM_BASE_PORT="${VLLM_BASE_PORT:-8000}"
+VLLM_PORT_CLEANUP="${VLLM_PORT_CLEANUP:-True}"
+VLLM_PORT_CLEANUP_WAIT="${VLLM_PORT_CLEANUP_WAIT:-20}"
 SHARDED_EVAL_KEEP_SHARDS="${SHARDED_EVAL_KEEP_SHARDS:-False}"
 SHARDED_EVAL_RUN_ID="${SHARDED_EVAL_RUN_ID:-$(date +%Y%m%d_%H%M%S)_$$}"
 SHARDED_EVAL_SESSION_PREFIX="${SHARDED_EVAL_SESSION_PREFIX:-resopd_eval_${SHARDED_EVAL_RUN_ID}}"
@@ -65,6 +67,104 @@ export PYTHONPATH="$VISION_OPD_ROOT:${PYTHONPATH:-}"
 
 is_truthy() {
     [[ "${1:-}" == "True" || "${1:-}" == "true" || "${1:-}" == "1" || "${1:-}" == "yes" || "${1:-}" == "Y" || "${1:-}" == "y" ]]
+}
+
+port_listener_pids() {
+    local port="$1"
+    local pids=""
+    if command -v lsof >/dev/null 2>&1; then
+        pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    elif command -v fuser >/dev/null 2>&1; then
+        pids="$(fuser -n tcp "$port" 2>/dev/null || true)"
+    elif command -v ss >/dev/null 2>&1; then
+        pids="$(ss -ltnp "sport = :${port}" 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' || true)"
+    else
+        echo "Error: cannot inspect port ${port}; install lsof/fuser/ss or set VLLM_PORT_CLEANUP=False." >&2
+        return 2
+    fi
+    for pid in $pids; do
+        [[ -n "$pid" ]] && echo "$pid"
+    done | sort -u
+}
+
+pid_cmdline() {
+    local pid="$1"
+    if [[ -r "/proc/${pid}/cmdline" ]]; then
+        tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true
+    else
+        ps -p "$pid" -o args= 2>/dev/null || true
+    fi
+}
+
+is_vllm_process_on_port() {
+    local cmd="$1"
+    local port="$2"
+    [[ "$cmd" == *"vllm.entrypoints.openai.api_server"* ]] || \
+        [[ "$cmd" == *"vllm"* && "$cmd" == *"--port ${port}"* ]] || \
+        [[ "$cmd" == *"vllm"* && "$cmd" == *"--port=${port}"* ]] || \
+        [[ "$cmd" == *"vllm"* && "$cmd" == *"serve"* ]]
+}
+
+cleanup_vllm_port() {
+    local port="$1"
+    local pids
+    local pid
+    local cmd
+    local blocked=0
+
+    if ! is_truthy "$VLLM_PORT_CLEANUP"; then
+        return 0
+    fi
+
+    pids="$(port_listener_pids "$port")" || return $?
+    [[ -z "$pids" ]] && return 0
+
+    echo "  Port ${port} is in use by: ${pids}"
+    for pid in $pids; do
+        cmd="$(pid_cmdline "$pid")"
+        if is_vllm_process_on_port "$cmd" "$port"; then
+            echo "  Killing stale vLLM process pid=${pid}: ${cmd}"
+            kill "$pid" 2>/dev/null || true
+        else
+            echo "Error: port ${port} is used by a non-vLLM process pid=${pid}: ${cmd}" >&2
+            blocked=1
+        fi
+    done
+    if [[ "$blocked" -ne 0 ]]; then
+        return 1
+    fi
+
+    for _ in $(seq 1 "$VLLM_PORT_CLEANUP_WAIT"); do
+        pids="$(port_listener_pids "$port")" || return $?
+        [[ -z "$pids" ]] && return 0
+        sleep 1
+    done
+
+    pids="$(port_listener_pids "$port")" || return $?
+    if [[ -n "$pids" ]]; then
+        echo "  Port ${port} still busy after graceful cleanup; force killing stale vLLM pids: ${pids}"
+        for pid in $pids; do
+            cmd="$(pid_cmdline "$pid")"
+            if is_vllm_process_on_port "$cmd" "$port"; then
+                kill -9 "$pid" 2>/dev/null || true
+            else
+                echo "Error: port ${port} is still used by a non-vLLM process pid=${pid}: ${cmd}" >&2
+                return 1
+            fi
+        done
+    fi
+}
+
+cleanup_shard_ports() {
+    local shard_idx
+    local port
+    if ! is_truthy "$VLLM_PORT_CLEANUP"; then
+        return 0
+    fi
+    for shard_idx in $(seq 0 $((EVAL_SHARD_COUNT - 1))); do
+        port=$((VLLM_BASE_PORT + shard_idx * 10))
+        cleanup_vllm_port "$port"
+    done
 }
 
 normalize_eval_mode() {
@@ -413,8 +513,12 @@ echo "Shard root:  $SHARD_ROOT"
 echo "Shard count: $EVAL_SHARD_COUNT"
 echo "GPU list:    $GPU_LIST"
 echo "Base port:   $VLLM_BASE_PORT"
+echo "Port cleanup: ${VLLM_PORT_CLEANUP} (wait=${VLLM_PORT_CLEANUP_WAIT}s)"
 echo "TP per shard: $(is_truthy "$SHARDED_EVAL_FORCE_TP1" && echo 1 || echo '<env/default>')"
 echo "============================================================"
+
+echo "[preflight] Ensuring shard vLLM ports are available ..."
+cleanup_shard_ports
 
 sessions=()
 for shard_idx in $(seq 0 $((EVAL_SHARD_COUNT - 1))); do
@@ -486,6 +590,7 @@ cleanup_sessions() {
     for session in "${sessions[@]:-}"; do
         tmux has-session -t "$session" 2>/dev/null && tmux kill-session -t "$session" || true
     done
+    cleanup_shard_ports || true
 }
 trap cleanup_sessions INT TERM
 
@@ -515,6 +620,9 @@ while true; do
     sleep "$SHARDED_EVAL_POLL_SECONDS"
 done
 trap - INT TERM
+
+echo "[cleanup] Ensuring shard vLLM ports are released ..."
+cleanup_shard_ports
 
 failed=0
 for shard_idx in $(seq 0 $((EVAL_SHARD_COUNT - 1))); do
