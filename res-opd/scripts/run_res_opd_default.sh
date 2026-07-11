@@ -133,7 +133,7 @@ export SAVE_FREQ="${SAVE_FREQ:-50}"
 # OPD_MINI_EVAL_TRACE=True explicitly when step-wise validation generations are
 # needed.
 export OPD_MINI_EVAL_TRACE="${OPD_MINI_EVAL_TRACE:-False}"
-export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-50}"
+export OPD_MINI_EVAL_TEST_FREQ="${OPD_MINI_EVAL_TEST_FREQ:-500}"
 export OPD_MINI_EVAL_MAX_SAMPLES="${OPD_MINI_EVAL_MAX_SAMPLES:-100}"
 export VAL_N="${VAL_N:-1}"
 export VAL_DO_SAMPLE="${VAL_DO_SAMPLE:-False}"
