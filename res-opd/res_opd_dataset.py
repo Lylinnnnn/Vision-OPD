@@ -20,7 +20,9 @@ Configuration (passed via data config in yaml or CLI):
 """
 
 import re
+import os
 from io import BytesIO
+from pathlib import Path
 from typing import Optional
 
 from omegaconf import DictConfig
@@ -55,6 +57,7 @@ class ResOPDDataset(RLHFDataset):
         self.degradation_mode = config.get("degradation_mode", "original")
         self.student_ratio = float(config.get("student_ratio", 1.0))
         self.teacher_ratio = float(config.get("teacher_ratio", 1.0))
+        self._path_remap_logged: set[tuple[str, str]] = set()
         if self.degradation_mode != "original":
             raise ValueError(
                 "data.degradation_mode must be 'original'; "
@@ -78,6 +81,64 @@ class ResOPDDataset(RLHFDataset):
                 "  Teacher degradation: original-size ratio "
                 f"{self.teacher_ratio}"
             )
+
+    @staticmethod
+    def _data_root_candidates() -> list[Path]:
+        candidates = [
+            os.environ.get("BENCHMARK_DATA_DIR", ""),
+            os.environ.get("VISION_BENCHMARK_DATA_DIR", ""),
+            os.environ.get("RES_OPD_DATA_ROOT", ""),
+            str(Path.home() / "notebook" / "data"),
+            str(Path.home() / "notebook" / "yanlin" / "data"),
+            "/home/zhengyanzhao.zyz/notebook/yanlin/data",
+            "/home/liuyanlin.lyl/notebook/data",
+        ]
+        deduped: list[Path] = []
+        seen = set()
+        for candidate in candidates:
+            if not candidate:
+                continue
+            path = Path(candidate)
+            key = str(path)
+            if key not in seen:
+                deduped.append(path)
+                seen.add(key)
+        return deduped
+
+    def _resolve_image_path(self, path: str | os.PathLike) -> str:
+        original = Path(path)
+        if original.exists():
+            return str(original)
+
+        original_text = str(original)
+        old_roots = [
+            "/home/liuyanlin.lyl/notebook/data",
+            "/home/zhengyanzhao.zyz/notebook/yanlin/data",
+        ]
+        attempted = []
+        for old_root in old_roots:
+            if not original_text.startswith(old_root + "/"):
+                continue
+            rel = original_text[len(old_root) + 1 :]
+            for data_root in self._data_root_candidates():
+                candidate = data_root / rel
+                attempted.append(str(candidate))
+                if candidate.exists():
+                    key = (old_root, str(data_root))
+                    if key not in self._path_remap_logged:
+                        print(
+                            "[ResOPDDataset] Remapping image paths: "
+                            f"{old_root} -> {data_root}"
+                        )
+                        self._path_remap_logged.add(key)
+                    return str(candidate)
+
+        attempted_text = "\n  ".join(attempted[:8])
+        if attempted_text:
+            attempted_text = "\nTried remapped candidates:\n  " + attempted_text
+        raise FileNotFoundError(
+            f"Image path does not exist: {original_text}{attempted_text}"
+        )
 
     @staticmethod
     def _degrade_by_ratio(
@@ -116,19 +177,19 @@ class ResOPDDataset(RLHFDataset):
                 if isinstance(inner, Image.Image):
                     return inner.convert("RGB")
                 if isinstance(inner, str):
-                    return Image.open(inner).convert("RGB")
+                    return Image.open(self._resolve_image_path(inner)).convert("RGB")
                 raise TypeError(
                     f"Unsupported image type in dict: {type(inner)}"
                 )
             path = image_entry.get("path")
             if path is not None:
-                return Image.open(path).convert("RGB")
+                return Image.open(self._resolve_image_path(path)).convert("RGB")
             raise ValueError(
                 f"Image dict has no 'bytes', 'image', or 'path': "
                 f"{list(image_entry.keys())}"
             )
         if isinstance(image_entry, str):
-            return Image.open(image_entry).convert("RGB")
+            return Image.open(self._resolve_image_path(image_entry)).convert("RGB")
         raise TypeError(f"Unsupported image type: {type(image_entry)}")
 
     def _build_messages(self, example: dict):
