@@ -1428,12 +1428,13 @@ def compute_self_distillation_loss(
         selective_weight_mode = str(
             self_distillation_config.get("selective_weight_mode", "entropy_rkl_bucket") or "entropy_rkl_bucket"
         )
-        valid_selective_weight_modes = {"entropy_rkl_bucket", "risk_only_mask"}
+        valid_selective_weight_modes = {"entropy_rkl_bucket", "risk_only_mask", "random_mask", "entropy_mask"}
         if selective_weight_mode not in valid_selective_weight_modes:
             raise ValueError(
                 "self_distillation.selective_weight_mode must be one of "
                 f"{sorted(valid_selective_weight_modes)}, got {selective_weight_mode}"
             )
+        mask_only_mode = selective_weight_mode in {"risk_only_mask", "random_mask", "entropy_mask"}
         if student_entropy is None:
             raise ValueError(
                 f"self_distillation.selective_weight_enabled=True with mode={selective_weight_mode} "
@@ -1601,7 +1602,7 @@ def compute_self_distillation_loss(
                 mid_or_lower_loss_mask = raw_per_token_loss.detach() <= loss_mid_threshold
                 high_loss_mask = raw_per_token_loss.detach() >= loss_high_threshold
 
-                if selective_weight_mode == "risk_only_mask":
+                if mask_only_mode:
                     def percentile_rank(metric_tensor: torch.Tensor) -> torch.Tensor:
                         ranks = torch.zeros_like(metric_tensor, dtype=torch.float32)
                         values = metric_tensor[valid_weight_mask].float()
@@ -1621,19 +1622,29 @@ def compute_self_distillation_loss(
                         ranks[valid_weight_mask] = valid_ranks
                         return ranks
 
-                    rkl_rank = percentile_rank(raw_per_token_loss.detach().float())
                     entropy_rank = percentile_rank(student_entropy.detach().float())
-                    nll_rank = percentile_rank(student_nll.float())
-                    if uncertainty_mode == "entropy":
-                        uncertainty_rank = entropy_rank
-                    elif uncertainty_mode == "nll":
-                        uncertainty_rank = nll_rank
-                    elif uncertainty_mode == "entropy_and_nll":
-                        uncertainty_rank = entropy_rank * nll_rank
+                    if selective_weight_mode == "random_mask":
+                        risk_score = torch.zeros_like(raw_per_token_loss, dtype=torch.float32)
+                        risk_score[valid_weight_mask] = torch.rand(
+                            int(valid_weight_mask.sum().item()),
+                            device=raw_per_token_loss.device,
+                            dtype=torch.float32,
+                        )
+                    elif selective_weight_mode == "entropy_mask":
+                        risk_score = entropy_rank
                     else:
-                        uncertainty_rank = torch.maximum(entropy_rank, nll_rank)
+                        rkl_rank = percentile_rank(raw_per_token_loss.detach().float())
+                        nll_rank = percentile_rank(student_nll.float())
+                        if uncertainty_mode == "entropy":
+                            uncertainty_rank = entropy_rank
+                        elif uncertainty_mode == "nll":
+                            uncertainty_rank = nll_rank
+                        elif uncertainty_mode == "entropy_and_nll":
+                            uncertainty_rank = entropy_rank * nll_rank
+                        else:
+                            uncertainty_rank = torch.maximum(entropy_rank, nll_rank)
+                        risk_score = rkl_rank * uncertainty_rank
 
-                    risk_score = rkl_rank * uncertainty_rank
                     risk_score_values = risk_score[valid_weight_mask].float()
                     risk_score_threshold = torch.quantile(risk_score_values, max(0.0, 1.0 - risk_top_p))
                     risk_mask = valid_weight_mask & (risk_score >= risk_score_threshold)
@@ -1696,7 +1707,7 @@ def compute_self_distillation_loss(
                 raw_weight_mean.detach().item() if raw_weight_mean is not None else 0.0
             )
             metrics["self_distillation/selective_weight_effective_mean"] = effective_weight_mean.detach().item()
-            if selective_weight_mode != "risk_only_mask":
+            if not mask_only_mode:
                 metrics["self_distillation/selective_weight_protected_frac"] = (
                     (protect_count + unclear_count) / valid_weight_count if valid_weight_count > 0 else 0.0
                 )
@@ -1715,11 +1726,12 @@ def compute_self_distillation_loss(
                 metrics["self_distillation/selective_weight_unclear_frac"] = (
                     unclear_count / valid_weight_count if valid_weight_count > 0 else 0.0
                 )
-            risk_frac_metric = (
-                "self_distillation/selective_weight_risk_unprotect_frac"
-                if selective_weight_mode == "risk_only_mask"
-                else "self_distillation/selective_weight_risk_frac"
-            )
+            if selective_weight_mode == "risk_only_mask":
+                risk_frac_metric = "self_distillation/selective_weight_risk_unprotect_frac"
+            elif mask_only_mode:
+                risk_frac_metric = "self_distillation/selective_weight_selected_frac"
+            else:
+                risk_frac_metric = "self_distillation/selective_weight_risk_frac"
             metrics[risk_frac_metric] = risk_count / valid_weight_count if valid_weight_count > 0 else 0.0
             metrics["self_distillation/selective_weight_other_frac"] = (
                 other_count / valid_weight_count if valid_weight_count > 0 else 0.0
@@ -1734,8 +1746,8 @@ def compute_self_distillation_loss(
             metrics["self_distillation/selective_weight_weighted_abs_loss_over_raw"] = (
                 weighted_abs_loss_total / raw_abs_loss_total
             ).detach().item()
-            if selective_weight_mode == "risk_only_mask":
-                threshold_prefix = "self_distillation/risk_only_mask"
+            if mask_only_mode:
+                threshold_prefix = f"self_distillation/{selective_weight_mode}"
                 metrics[f"{threshold_prefix}/top_p"] = risk_top_p
                 metrics[f"{threshold_prefix}/score_threshold"] = (
                     risk_score_threshold.detach().item() if risk_score_threshold is not None else 0.0
@@ -1761,7 +1773,7 @@ def compute_self_distillation_loss(
                     metrics[f"{prefix}_weighted_abs_loss_share"] = (
                         verl_F.masked_sum(weighted_abs_loss_for_metrics, bucket_mask_f) / weighted_abs_loss_total
                     ).detach().item()
-                    if selective_weight_mode == "risk_only_mask":
+                    if mask_only_mode:
                         metrics[f"{prefix}_student_entropy_mean"] = (
                             verl_F.masked_sum(student_entropy.detach().float(), bucket_mask_f) / bucket_count_tensor
                         ).detach().item()
@@ -1780,15 +1792,16 @@ def compute_self_distillation_loss(
                     metrics[f"{prefix}_effective_weight_mean"] = 0.0
                     metrics[f"{prefix}_raw_abs_loss_share"] = 0.0
                     metrics[f"{prefix}_weighted_abs_loss_share"] = 0.0
-                    if selective_weight_mode == "risk_only_mask":
+                    if mask_only_mode:
                         metrics[f"{prefix}_student_entropy_mean"] = 0.0
                         metrics[f"{prefix}_raw_loss_mean"] = 0.0
                         metrics[f"{prefix}_student_nll_mean"] = 0.0
                         if teacher_entropy is not None:
                             metrics[f"{prefix}_teacher_entropy_mean"] = 0.0
 
-            if selective_weight_mode == "risk_only_mask":
-                add_selective_weight_bucket_metrics("risk_unprotect", risk_mask)
+            if mask_only_mode:
+                selected_bucket_name = "risk_unprotect" if selective_weight_mode == "risk_only_mask" else "selected"
+                add_selective_weight_bucket_metrics(selected_bucket_name, risk_mask)
                 add_selective_weight_bucket_metrics("masked_other", valid_weight_mask & (~risk_mask))
             else:
                 add_selective_weight_bucket_metrics("protect", protect_mask)
@@ -1802,7 +1815,7 @@ def compute_self_distillation_loss(
             if metrics_verbose:
                 metrics["self_distillation/selective_weight_risk_weight"] = risk_weight
                 metrics["self_distillation/selective_weight_other_weight"] = other_weight
-                if selective_weight_mode != "risk_only_mask":
+                if not mask_only_mode:
                     metrics["self_distillation/selective_weight_protect_strong_weight"] = protect_strong_weight
                     metrics["self_distillation/selective_weight_protect_mid_weight"] = protect_mid_weight
                     metrics["self_distillation/selective_weight_protect_weak_weight"] = protect_weak_weight

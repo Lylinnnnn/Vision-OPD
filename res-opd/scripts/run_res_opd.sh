@@ -173,14 +173,14 @@ OPD_BUCKET_Q_HIGH="${OPD_BUCKET_Q_HIGH:-0.90}"
 OPD_SELECTIVE_WEIGHT="${OPD_SELECTIVE_WEIGHT:-False}"
 OPD_SELECTIVE_WEIGHT_MODE="${OPD_SELECTIVE_WEIGHT_MODE:-entropy_rkl_bucket}"
 case "$OPD_SELECTIVE_WEIGHT_MODE" in
-    entropy_rkl_bucket|risk_only_mask)
+    entropy_rkl_bucket|risk_only_mask|random_mask|entropy_mask)
         ;;
     protect_risk_unprotect)
         echo "Error: OPD_SELECTIVE_WEIGHT_MODE=protect_risk_unprotect has been removed. Use risk_only_mask." >&2
         exit 1
         ;;
     *)
-        echo "Error: Unknown OPD_SELECTIVE_WEIGHT_MODE=$OPD_SELECTIVE_WEIGHT_MODE (expected: entropy_rkl_bucket or risk_only_mask)" >&2
+        echo "Error: Unknown OPD_SELECTIVE_WEIGHT_MODE=$OPD_SELECTIVE_WEIGHT_MODE (expected: entropy_rkl_bucket, risk_only_mask, random_mask, or entropy_mask)" >&2
         exit 1
         ;;
 esac
@@ -193,8 +193,12 @@ OPD_SELECTIVE_WEIGHT_RISK_WAS_SET="${OPD_SELECTIVE_WEIGHT_RISK+x}"
 OPD_SELECTIVE_WEIGHT_OTHER_WAS_SET="${OPD_SELECTIVE_WEIGHT_OTHER+x}"
 OPD_SELECTIVE_WEIGHT_RISK="${OPD_SELECTIVE_WEIGHT_RISK:-1.00}"
 OPD_SELECTIVE_WEIGHT_OTHER="${OPD_SELECTIVE_WEIGHT_OTHER:-1.00}"
-if [[ "$OPD_SELECTIVE_WEIGHT_MODE" == "risk_only_mask" ]]; then
-    OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE="${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE:-nll}"
+if [[ "$OPD_SELECTIVE_WEIGHT_MODE" == "risk_only_mask" || "$OPD_SELECTIVE_WEIGHT_MODE" == "random_mask" || "$OPD_SELECTIVE_WEIGHT_MODE" == "entropy_mask" ]]; then
+    if [[ "$OPD_SELECTIVE_WEIGHT_MODE" == "risk_only_mask" ]]; then
+        OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE="${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE:-nll}"
+    else
+        OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE="${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE:-entropy}"
+    fi
     OPD_SELECTIVE_WEIGHT_TIERED_PROTECT="${OPD_SELECTIVE_WEIGHT_TIERED_PROTECT:-False}"
     OPD_SELECTIVE_WEIGHT_NORMALIZE="${OPD_SELECTIVE_WEIGHT_NORMALIZE:-False}"
     OPD_SELECTIVE_WEIGHT_PROTECT_STRONG_Q="${OPD_SELECTIVE_WEIGHT_PROTECT_STRONG_Q:-0.25}"
@@ -414,11 +418,20 @@ PY
 NAME_TAGS=("${TEACHER_MODE}" "${LOSS_TAG}")
 case "${OPD_SELECTIVE_WEIGHT:-False}" in
     True|true|TRUE|1|yes|YES|y|Y)
-        if [[ "$OPD_SELECTIVE_WEIGHT_MODE" == "risk_only_mask" ]]; then
-            NAME_TAGS+=("riskmask" "${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE}" "p$(format_prob_tag "$OPD_RISK_MASK_TOP_P")")
-        else
-            NAME_TAGS+=("sw" "${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE}")
-        fi
+        case "$OPD_SELECTIVE_WEIGHT_MODE" in
+            risk_only_mask)
+                NAME_TAGS+=("riskmask" "${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE}" "p$(format_prob_tag "$OPD_RISK_MASK_TOP_P")")
+                ;;
+            random_mask)
+                NAME_TAGS+=("randommask" "p$(format_prob_tag "$OPD_RISK_MASK_TOP_P")")
+                ;;
+            entropy_mask)
+                NAME_TAGS+=("entropymask" "p$(format_prob_tag "$OPD_RISK_MASK_TOP_P")")
+                ;;
+            *)
+                NAME_TAGS+=("sw" "${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE}")
+                ;;
+        esac
         ;;
 esac
 if [[ "$OPD_TOKEN_MASK_PCT" != "0" && "$OPD_TOKEN_MASK_PCT" != "0.0" && "$OPD_TOKEN_MASK_PCT" != "0.00" ]]; then
@@ -914,11 +927,15 @@ echo "Alpha (loss):     $ALPHA (0.5=JSD, 1.0=RKL, 0.0=FKL)"
 echo "Selective veto:   $OPD_SELECTIVE_VETO (top_p=$OPD_SELECTIVE_VETO_TOP_P, min_score=$OPD_SELECTIVE_VETO_MIN_SCORE, normalize=$OPD_SELECTIVE_VETO_NORMALIZE)"
 echo "Token mask:       pct=$OPD_TOKEN_MASK_PCT metric=$OPD_TOKEN_MASK_METRIC (bucket_metrics=$OPD_BUCKET_METRICS, bucket_q=${OPD_BUCKET_Q_LOW}/${OPD_BUCKET_Q_HIGH})"
 SELECTIVE_WEIGHT_RISK_LABEL="risk"
-if [[ "$OPD_SELECTIVE_WEIGHT_MODE" == "risk_only_mask" ]]; then
-    SELECTIVE_WEIGHT_RISK_LABEL="risk_unprotect"
+if [[ "$OPD_SELECTIVE_WEIGHT_MODE" == "risk_only_mask" || "$OPD_SELECTIVE_WEIGHT_MODE" == "random_mask" || "$OPD_SELECTIVE_WEIGHT_MODE" == "entropy_mask" ]]; then
+    SELECTIVE_WEIGHT_RISK_LABEL="selected"
 fi
-if [[ "$OPD_SELECTIVE_WEIGHT_MODE" == "risk_only_mask" ]]; then
-    echo "Selective weight: $OPD_SELECTIVE_WEIGHT (mode=$OPD_SELECTIVE_WEIGHT_MODE, risk_score=rank(RKL)*rank(${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE}), risk_top_p=$OPD_RISK_MASK_TOP_P, normalize=$OPD_SELECTIVE_WEIGHT_NORMALIZE, weights ${SELECTIVE_WEIGHT_RISK_LABEL}/other=${OPD_SELECTIVE_WEIGHT_RISK}/${OPD_SELECTIVE_WEIGHT_OTHER})"
+if [[ "$OPD_SELECTIVE_WEIGHT_MODE" == "risk_only_mask" || "$OPD_SELECTIVE_WEIGHT_MODE" == "random_mask" || "$OPD_SELECTIVE_WEIGHT_MODE" == "entropy_mask" ]]; then
+    MASK_SCORE_DESC="$OPD_SELECTIVE_WEIGHT_MODE"
+    [[ "$OPD_SELECTIVE_WEIGHT_MODE" == "risk_only_mask" ]] && MASK_SCORE_DESC="rank(RKL)*rank(${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE})"
+    [[ "$OPD_SELECTIVE_WEIGHT_MODE" == "entropy_mask" ]] && MASK_SCORE_DESC="rank(student_entropy)"
+    [[ "$OPD_SELECTIVE_WEIGHT_MODE" == "random_mask" ]] && MASK_SCORE_DESC="uniform_random"
+    echo "Selective weight: $OPD_SELECTIVE_WEIGHT (mode=$OPD_SELECTIVE_WEIGHT_MODE, mask_score=$MASK_SCORE_DESC, top_p=$OPD_RISK_MASK_TOP_P, normalize=$OPD_SELECTIVE_WEIGHT_NORMALIZE, weights ${SELECTIVE_WEIGHT_RISK_LABEL}/other=${OPD_SELECTIVE_WEIGHT_RISK}/${OPD_SELECTIVE_WEIGHT_OTHER})"
 else
     echo "Selective weight: $OPD_SELECTIVE_WEIGHT (mode=$OPD_SELECTIVE_WEIGHT_MODE, uncertainty=$OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE, tiered=$OPD_SELECTIVE_WEIGHT_TIERED_PROTECT, normalize=$OPD_SELECTIVE_WEIGHT_NORMALIZE, entropy_q=${OPD_SELECTIVE_WEIGHT_ENTROPY_LOW_Q}/${OPD_SELECTIVE_WEIGHT_ENTROPY_HIGH_Q}, nll_q=${OPD_SELECTIVE_WEIGHT_NLL_LOW_Q}/${OPD_SELECTIVE_WEIGHT_NLL_HIGH_Q}, loss_q=${OPD_SELECTIVE_WEIGHT_LOSS_LOW_Q}/${OPD_SELECTIVE_WEIGHT_LOSS_MID_Q}/${OPD_SELECTIVE_WEIGHT_LOSS_HIGH_Q}, weights protect/unclear/${SELECTIVE_WEIGHT_RISK_LABEL}/other=${OPD_SELECTIVE_WEIGHT_PROTECT}/${OPD_SELECTIVE_WEIGHT_UNCLEAR}/${OPD_SELECTIVE_WEIGHT_RISK}/${OPD_SELECTIVE_WEIGHT_OTHER})"
 fi

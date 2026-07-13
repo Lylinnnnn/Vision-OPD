@@ -59,6 +59,7 @@ actor_rollout_ref:
       selective_bucket_q_low: 0.70
       selective_bucket_q_high: 0.90
       selective_weight_enabled: False
+      # Options: entropy_rkl_bucket, risk_only_mask, random_mask, entropy_mask
       selective_weight_mode: entropy_rkl_bucket
       selective_weight_uncertainty_mode: entropy
       selective_weight_tiered_protect: False

@@ -91,16 +91,16 @@ class SelfDistillationConfig(BaseConfig):
         selective_bucket_q_low (float): Lower positive-disagreement quantile for bucket split, default 0.70.
         selective_bucket_q_high (float): Higher positive-disagreement quantile for bucket split, default 0.90.
         selective_weight_enabled (bool): Whether to apply soft token weights to the distillation loss.
-        selective_weight_mode (str): Soft-weighting rule. Supports "entropy_rkl_bucket" and
-            "risk_only_mask".
+        selective_weight_mode (str): Soft-weighting rule. Supports "entropy_rkl_bucket",
+            "risk_only_mask", "random_mask", and "entropy_mask".
         selective_weight_uncertainty_mode (str): Which student-uncertainty proxy drives
             protect/risk buckets. Supports "entropy", "nll", "entropy_or_nll", and
             "entropy_and_nll".
         selective_weight_tiered_protect (bool): Deprecated tprotect switch. New runs should use
             "risk_only_mask" instead.
         selective_weight_normalize (bool): Normalize valid-token mean weight to one.
-        selective_weight_risk_top_p (float): In "risk_only_mask" mode, keep only the top-p
-            tokens ranked by coupled RKL/student-uncertainty score.
+        selective_weight_risk_top_p (float): In mask-only modes, keep only the top-p
+            tokens ranked by the mode-specific score.
         selective_weight_protect_strong_q (float): Very-low quantile for the strongest protect tier.
         selective_weight_entropy_low_q (float): Low-entropy quantile used for protect tokens.
         selective_weight_entropy_high_q (float): High-entropy quantile used for risk/unclear tokens.
@@ -257,7 +257,7 @@ class SelfDistillationConfig(BaseConfig):
                 "self_distillation selective bucket quantiles must satisfy 0 < q_low < q_high < 1, "
                 f"got q_low={self.selective_bucket_q_low}, q_high={self.selective_bucket_q_high}"
             )
-        valid_selective_weight_modes = ["entropy_rkl_bucket", "risk_only_mask"]
+        valid_selective_weight_modes = ["entropy_rkl_bucket", "risk_only_mask", "random_mask", "entropy_mask"]
         if self.selective_weight_mode not in valid_selective_weight_modes:
             raise ValueError(
                 "self_distillation.selective_weight_mode must be one of "
