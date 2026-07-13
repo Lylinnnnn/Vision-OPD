@@ -77,12 +77,14 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RES_OPD_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
+source "${SCRIPT_DIR}/path_utils.sh"
 
 CONFIG_NAME="res_opd"
-MODEL_PATH="${MODEL_PATH:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct}"
+DEFAULT_MODEL_ROOT="$(res_opd_default_model_root)"
+MODEL_PATH="${MODEL_PATH:-${DEFAULT_MODEL_ROOT}/Qwen3VL-2B-Instruct}"
 MODEL_NAME=$(basename "$MODEL_PATH")
 MODEL_NAME_LC="$(echo "$MODEL_NAME" | tr '[:upper:]' '[:lower:]')"
-PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
+PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
 if [[ "$MODEL_NAME_LC" == *"8b"* ]]; then
     MODEL_SIZE_PROFILE="${MODEL_SIZE_PROFILE:-8b}"
     DEFAULT_TRAIN_BATCH_SIZE=16

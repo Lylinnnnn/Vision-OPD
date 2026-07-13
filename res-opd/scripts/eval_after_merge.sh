@@ -46,6 +46,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RES_OPD_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
+source "${SCRIPT_DIR}/path_utils.sh"
 
 export PYTHONPATH="$VISION_OPD_ROOT:${PYTHONPATH:-}"
 
@@ -102,7 +103,8 @@ if [[ "$DATASET_VERSION" == "full" ]]; then
 else
     TEST_JSON="${RES_OPD_ROOT}/data/test.json"
 fi
-PYTHON_BIN="/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3"
+PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
+DEFAULT_BENCHMARK_DATA_DIR="$(res_opd_default_data_root)"
 POPE_BENCHMARK="${POPE_BENCHMARK:-pope_adv,pope_pop,pope_random}"
 POPE_SOURCE="${POPE_SOURCE:-res-opd-test}"
 POPE_QUESTIONS_PER_LABEL="${POPE_QUESTIONS_PER_LABEL:-3}"
@@ -113,7 +115,7 @@ POPE_MAX_NEW_TOKENS_WAS_SET="${POPE_MAX_NEW_TOKENS+x}"
 POPE_MAX_NEW_TOKENS="${POPE_MAX_NEW_TOKENS:-$EVAL_MAX_TOKENS}"
 POPE_MAX_SAMPLES="${POPE_MAX_SAMPLES:-0}"
 POPE_USE_PREPARED_QUERY="${POPE_USE_PREPARED_QUERY:-False}"
-AMBER_ROOT="${AMBER_ROOT:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}/AMBER}"
+AMBER_ROOT="${AMBER_ROOT:-${BENCHMARK_DATA_DIR:-$DEFAULT_BENCHMARK_DATA_DIR}/AMBER}"
 AMBER_IMAGE_ROOT="${AMBER_IMAGE_ROOT:-}"
 AMBER_EVAL_TYPE="${AMBER_EVAL_TYPE:-a}"
 AMBER_MAX_SAMPLES="${AMBER_MAX_SAMPLES:-0}"
@@ -143,7 +145,7 @@ EVAL_OPD_TRACE_SCORE_BASELINE="${EVAL_OPD_TRACE_SCORE_BASELINE:-False}"
 EVAL_OPD_TRACE_CASE_ANALYSIS="${EVAL_OPD_TRACE_CASE_ANALYSIS:-}"
 EVAL_OPD_TRACE_MAX_SAMPLES="${EVAL_OPD_TRACE_MAX_SAMPLES:-0}"
 VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar}"
-VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-/home/liuyanlin.lyl/notebook/data}}"
+VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-$DEFAULT_BENCHMARK_DATA_DIR}}"
 VISION_BENCHMARK_AUTO_DOWNLOAD="${VISION_BENCHMARK_AUTO_DOWNLOAD:-${BENCHMARK_AUTO_DOWNLOAD:-True}}"
 VISION_BENCHMARK_CLEAN_SOURCE="${VISION_BENCHMARK_CLEAN_SOURCE:-${BENCHMARK_CLEAN_SOURCE:-False}}"
 VISION_BENCHMARK_REFRESH_PROMPTS_WAS_SET="${VISION_BENCHMARK_REFRESH_PROMPTS+x}${BENCHMARK_REFRESH_PROMPTS+x}"
@@ -707,8 +709,8 @@ else
 fi
 DATASET_TAG=""
 if [[ -f "$TRAIN_FILE" && -f "$TEST_FILE" ]]; then
-    TRAIN_N=$(/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3 -c "import pandas as pd; print(len(pd.read_parquet('$TRAIN_FILE')))" 2>/dev/null || echo "?")
-    TEST_N=$(/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3 -c "import json; print(len(json.load(open('$TEST_FILE'))))" 2>/dev/null || echo "?")
+    TRAIN_N=$("$PYTHON_BIN" -c "import pandas as pd; print(len(pd.read_parquet('$TRAIN_FILE')))" 2>/dev/null || echo "?")
+    TEST_N=$("$PYTHON_BIN" -c "import json; print(len(json.load(open('$TEST_FILE'))))" 2>/dev/null || echo "?")
     DATASET_TAG="train${TRAIN_N}_test${TEST_N}"
 else
     DATASET_TAG="unknown_dataset"

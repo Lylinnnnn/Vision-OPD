@@ -37,6 +37,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -50,8 +51,24 @@ from robust_chair_analysis import (
     aggregate_from_arrays,
 )
 
-COCO_INSTANCES_PATH = "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/annotations/instances_val2017.json"
-COCO_CAPTIONS_PATH = "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/annotations/captions_val2017.json"
+def default_data_root():
+    candidates = [
+        os.environ.get("BENCHMARK_DATA_DIR", ""),
+        os.environ.get("VISION_BENCHMARK_DATA_DIR", ""),
+        str(Path.home() / "notebook" / "data"),
+        str(Path.home() / "notebook" / "yanlin" / "data"),
+        "/home/zhengyanzhao.zyz/notebook/yanlin/data",
+        "/home/liuyanlin.lyl/notebook/data",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return Path(candidate)
+    return Path("/home/liuyanlin.lyl/notebook/data")
+
+
+DEFAULT_DATA_ROOT = default_data_root()
+COCO_INSTANCES_PATH = str(DEFAULT_DATA_ROOT / "COCO" / "coco2017val" / "annotations" / "instances_val2017.json")
+COCO_CAPTIONS_PATH = str(DEFAULT_DATA_ROOT / "COCO" / "coco2017val" / "annotations" / "captions_val2017.json")
 
 PROMPT_TEXT = (
     "Please describe this image in detail. Include all visible objects, "

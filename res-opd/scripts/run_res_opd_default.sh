@@ -24,12 +24,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RES_OPD_ROOT="$(dirname "$SCRIPT_DIR")"
+source "${SCRIPT_DIR}/path_utils.sh"
 
 # =============================================================================
 # OPTIMIZED DEFAULTS (conservative)
 # =============================================================================
 
-DEFAULT_MODEL_PATH="${MODEL_PATH:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct}"
+DEFAULT_MODEL_ROOT="$(res_opd_default_model_root)"
+DEFAULT_MODEL_PATH="${MODEL_PATH:-${DEFAULT_MODEL_ROOT}/Qwen3VL-2B-Instruct}"
 DEFAULT_MODEL_NAME_LC="$(basename "$DEFAULT_MODEL_PATH" | tr '[:upper:]' '[:lower:]')"
 if [[ "$DEFAULT_MODEL_NAME_LC" == *"8b"* ]]; then
     RES_OPD_MODEL_SIZE_PROFILE="8b"
@@ -62,6 +64,7 @@ fi
 
 # --- Current experiment protocol ---
 export DATASET_VERSION="${DATASET_VERSION:-full}"
+export PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
 export TOTAL_EPOCHS="${TOTAL_EPOCHS:-1}"
 export DEGRADATION_MODE="${DEGRADATION_MODE:-original}"
 export STUDENT_RATIO="${STUDENT_RATIO:-1.0}"

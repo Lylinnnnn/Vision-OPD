@@ -26,6 +26,21 @@ from eval_pope import parse_benchmarks as parse_pope_benchmarks  # noqa: E402
 from eval_amber import parse_official_stdout  # noqa: E402
 
 
+def default_data_root() -> Path:
+    candidates = [
+        os.environ.get("BENCHMARK_DATA_DIR", ""),
+        os.environ.get("VISION_BENCHMARK_DATA_DIR", ""),
+        str(Path.home() / "notebook" / "data"),
+        str(Path.home() / "notebook" / "yanlin" / "data"),
+        "/home/zhengyanzhao.zyz/notebook/yanlin/data",
+        "/home/liuyanlin.lyl/notebook/data",
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return Path(candidate)
+    return Path("/home/liuyanlin.lyl/notebook/data")
+
+
 VISION_BENCHMARK_JSON_MAP = {
     "zoombench": "zoombench.json",
     "vstar": "vstar.json",
@@ -424,6 +439,7 @@ def merge_vision(args, shard_dirs, tasks):
 
 
 def main():
+    data_root = default_data_root()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--final-output-dir", type=Path, required=True)
     parser.add_argument("--shard-root", type=Path, required=True)
@@ -431,7 +447,7 @@ def main():
     parser.add_argument("--pope-benchmark", default="pope_adv,pope_pop,pope_random")
     parser.add_argument("--pope-source", default="res-opd-test")
     parser.add_argument("--vision-benchmark", default="mmstar,cv-bench")
-    parser.add_argument("--vision-benchmark-data-dir", type=Path, default=Path("/home/liuyanlin.lyl/notebook/data"))
+    parser.add_argument("--vision-benchmark-data-dir", type=Path, default=data_root)
     parser.add_argument("--vision-benchmark-output-suffix", default="")
     parser.add_argument("--experiment-name", required=True)
     parser.add_argument("--seed", default="42")
@@ -442,7 +458,7 @@ def main():
     parser.add_argument("--judge-model", default="")
     parser.add_argument("--judge-model-path", default="")
     parser.add_argument("--judge-max-tokens", default="2048")
-    parser.add_argument("--amber-root", type=Path, default=Path("/home/liuyanlin.lyl/notebook/data/AMBER"))
+    parser.add_argument("--amber-root", type=Path, default=data_root / "AMBER")
     parser.add_argument("--amber-eval-type", default="a")
     parser.add_argument("--amber-skip-official-eval", action="store_true")
     parser.add_argument("--amber-official-eval-workers", type=int, default=1)
