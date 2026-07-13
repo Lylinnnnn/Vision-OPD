@@ -22,7 +22,7 @@ set -eo pipefail
 #   - STUDENT_RATIO:       student original-ratio degradation
 #   - TEACHER_RATIO:       teacher original-ratio degradation
 #   - STUDENT_PX/TEACHER_PX/TARGET_PX: legacy metadata/CLI compatibility only
-#   - TEACHER_MODE:        ema / frozen / coevolving
+#   - TEACHER_MODE:        ema / frozen / fixed / coevolving
 #   - ALPHA:               loss interpolation (0.5=JSD, 1.0=RKL, 0.0=FKL)
 #   - ROLLOUT_N:           number of rollouts per sample (1=pure KD, 8=GRPO+KD)
 #   - OPD_SELECTIVE_VETO:  keep only top-p low-res veto tokens for distillation
@@ -130,12 +130,14 @@ case "$DEGRADATION_MODE" in
 esac
 
 # --- Teacher mode ---
-# Options: ema (default), frozen, coevolving
+# Options: ema (default), frozen, fixed, coevolving
 #   ema:         EMA teacher (teacher_model_source=legacy, teacher_regularization=ema)
 #   frozen:      frozen base model as teacher (teacher_model_source=legacy, teacher_regularization=none)
+#   fixed:       frozen external teacher model from TEACHER_MODEL_PATH
 #   coevolving:  actor IS the teacher (teacher_model_source=actor, teacher_regularization=none)
 TEACHER_MODE="${TEACHER_MODE:-ema}"
 TEACHER_UPDATE_RATE="${TEACHER_UPDATE_RATE:-0.05}"
+TEACHER_MODEL_PATH="${TEACHER_MODEL_PATH:-}"
 
 case "$TEACHER_MODE" in
     ema)
@@ -146,12 +148,20 @@ case "$TEACHER_MODE" in
         TEACHER_MODEL_SOURCE="legacy"
         TEACHER_REGULARIZATION="none"
         ;;
+    fixed)
+        if [[ -z "$TEACHER_MODEL_PATH" ]]; then
+            echo "Error: TEACHER_MODE=fixed requires TEACHER_MODEL_PATH." >&2
+            exit 1
+        fi
+        TEACHER_MODEL_SOURCE="fixed"
+        TEACHER_REGULARIZATION="none"
+        ;;
     coevolving)
         TEACHER_MODEL_SOURCE="actor"
         TEACHER_REGULARIZATION="none"
         ;;
     *)
-        echo "Error: Unknown TEACHER_MODE=$TEACHER_MODE (expected: ema, frozen, coevolving)" >&2
+        echo "Error: Unknown TEACHER_MODE=$TEACHER_MODE (expected: ema, frozen, fixed, coevolving)" >&2
         exit 1
         ;;
 esac
@@ -416,6 +426,10 @@ print(str(int(round(float(sys.argv[1]) * 100))))
 PY
 }
 NAME_TAGS=("${TEACHER_MODE}" "${LOSS_TAG}")
+if [[ "$TEACHER_MODE" == "fixed" ]]; then
+    TEACHER_MODEL_NAME="$(basename "$TEACHER_MODEL_PATH")"
+    NAME_TAGS+=("teacher${TEACHER_MODEL_NAME}")
+fi
 case "${OPD_SELECTIVE_WEIGHT:-False}" in
     True|true|TRUE|1|yes|YES|y|Y)
         case "$OPD_SELECTIVE_WEIGHT_MODE" in
@@ -465,6 +479,13 @@ if [[ "$AUTO_TEE_LOG" =~ ^(True|true|TRUE|1|yes|YES|y|Y)$ && -z "${RES_OPD_TEE_A
     mkdir -p "${RES_OPD_ROOT}/logs"
     export RES_OPD_TEE_ACTIVE=1
     exec > >(tee -a "${RES_OPD_ROOT}/logs/${EXPERIMENT_NAME}.log") 2>&1
+fi
+
+TEACHER_MODEL_PATH_OVERRIDE=()
+if [[ "$TEACHER_MODE" == "fixed" ]]; then
+    TEACHER_MODEL_PATH_OVERRIDE=(
+        actor_rollout_ref.actor.self_distillation.teacher_model_path="$TEACHER_MODEL_PATH"
+    )
 fi
 
 is_truthy() {
@@ -923,6 +944,9 @@ echo "Legacy px args:   student=$STUDENT_PX teacher=$TEACHER_PX target=$TARGET_P
 echo "Student ratio:    $STUDENT_RATIO (original mode)"
 echo "Teacher ratio:    $TEACHER_RATIO (original mode)"
 echo "Teacher mode:     $TEACHER_MODE (src=$TEACHER_MODEL_SOURCE, reg=$TEACHER_REGULARIZATION, rate=$TEACHER_UPDATE_RATE)"
+if [[ "$TEACHER_MODE" == "fixed" ]]; then
+    echo "Teacher model:    $TEACHER_MODEL_PATH"
+fi
 echo "Alpha (loss):     $ALPHA (0.5=JSD, 1.0=RKL, 0.0=FKL)"
 echo "Selective veto:   $OPD_SELECTIVE_VETO (top_p=$OPD_SELECTIVE_VETO_TOP_P, min_score=$OPD_SELECTIVE_VETO_MIN_SCORE, normalize=$OPD_SELECTIVE_VETO_NORMALIZE)"
 echo "Token mask:       pct=$OPD_TOKEN_MASK_PCT metric=$OPD_TOKEN_MASK_METRIC (bucket_metrics=$OPD_BUCKET_METRICS, bucket_q=${OPD_BUCKET_Q_LOW}/${OPD_BUCKET_Q_HIGH})"
@@ -1023,6 +1047,7 @@ set +e
     actor_rollout_ref.actor.self_distillation.is_clip=2.0 \
     actor_rollout_ref.actor.self_distillation.teacher_always_on=True \
     actor_rollout_ref.actor.self_distillation.teacher_model_source=$TEACHER_MODEL_SOURCE \
+    ${TEACHER_MODEL_PATH_OVERRIDE[@]+"${TEACHER_MODEL_PATH_OVERRIDE[@]}"} \
     actor_rollout_ref.actor.self_distillation.teacher_regularization=$TEACHER_REGULARIZATION \
     actor_rollout_ref.actor.self_distillation.teacher_update_rate=$TEACHER_UPDATE_RATE \
     actor_rollout_ref.actor.self_distillation.teacher_image_key=hires_images \
