@@ -378,6 +378,10 @@ build_experiment_name_from_params() {
         if [[ "$sw_mode" == "risk_only_mask" ]]; then
             uncertainty_mode="${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE:-nll}"
             name_tags+=("riskmask" "${uncertainty_mode}" "p$(format_prob_tag "${OPD_RISK_MASK_TOP_P:-0.30}")")
+        elif [[ "$sw_mode" == "random_mask" ]]; then
+            name_tags+=("randommask" "p$(format_prob_tag "${OPD_RISK_MASK_TOP_P:-0.30}")")
+        elif [[ "$sw_mode" == "entropy_mask" ]]; then
+            name_tags+=("entropymask" "p$(format_prob_tag "${OPD_RISK_MASK_TOP_P:-0.30}")")
         else
             uncertainty_mode="${OPD_SELECTIVE_WEIGHT_UNCERTAINTY_MODE:-entropy}"
             name_tags+=("sw" "${uncertainty_mode}")
