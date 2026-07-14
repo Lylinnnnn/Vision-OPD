@@ -58,7 +58,8 @@ find "${BASE_DIR}" -mindepth 1 -maxdepth 1 -type f \( \
     -name "vocab.json" \
 \) -print -delete
 
-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3 -m verl.model_merger merge \
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || echo python3)}"
+"${PYTHON_BIN}" -m verl.model_merger merge \
     --backend fsdp \
     --local_dir "${ACTOR_DIR}" \
     --target_dir "${BASE_DIR}"
