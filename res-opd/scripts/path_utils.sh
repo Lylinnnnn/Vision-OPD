@@ -33,12 +33,12 @@ res_opd_default_python_bin() {
     local home="${HOME:-}"
     local path_python
     path_python="$(command -v python3 2>/dev/null || true)"
-    local fallback="${home}/.conda/envs/vision-opd/bin/python3"
+    local fallback="/home/zhengyanzhao.zyz/.conda/envs/vision-opd/bin/python3"
     res_opd_pick_executable \
         "$fallback" \
-        "${home}/.conda/envs/vision-opd/bin/python3" \
         "/home/zhengyanzhao.zyz/.conda/envs/vision-opd/bin/python3" \
         "/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3" \
+        "${home}/.conda/envs/vision-opd/bin/python3" \
         "$path_python"
 }
 
