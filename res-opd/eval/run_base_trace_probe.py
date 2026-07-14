@@ -24,7 +24,28 @@ import analyze_opd_trace as analyzer  # noqa: E402
 import score_opd_eval_trace as scorer  # noqa: E402
 
 
-DEFAULT_MODEL_PATH = "/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct"
+def _pick_existing_path(*candidates):
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = os.path.expanduser(str(candidate))
+        if os.path.exists(path):
+            return path
+    return os.path.expanduser(str(candidates[-1]))
+
+
+def _default_model_root():
+    home = os.path.expanduser("~")
+    return _pick_existing_path(
+        os.environ.get("RES_OPD_MODEL_ROOT", ""),
+        os.path.join(home, "notebook", "model", "qwen"),
+        os.path.join(home, "notebook", "yanlin", "model", "qwen"),
+        "/home/zhengyanzhao.zyz/notebook/yanlin/model/qwen",
+        "/home/liuyanlin.lyl/notebook/model/qwen",
+    )
+
+
+DEFAULT_MODEL_PATH = os.path.join(_default_model_root(), "Qwen3VL-2B-Instruct")
 
 
 def parse_args():

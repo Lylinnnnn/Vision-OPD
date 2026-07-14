@@ -16,6 +16,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RES_OPD_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
+source "${SCRIPT_DIR}/path_utils.sh"
 
 export PYTHONPATH="$VISION_OPD_ROOT:${PYTHONPATH:-}"
 
@@ -58,7 +59,7 @@ find "${BASE_DIR}" -mindepth 1 -maxdepth 1 -type f \( \
     -name "vocab.json" \
 \) -print -delete
 
-PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || echo python3)}"
+PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
 "${PYTHON_BIN}" -m verl.model_merger merge \
     --backend fsdp \
     --local_dir "${ACTOR_DIR}" \

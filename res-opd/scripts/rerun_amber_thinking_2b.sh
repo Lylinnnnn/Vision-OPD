@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RES_OPD_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "${SCRIPT_DIR}/path_utils.sh"
 cd "$RES_OPD_ROOT"
 
 EVAL_BATCH_SCRIPT="${RES_OPD_ROOT}/scripts/eval_batch_from_oss.sh"
@@ -30,7 +31,7 @@ COMMON_ARGS=(
 # --- 1. Baseline: Qwen3-VL-2B-Thinking (local model, use sharded eval directly) ---
 echo "" | tee -a "$LOG_FILE"
 echo "[1/5] Baseline: Qwen3-VL-2B-Thinking" | tee -a "$LOG_FILE"
-BASELINE_MODEL="/home/liuyanlin.lyl/notebook/model/qwen/Qwen3-VL-2B-Thinking"
+BASELINE_MODEL="${BASELINE_MODEL:-$(res_opd_default_model_root)/Qwen3-VL-2B-Thinking}"
 if [[ -d "$BASELINE_MODEL" ]]; then
     bash "$SHARDED_EVAL_SCRIPT" "$BASELINE_MODEL" 0 "" amber \
         2>&1 | tee -a "$LOG_FILE" || echo "  ⚠️ Baseline failed" | tee -a "$LOG_FILE"

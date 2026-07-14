@@ -33,8 +33,9 @@ res_opd_default_python_bin() {
     local home="${HOME:-}"
     local path_python
     path_python="$(command -v python3 2>/dev/null || true)"
+    local fallback="${path_python:-${home}/.conda/envs/vision-opd/bin/python3}"
     res_opd_pick_executable \
-        "/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3" \
+        "$fallback" \
         "${home}/.conda/envs/vision-opd/bin/python3" \
         "/home/zhengyanzhao.zyz/.conda/envs/vision-opd/bin/python3" \
         "/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3" \
@@ -43,8 +44,9 @@ res_opd_default_python_bin() {
 
 res_opd_default_model_root() {
     local home="${HOME:-}"
+    local fallback="${home}/notebook/model/qwen"
     res_opd_pick_existing_path \
-        "/home/liuyanlin.lyl/notebook/model/qwen" \
+        "$fallback" \
         "${RES_OPD_MODEL_ROOT:-}" \
         "${home}/notebook/model/qwen" \
         "${home}/notebook/yanlin/model/qwen" \
@@ -54,8 +56,9 @@ res_opd_default_model_root() {
 
 res_opd_default_data_root() {
     local home="${HOME:-}"
+    local fallback="${home}/notebook/data"
     res_opd_pick_existing_path \
-        "/home/liuyanlin.lyl/notebook/data" \
+        "$fallback" \
         "${BENCHMARK_DATA_DIR:-}" \
         "${VISION_BENCHMARK_DATA_DIR:-}" \
         "${home}/notebook/data" \

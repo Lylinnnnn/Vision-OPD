@@ -26,7 +26,32 @@ TEST_SAMPLE_SIZE = 1000
 
 RES_OPD_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = RES_OPD_ROOT / "data"
-COCO_ROOT = Path("/home/liuyanlin.lyl/notebook/data/COCO")
+
+
+def _pick_existing_path(*candidates) -> Path:
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate).expanduser()
+        if path.exists():
+            return path
+    return Path(candidates[-1]).expanduser()
+
+
+def _default_data_root() -> Path:
+    home = Path.home()
+    return _pick_existing_path(
+        os.environ.get("RES_OPD_DATA_ROOT", ""),
+        os.environ.get("BENCHMARK_DATA_DIR", ""),
+        os.environ.get("VISION_BENCHMARK_DATA_DIR", ""),
+        home / "notebook" / "data",
+        home / "notebook" / "yanlin" / "data",
+        "/home/zhengyanzhao.zyz/notebook/yanlin/data",
+        "/home/liuyanlin.lyl/notebook/data",
+    )
+
+
+COCO_ROOT = Path(os.environ.get("COCO_ROOT", _default_data_root() / "COCO"))
 TRAIN_IMG_DIR = COCO_ROOT / "train2017"
 VAL_IMG_DIR = COCO_ROOT / "coco2017val" / "val2017"
 VAL_ANNOTATIONS = COCO_ROOT / "coco2017val" / "annotations"

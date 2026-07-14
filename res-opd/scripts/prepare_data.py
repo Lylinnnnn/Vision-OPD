@@ -33,9 +33,34 @@ import datasets
 import numpy as np
 from PIL import Image
 
-COCO_IMAGE_DIR = "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017"
-COCO_INSTANCES_PATH = "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/annotations/instances_val2017.json"
-COCO_CAPTIONS_PATH = "/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/annotations/captions_val2017.json"
+
+def _pick_existing_path(*candidates) -> Path:
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate).expanduser()
+        if path.exists():
+            return path
+    return Path(candidates[-1]).expanduser()
+
+
+def _default_data_root() -> Path:
+    home = Path.home()
+    return _pick_existing_path(
+        os.environ.get("RES_OPD_DATA_ROOT", ""),
+        os.environ.get("BENCHMARK_DATA_DIR", ""),
+        os.environ.get("VISION_BENCHMARK_DATA_DIR", ""),
+        home / "notebook" / "data",
+        home / "notebook" / "yanlin" / "data",
+        "/home/zhengyanzhao.zyz/notebook/yanlin/data",
+        "/home/liuyanlin.lyl/notebook/data",
+    )
+
+
+COCO_ROOT = Path(os.environ.get("COCO_ROOT", _default_data_root() / "COCO"))
+COCO_IMAGE_DIR = str(COCO_ROOT / "coco2017val" / "val2017")
+COCO_INSTANCES_PATH = str(COCO_ROOT / "coco2017val" / "annotations" / "instances_val2017.json")
+COCO_CAPTIONS_PATH = str(COCO_ROOT / "coco2017val" / "annotations" / "captions_val2017.json")
 
 PROMPT_TEXT = (
     "Please describe this image in detail. Include all visible objects, "

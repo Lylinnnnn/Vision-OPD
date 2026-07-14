@@ -43,6 +43,34 @@ import re
 import sys
 from collections import Counter
 
+
+def _pick_existing_path(*candidates):
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = os.path.expanduser(str(candidate))
+        if os.path.exists(path):
+            return path
+    return os.path.expanduser(str(candidates[-1]))
+
+
+def _default_data_root():
+    home = os.path.expanduser("~")
+    return _pick_existing_path(
+        os.environ.get("RES_OPD_DATA_ROOT", ""),
+        os.environ.get("BENCHMARK_DATA_DIR", ""),
+        os.environ.get("VISION_BENCHMARK_DATA_DIR", ""),
+        os.path.join(home, "notebook", "data"),
+        os.path.join(home, "notebook", "yanlin", "data"),
+        "/home/zhengyanzhao.zyz/notebook/yanlin/data",
+        "/home/liuyanlin.lyl/notebook/data",
+    )
+
+
+DEFAULT_COCO_VAL_ROOT = os.path.join(
+    _default_data_root(), "COCO", "coco2017val", "val2017"
+)
+
 EVAL_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, EVAL_DIR)
 from robust_chair_analysis import (
@@ -535,7 +563,7 @@ def _resolve_image_path(record):
         return record["image_path"]
     file_name = record.get("file_name", "")
     if file_name:
-        return f"/home/liuyanlin.lyl/notebook/data/COCO/coco2017val/val2017/{file_name}"
+        return os.path.join(DEFAULT_COCO_VAL_ROOT, file_name)
     return ""
 
 

@@ -27,10 +27,12 @@ from eval_amber import parse_official_stdout  # noqa: E402
 
 
 def default_data_root() -> Path:
+    home_default = Path.home() / "notebook" / "data"
     candidates = [
+        os.environ.get("RES_OPD_DATA_ROOT", ""),
         os.environ.get("BENCHMARK_DATA_DIR", ""),
         os.environ.get("VISION_BENCHMARK_DATA_DIR", ""),
-        str(Path.home() / "notebook" / "data"),
+        str(home_default),
         str(Path.home() / "notebook" / "yanlin" / "data"),
         "/home/zhengyanzhao.zyz/notebook/yanlin/data",
         "/home/liuyanlin.lyl/notebook/data",
@@ -38,7 +40,7 @@ def default_data_root() -> Path:
     for candidate in candidates:
         if candidate and Path(candidate).exists():
             return Path(candidate)
-    return Path("/home/liuyanlin.lyl/notebook/data")
+    return home_default
 
 
 VISION_BENCHMARK_JSON_MAP = {

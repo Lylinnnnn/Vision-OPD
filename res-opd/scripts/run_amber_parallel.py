@@ -8,11 +8,36 @@ via multiprocessing, then merges partial metrics and prints final results.
 import argparse
 import json
 import multiprocessing as mp
+import os
 import sys
 from pathlib import Path
 
-# Add AMBER root to path so we can import from inference.py
-AMBER_ROOT = Path("/home/liuyanlin.lyl/notebook/data/AMBER")
+
+def _pick_existing_path(*candidates) -> Path:
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate).expanduser()
+        if path.exists():
+            return path
+    return Path(candidates[-1]).expanduser()
+
+
+def _default_data_root() -> Path:
+    home = Path.home()
+    return _pick_existing_path(
+        os.environ.get("RES_OPD_DATA_ROOT", ""),
+        os.environ.get("BENCHMARK_DATA_DIR", ""),
+        os.environ.get("VISION_BENCHMARK_DATA_DIR", ""),
+        home / "notebook" / "data",
+        home / "notebook" / "yanlin" / "data",
+        "/home/zhengyanzhao.zyz/notebook/yanlin/data",
+        "/home/liuyanlin.lyl/notebook/data",
+    )
+
+
+# Add AMBER root to path so local official helpers can be imported if needed.
+AMBER_ROOT = Path(os.environ.get("AMBER_ROOT", _default_data_root() / "AMBER"))
 sys.path.insert(0, str(AMBER_ROOT))
 
 import nltk
