@@ -60,6 +60,7 @@ find "${BASE_DIR}" -mindepth 1 -maxdepth 1 -type f \( \
 \) -print -delete
 
 PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
+res_opd_validate_python_bin "$PYTHON_BIN"
 "${PYTHON_BIN}" -m verl.model_merger merge \
     --backend fsdp \
     --local_dir "${ACTOR_DIR}" \

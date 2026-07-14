@@ -104,6 +104,7 @@ else
     TEST_JSON="${RES_OPD_ROOT}/data/test.json"
 fi
 PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
+res_opd_validate_python_bin "$PYTHON_BIN"
 DEFAULT_BENCHMARK_DATA_DIR="$(res_opd_default_data_root)"
 POPE_BENCHMARK="${POPE_BENCHMARK:-pope_adv,pope_pop,pope_random}"
 POPE_SOURCE="${POPE_SOURCE:-res-opd-test}"

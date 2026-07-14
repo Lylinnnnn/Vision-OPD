@@ -65,6 +65,7 @@ fi
 # --- Current experiment protocol ---
 export DATASET_VERSION="${DATASET_VERSION:-full}"
 export PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
+res_opd_validate_python_bin "$PYTHON_BIN"
 export TOTAL_EPOCHS="${TOTAL_EPOCHS:-1}"
 export DEGRADATION_MODE="${DEGRADATION_MODE:-original}"
 export STUDENT_RATIO="${STUDENT_RATIO:-1.0}"
@@ -154,7 +155,7 @@ export OPD_SELECTIVE_METRICS_VERBOSE="${OPD_SELECTIVE_METRICS_VERBOSE:-False}"
 
 # Fix cuDNN version mismatch: prefer conda-bundled cuDNN over system /lib64.
 # nvidia.cudnn.__file__ can be None in some installs, so use multiple fallbacks.
-CONDA_CUDNN_LIB="$(python3 -c "
+CONDA_CUDNN_LIB="$("${PYTHON_BIN}" -c "
 import os, sys
 try:
     import nvidia.cudnn

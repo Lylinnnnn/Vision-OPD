@@ -33,13 +33,41 @@ res_opd_default_python_bin() {
     local home="${HOME:-}"
     local path_python
     path_python="$(command -v python3 2>/dev/null || true)"
-    local fallback="${path_python:-${home}/.conda/envs/vision-opd/bin/python3}"
+    local fallback="${home}/.conda/envs/vision-opd/bin/python3"
     res_opd_pick_executable \
         "$fallback" \
         "${home}/.conda/envs/vision-opd/bin/python3" \
         "/home/zhengyanzhao.zyz/.conda/envs/vision-opd/bin/python3" \
         "/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3" \
         "$path_python"
+}
+
+res_opd_is_truthy() {
+    [[ "${1:-}" == "True" || "${1:-}" == "true" || "${1:-}" == "1" || "${1:-}" == "yes" || "${1:-}" == "YES" || "${1:-}" == "y" || "${1:-}" == "Y" ]]
+}
+
+res_opd_validate_python_bin() {
+    local python_bin="${1:-}"
+    if [[ -z "$python_bin" ]]; then
+        echo "ERROR: PYTHON_BIN is empty." >&2
+        return 1
+    fi
+    if [[ ! -x "$python_bin" ]]; then
+        echo "ERROR: PYTHON_BIN is not executable: $python_bin" >&2
+        return 1
+    fi
+    case "$python_bin" in
+        */envs/vision-opd/bin/python*|*/vision-opd/bin/python*)
+            return 0
+            ;;
+    esac
+    if res_opd_is_truthy "${RES_OPD_ALLOW_NON_VISION_OPD_PYTHON:-False}"; then
+        echo "WARNING: PYTHON_BIN does not look like the vision-opd conda env: $python_bin" >&2
+        return 0
+    fi
+    echo "ERROR: PYTHON_BIN does not look like the vision-opd conda env: $python_bin" >&2
+    echo "Set PYTHON_BIN=/path/to/.conda/envs/vision-opd/bin/python3, or set RES_OPD_ALLOW_NON_VISION_OPD_PYTHON=True to override." >&2
+    return 1
 }
 
 res_opd_default_model_root() {

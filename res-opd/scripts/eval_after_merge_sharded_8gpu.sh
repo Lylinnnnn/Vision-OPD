@@ -18,6 +18,7 @@ VERSION_TAG="${3:-latest}"
 EVAL_MODE="${4:-${EVAL_MODE:-chair}}"
 
 PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
+res_opd_validate_python_bin "$PYTHON_BIN"
 EVAL_SCRIPT="${RES_OPD_ROOT}/scripts/eval_after_merge.sh"
 MERGE_SCRIPT="${RES_OPD_ROOT}/eval/merge_sharded_eval.py"
 DEFAULT_BENCHMARK_DATA_DIR="$(res_opd_default_data_root)"

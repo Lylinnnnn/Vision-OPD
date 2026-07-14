@@ -85,6 +85,7 @@ MODEL_PATH="${MODEL_PATH:-${DEFAULT_MODEL_ROOT}/Qwen3VL-2B-Instruct}"
 MODEL_NAME=$(basename "$MODEL_PATH")
 MODEL_NAME_LC="$(echo "$MODEL_NAME" | tr '[:upper:]' '[:lower:]')"
 PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
+res_opd_validate_python_bin "$PYTHON_BIN"
 if [[ "$MODEL_NAME_LC" == *"8b"* ]]; then
     MODEL_SIZE_PROFILE="${MODEL_SIZE_PROFILE:-8b}"
     DEFAULT_TRAIN_BATCH_SIZE=16
@@ -422,7 +423,7 @@ case "$DATASET_VERSION" in
         ;;
 esac
 format_prob_tag() {
-    python3 - "$1" <<'PY' 2>/dev/null || echo "${1//./p}"
+    "$PYTHON_BIN" - "$1" <<'PY' 2>/dev/null || echo "${1//./p}"
 import sys
 print(str(int(round(float(sys.argv[1]) * 100))))
 PY
