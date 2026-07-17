@@ -25,6 +25,7 @@ LOWRES_RATIO="${LOWRES_RATIO:-0.75}"
 MAX_SAMPLES="${MAX_SAMPLES:--1}"
 FORCE_REGENERATE="${FORCE_REGENERATE:-False}"
 REUSE_SFT_DATA="${REUSE_SFT_DATA:-False}"
+REUSE_COMPLETE_GENERATIONS="${REUSE_COMPLETE_GENERATIONS:-True}"
 SKIP_GENERATION="${SKIP_GENERATION:-False}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -287,48 +288,66 @@ wait_for_vllm() {
     done
 }
 
+build_prepare_args() {
+    PREPARE_ARGS=(
+        "${RES_OPD_ROOT}/pipelines/lowres_sft/prepare_data.py"
+        --train-file "$TASK_TRAIN_FILE"
+        --output-parquet "$SFT_TRAIN_FILE"
+        --generation-jsonl "$GENERATION_JSONL"
+        --model-name "$VLLM_MODEL_NAME"
+        --lowres-ratio "$LOWRES_RATIO"
+        --max-new-tokens "$GEN_MAX_NEW_TOKENS"
+        --parallel-workers "$GEN_PARALLEL_WORKERS"
+        --max-samples "$MAX_SAMPLES"
+    )
+    if is_truthy "$FORCE_REGENERATE"; then
+        PREPARE_ARGS+=(--force-regenerate)
+    fi
+    if is_truthy "$FINAL_ANSWER_ONLY"; then
+        PREPARE_ARGS+=(--final-answer-only)
+    fi
+    if [[ -n "$ENABLE_THINKING" ]]; then
+        PREPARE_ARGS+=(--enable-thinking "$ENABLE_THINKING")
+    fi
+}
+
 if ! is_truthy "$SKIP_GENERATION"; then
     if [[ -f "$SFT_TRAIN_FILE" ]] && is_truthy "$REUSE_SFT_DATA"; then
         echo "Reusing existing SFT parquet: $SFT_TRAIN_FILE"
     else
-        echo "Starting vLLM for low-res label generation ..."
-        CUDA_VISIBLE_DEVICES="$GEN_GPU_LIST" "$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
-            --model "$MODEL_PATH" \
-            --served-model-name "$VLLM_MODEL_NAME" \
-            --host "$VLLM_HOST" \
-            --port "$VLLM_PORT" \
-            --tensor-parallel-size "$GEN_TENSOR_PARALLEL_SIZE" \
-            --max-model-len "$GEN_MAX_MODEL_LEN" \
-            --gpu-memory-utilization "$GEN_GPU_MEMORY_UTILIZATION" \
-            --trust-remote-code \
-            > "${LOG_DIR}/vllm_${EXPERIMENT_NAME}.log" 2>&1 &
-        VLLM_PID="$!"
-        API_BASE="http://${VLLM_HOST}:${VLLM_PORT}/v1"
-        wait_for_vllm "$API_BASE"
+        build_prepare_args
+        GENERATION_CACHE_COMPLETE=False
+        if ! is_truthy "$FORCE_REGENERATE" && is_truthy "$REUSE_COMPLETE_GENERATIONS"; then
+            echo "Checking cached low-res generations before starting vLLM ..."
+            if "$PYTHON_BIN" "${PREPARE_ARGS[@]}" --check-generations-only; then
+                GENERATION_CACHE_COMPLETE=True
+                echo "Cached low-res generations are complete; skipping vLLM generation."
+            else
+                echo "Cached low-res generations are incomplete or unmarked; vLLM generation is required."
+            fi
+        fi
 
-        prepare_args=(
-            "${RES_OPD_ROOT}/pipelines/lowres_sft/prepare_data.py"
-            --train-file "$TASK_TRAIN_FILE"
-            --output-parquet "$SFT_TRAIN_FILE"
-            --generation-jsonl "$GENERATION_JSONL"
-            --api-base "$API_BASE"
-            --model-name "$VLLM_MODEL_NAME"
-            --lowres-ratio "$LOWRES_RATIO"
-            --max-new-tokens "$GEN_MAX_NEW_TOKENS"
-            --parallel-workers "$GEN_PARALLEL_WORKERS"
-            --max-samples "$MAX_SAMPLES"
-        )
-        if is_truthy "$FORCE_REGENERATE"; then
-            prepare_args+=(--force-regenerate)
+        if is_truthy "$GENERATION_CACHE_COMPLETE"; then
+            "$PYTHON_BIN" "${PREPARE_ARGS[@]}" --no-generate
+        else
+            echo "Starting vLLM for low-res label generation ..."
+            CUDA_VISIBLE_DEVICES="$GEN_GPU_LIST" "$PYTHON_BIN" -m vllm.entrypoints.openai.api_server \
+                --model "$MODEL_PATH" \
+                --served-model-name "$VLLM_MODEL_NAME" \
+                --host "$VLLM_HOST" \
+                --port "$VLLM_PORT" \
+                --tensor-parallel-size "$GEN_TENSOR_PARALLEL_SIZE" \
+                --max-model-len "$GEN_MAX_MODEL_LEN" \
+                --gpu-memory-utilization "$GEN_GPU_MEMORY_UTILIZATION" \
+                --trust-remote-code \
+                > "${LOG_DIR}/vllm_${EXPERIMENT_NAME}.log" 2>&1 &
+            VLLM_PID="$!"
+            API_BASE="http://${VLLM_HOST}:${VLLM_PORT}/v1"
+            wait_for_vllm "$API_BASE"
+
+            "$PYTHON_BIN" "${PREPARE_ARGS[@]}" --api-base "$API_BASE"
+            cleanup_vllm
         fi
-        if is_truthy "$FINAL_ANSWER_ONLY"; then
-            prepare_args+=(--final-answer-only)
-        fi
-        if [[ -n "$ENABLE_THINKING" ]]; then
-            prepare_args+=(--enable-thinking "$ENABLE_THINKING")
-        fi
-        "$PYTHON_BIN" "${prepare_args[@]}"
-        cleanup_vllm
     fi
 else
     echo "SKIP_GENERATION=True: expecting existing SFT parquet at $SFT_TRAIN_FILE"

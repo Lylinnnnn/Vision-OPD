@@ -7,6 +7,9 @@ This pipeline builds a sampled-SFT baseline for Res-OPD:
 3. Train with verl SFT.
 4. Merge and upload checkpoints to the same OSS layout used by `eval_batch_from_oss.sh`.
 
+Generation caching is guarded by `lowres_generations.complete.json`. The
+launcher validates this marker and the JSONL contents before skipping vLLM.
+
 User-facing entrypoint:
 
 ```bash

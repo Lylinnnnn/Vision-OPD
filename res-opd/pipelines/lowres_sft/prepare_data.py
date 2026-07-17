@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import base64
 import copy
+import hashlib
 import io
 import json
 import os
@@ -39,8 +40,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-file", required=True, type=Path)
     parser.add_argument("--output-parquet", required=True, type=Path)
     parser.add_argument("--generation-jsonl", required=True, type=Path)
-    parser.add_argument("--api-base", required=True)
-    parser.add_argument("--model-name", required=True)
+    parser.add_argument("--api-base", default="")
+    parser.add_argument("--model-name", default="")
     parser.add_argument("--lowres-ratio", type=float, required=True)
     parser.add_argument("--max-new-tokens", type=int, default=1024)
     parser.add_argument("--parallel-workers", type=int, default=16)
@@ -50,6 +51,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--final-answer-only", action="store_true")
     parser.add_argument("--allow-missing", action="store_true")
     parser.add_argument("--force-regenerate", action="store_true")
+    parser.add_argument("--no-generate", action="store_true",
+                        help="Do not call the API; fail if cached generations are incomplete.")
+    parser.add_argument("--check-generations-only", action="store_true",
+                        help="Only validate cached generations and the completion marker.")
     return parser.parse_args()
 
 
@@ -236,6 +241,91 @@ def load_existing_generations(path: Path) -> dict[str, dict[str, Any]]:
     return out
 
 
+def generation_marker_path(generation_jsonl: Path) -> Path:
+    if generation_jsonl.suffix:
+        return generation_jsonl.with_name(f"{generation_jsonl.stem}.complete.json")
+    return generation_jsonl.with_name(f"{generation_jsonl.name}.complete.json")
+
+
+def uid_hash(uids: list[str]) -> str:
+    digest = hashlib.sha256()
+    for uid in uids:
+        digest.update(uid.encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def expected_uids(rows: list[dict[str, Any]]) -> list[str]:
+    return [sample_uid(row, idx) for idx, row in enumerate(rows)]
+
+
+def valid_generation(record: dict[str, Any] | None, lowres_ratio: float) -> bool:
+    if not record:
+        return False
+    caption = str(record.get("lowres_caption", "") or "")
+    if not caption or caption.startswith("[ERROR]"):
+        return False
+    if record.get("final_answer_available") is False:
+        return False
+    record_ratio = record.get("lowres_ratio")
+    if record_ratio is not None:
+        try:
+            if abs(float(record_ratio) - lowres_ratio) > 1e-6:
+                return False
+        except Exception:
+            return False
+    return True
+
+
+def verify_generation_cache(
+    rows: list[dict[str, Any]],
+    existing: dict[str, dict[str, Any]],
+    args: argparse.Namespace,
+    *,
+    require_marker: bool,
+) -> tuple[bool, str, dict[str, Any]]:
+    uids = expected_uids(rows)
+    missing = [uid for uid in uids if not valid_generation(existing.get(uid), args.lowres_ratio)]
+    metadata = {
+        "complete": not missing,
+        "num_input_rows": len(rows),
+        "num_valid_generations": len(uids) - len(missing),
+        "num_missing": len(missing),
+        "lowres_ratio": args.lowres_ratio,
+        "uid_hash": uid_hash(uids),
+        "generation_jsonl": str(args.generation_jsonl),
+    }
+    if missing:
+        return False, f"missing/invalid generations: {len(missing)} (first={missing[:5]})", metadata
+
+    marker_path = generation_marker_path(args.generation_jsonl)
+    if require_marker:
+        if not marker_path.exists():
+            return False, f"missing completion marker: {marker_path}", metadata
+        try:
+            marker = json.loads(marker_path.read_text())
+        except Exception as exc:
+            return False, f"invalid completion marker {marker_path}: {exc}", metadata
+        checks = [
+            marker.get("complete") is True,
+            int(marker.get("num_input_rows", -1)) == metadata["num_input_rows"],
+            int(marker.get("num_valid_generations", -1)) == metadata["num_valid_generations"],
+            abs(float(marker.get("lowres_ratio", -1.0)) - args.lowres_ratio) <= 1e-6,
+            marker.get("uid_hash") == metadata["uid_hash"],
+        ]
+        if not all(checks):
+            return False, f"completion marker does not match current request: {marker_path}", metadata
+
+    return True, "complete", metadata
+
+
+def write_generation_marker(path: Path, metadata: dict[str, Any]) -> None:
+    marker = dict(metadata)
+    marker["complete"] = True
+    marker["created_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    path.write_text(json.dumps(marker, indent=2, ensure_ascii=False))
+
+
 def generate_one(
     thread_local: threading.local,
     api_base: str,
@@ -328,12 +418,19 @@ def main() -> int:
     args.generation_jsonl.parent.mkdir(parents=True, exist_ok=True)
     if args.force_regenerate and args.generation_jsonl.exists():
         args.generation_jsonl.unlink()
+    if args.force_regenerate:
+        generation_marker_path(args.generation_jsonl).unlink(missing_ok=True)
 
     dataframe = pd.read_parquet(args.train_file)
     if args.max_samples > 0:
         dataframe = dataframe.iloc[: args.max_samples]
     rows = [row.to_dict() for _, row in dataframe.iterrows()]
     existing = load_existing_generations(args.generation_jsonl)
+
+    if args.check_generations_only:
+        ok, reason, metadata = verify_generation_cache(rows, existing, args, require_marker=True)
+        print(json.dumps({"ok": ok, "reason": reason, **metadata}, indent=2, ensure_ascii=False))
+        return 0 if ok else 2
 
     todo: list[tuple[int, str, dict[str, Any]]] = []
     for idx, row in enumerate(rows):
@@ -347,6 +444,11 @@ def main() -> int:
     )
 
     if todo:
+        if args.no_generate:
+            preview = ", ".join(uid for _, uid, _ in todo[:10])
+            raise RuntimeError(f"Cached generations are incomplete and --no-generate was set: {preview}")
+        if not args.api_base or not args.model_name:
+            raise RuntimeError("--api-base and --model-name are required when generation is needed")
         thread_local = threading.local()
         write_lock = threading.Lock()
         done = len(existing)
@@ -427,6 +529,11 @@ def main() -> int:
     }
     with (args.output_parquet.parent / "manifest.json").open("w") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
+    if not missing:
+        ok, reason, cache_metadata = verify_generation_cache(rows, existing, args, require_marker=False)
+        if not ok:
+            raise RuntimeError(f"Generation cache unexpectedly incomplete after SFT build: {reason}")
+        write_generation_marker(generation_marker_path(args.generation_jsonl), cache_metadata)
     print(json.dumps(manifest, indent=2, ensure_ascii=False))
     return 0
 
