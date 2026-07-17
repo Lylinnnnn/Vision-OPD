@@ -26,6 +26,7 @@ MAX_SAMPLES="${MAX_SAMPLES:--1}"
 FORCE_REGENERATE="${FORCE_REGENERATE:-False}"
 REUSE_SFT_DATA="${REUSE_SFT_DATA:-False}"
 REUSE_COMPLETE_GENERATIONS="${REUSE_COMPLETE_GENERATIONS:-True}"
+STRICT_GENERATION_MODEL_CACHE="${STRICT_GENERATION_MODEL_CACHE:-False}"
 SKIP_GENERATION="${SKIP_GENERATION:-False}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -210,12 +211,13 @@ if [[ -z "${EXPERIMENT_NAME:-}" ]]; then
     EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-orig-sr1.0-tr${RATIO_TAG}-sft-lowres-b${SFT_TRAIN_BATCH_SIZE}-${DATASET_TAG}-e${TOTAL_EPOCHS}"
 fi
 
+GENERATION_CACHE_DIR="${GENERATION_CACHE_DIR:-${RES_OPD_ROOT}/sft_data/tr${RATIO_TAG}}"
 SFT_DATA_DIR="${SFT_DATA_DIR:-${RES_OPD_ROOT}/sft_data/${EXPERIMENT_NAME}}"
 SFT_TRAIN_FILE="${SFT_TRAIN_FILE:-${SFT_DATA_DIR}/train.parquet}"
-GENERATION_JSONL="${GENERATION_JSONL:-${SFT_DATA_DIR}/lowres_generations.jsonl}"
+GENERATION_JSONL="${GENERATION_JSONL:-${GENERATION_CACHE_DIR}/lowres_generations.jsonl}"
 TRAINER_DEFAULT_LOCAL_DIR="${TRAINER_DEFAULT_LOCAL_DIR:-${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}}"
 LOG_DIR="${RES_OPD_ROOT}/logs"
-mkdir -p "$LOG_DIR" "$SFT_DATA_DIR"
+mkdir -p "$LOG_DIR" "$SFT_DATA_DIR" "$GENERATION_CACHE_DIR"
 
 if ! [[ -d "$MODEL_PATH" ]]; then
     echo "ERROR: MODEL_PATH does not exist: $MODEL_PATH" >&2
@@ -248,6 +250,7 @@ echo "Model:            $MODEL_PATH"
 echo "Lowres ratio:     $LOWRES_RATIO"
 echo "Train parquet:    $TASK_TRAIN_FILE"
 echo "SFT parquet:      $SFT_TRAIN_FILE"
+echo "Generation cache: $GENERATION_CACHE_DIR"
 echo "Generations:      $GENERATION_JSONL"
 echo "Checkpoint dir:   $TRAINER_DEFAULT_LOCAL_DIR"
 echo "OSS base:         $OSS_BASE"
@@ -308,6 +311,9 @@ build_prepare_args() {
     fi
     if [[ -n "$ENABLE_THINKING" ]]; then
         PREPARE_ARGS+=(--enable-thinking "$ENABLE_THINKING")
+    fi
+    if is_truthy "$STRICT_GENERATION_MODEL_CACHE"; then
+        PREPARE_ARGS+=(--strict-model-cache)
     fi
 }
 
@@ -498,7 +504,17 @@ upload_sft_checkpoints() {
         return 1
     fi
     if [[ -f "${SFT_DATA_DIR}/manifest.json" ]]; then
-        ossutil cp -r "${SFT_DATA_DIR}/" "${OSS_BASE}/${oss_name}/training_artifacts/sft_data/" -f || true
+        ossutil cp -r "${SFT_DATA_DIR}/" "${OSS_BASE}/${oss_name}/training_artifacts/sft_run_data/" -f || true
+    fi
+    local generation_marker
+    if [[ "$GENERATION_JSONL" == *.* ]]; then
+        generation_marker="${GENERATION_JSONL%.*}.complete.json"
+    else
+        generation_marker="${GENERATION_JSONL}.complete.json"
+    fi
+    if [[ -f "$GENERATION_JSONL" && -f "$generation_marker" ]]; then
+        ossutil cp "$GENERATION_JSONL" "${OSS_BASE}/${oss_name}/training_artifacts/lowres_generation_cache/lowres_generations.jsonl" -f || true
+        ossutil cp "$generation_marker" "${OSS_BASE}/${oss_name}/training_artifacts/lowres_generation_cache/lowres_generations.complete.json" -f || true
     fi
 }
 

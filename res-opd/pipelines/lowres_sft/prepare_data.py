@@ -55,6 +55,8 @@ def parse_args() -> argparse.Namespace:
                         help="Do not call the API; fail if cached generations are incomplete.")
     parser.add_argument("--check-generations-only", action="store_true",
                         help="Only validate cached generations and the completion marker.")
+    parser.add_argument("--strict-model-cache", action="store_true",
+                        help="Require completion marker model_name to match --model-name.")
     return parser.parse_args()
 
 
@@ -292,6 +294,8 @@ def verify_generation_cache(
         "num_valid_generations": len(uids) - len(missing),
         "num_missing": len(missing),
         "lowres_ratio": args.lowres_ratio,
+        "model_name": args.model_name,
+        "final_answer_only": args.final_answer_only,
         "uid_hash": uid_hash(uids),
         "generation_jsonl": str(args.generation_jsonl),
     }
@@ -311,8 +315,11 @@ def verify_generation_cache(
             int(marker.get("num_input_rows", -1)) == metadata["num_input_rows"],
             int(marker.get("num_valid_generations", -1)) == metadata["num_valid_generations"],
             abs(float(marker.get("lowres_ratio", -1.0)) - args.lowres_ratio) <= 1e-6,
+            bool(marker.get("final_answer_only", False)) == args.final_answer_only,
             marker.get("uid_hash") == metadata["uid_hash"],
         ]
+        if args.strict_model_cache:
+            checks.append(marker.get("model_name") == args.model_name)
         if not all(checks):
             return False, f"completion marker does not match current request: {marker_path}", metadata
 

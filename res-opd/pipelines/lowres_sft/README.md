@@ -7,8 +7,11 @@ This pipeline builds a sampled-SFT baseline for Res-OPD:
 3. Train with verl SFT.
 4. Merge and upload checkpoints to the same OSS layout used by `eval_batch_from_oss.sh`.
 
-Generation caching is guarded by `lowres_generations.complete.json`. The
-launcher validates this marker and the JSONL contents before skipping vLLM.
+Generation caching is shared by resolution, e.g.
+`res-opd/sft_data/tr0.75/lowres_generations.jsonl`, and guarded by
+`lowres_generations.complete.json`. The launcher validates this marker and the
+JSONL contents before skipping vLLM. Set `STRICT_GENERATION_MODEL_CACHE=True`
+if the cache must also match the generating model name.
 
 User-facing entrypoint:
 
