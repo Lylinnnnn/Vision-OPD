@@ -138,6 +138,16 @@ print(x)
 PY
 }
 
+format_model_cache_tag() {
+    local name="$1"
+    local tag
+    tag="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+//; s/-+$//')"
+    if [[ -z "$tag" ]]; then
+        tag="${name//\//-}"
+    fi
+    printf '%s\n' "$tag"
+}
+
 csv_to_hydra_list() {
     local csv="$1"
     local out="["
@@ -207,11 +217,12 @@ file_size_bytes() {
 }
 
 RATIO_TAG="$(format_ratio_tag "$LOWRES_RATIO")"
+MODEL_CACHE_TAG="${MODEL_CACHE_TAG:-$(format_model_cache_tag "$MODEL_NAME")}"
 if [[ -z "${EXPERIMENT_NAME:-}" ]]; then
     EXPERIMENT_NAME="Res-OPD-${MODEL_NAME}-orig-sr1.0-tr${RATIO_TAG}-sft-lowres-b${SFT_TRAIN_BATCH_SIZE}-${DATASET_TAG}-e${TOTAL_EPOCHS}"
 fi
 
-GENERATION_CACHE_DIR="${GENERATION_CACHE_DIR:-${RES_OPD_ROOT}/sft_data/tr${RATIO_TAG}}"
+GENERATION_CACHE_DIR="${GENERATION_CACHE_DIR:-${RES_OPD_ROOT}/sft_data/${MODEL_CACHE_TAG}/tr${RATIO_TAG}}"
 SFT_DATA_DIR="${SFT_DATA_DIR:-${RES_OPD_ROOT}/sft_data/${EXPERIMENT_NAME}}"
 SFT_TRAIN_FILE="${SFT_TRAIN_FILE:-${SFT_DATA_DIR}/train.parquet}"
 GENERATION_JSONL="${GENERATION_JSONL:-${GENERATION_CACHE_DIR}/lowres_generations.jsonl}"
@@ -248,6 +259,7 @@ echo "============================================================"
 echo "Experiment:       $EXPERIMENT_NAME"
 echo "Model:            $MODEL_PATH"
 echo "Lowres ratio:     $LOWRES_RATIO"
+echo "Cache model tag:  $MODEL_CACHE_TAG"
 echo "Train parquet:    $TASK_TRAIN_FILE"
 echo "SFT parquet:      $SFT_TRAIN_FILE"
 echo "Generation cache: $GENERATION_CACHE_DIR"
