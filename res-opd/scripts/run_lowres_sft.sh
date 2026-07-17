@@ -48,6 +48,8 @@ while [[ $# -gt 0 ]]; do
             SAVE_FREQ="$2"; shift 2 ;;
         --total-epochs)
             TOTAL_EPOCHS="$2"; shift 2 ;;
+        --total-training-steps)
+            TRAINER_TOTAL_TRAINING_STEPS="$2"; shift 2 ;;
         --train-batch-size)
             SFT_TRAIN_BATCH_SIZE="$2"; shift 2 ;;
         --micro-batch-size-per-gpu)
@@ -97,6 +99,7 @@ SFT_MICRO_BATCH_SIZE_PER_GPU="${SFT_MICRO_BATCH_SIZE_PER_GPU:-$DEFAULT_MICRO_BAT
 SFT_MAX_LENGTH="${SFT_MAX_LENGTH:-8192}"
 SFT_MAX_TOKEN_LEN_PER_GPU="${SFT_MAX_TOKEN_LEN_PER_GPU:-$DEFAULT_MAX_TOKEN_LEN_PER_GPU}"
 TOTAL_EPOCHS="${TOTAL_EPOCHS:-1}"
+TRAINER_TOTAL_TRAINING_STEPS="${TRAINER_TOTAL_TRAINING_STEPS:-}"
 SAVE_FREQ="${SAVE_FREQ:-50}"
 TRAINER_TEST_FREQ="${TRAINER_TEST_FREQ:--1}"
 TRAINER_N_GPUS_PER_NODE="${TRAINER_N_GPUS_PER_NODE:-8}"
@@ -248,6 +251,7 @@ echo "Generations:      $GENERATION_JSONL"
 echo "Checkpoint dir:   $TRAINER_DEFAULT_LOCAL_DIR"
 echo "OSS base:         $OSS_BASE"
 echo "Batch/micro:      $SFT_TRAIN_BATCH_SIZE / $SFT_MICRO_BATCH_SIZE_PER_GPU"
+echo "Total steps:      ${TRAINER_TOTAL_TRAINING_STEPS:-auto}"
 echo "Save/test freq:   $SAVE_FREQ / $TRAINER_TEST_FREQ"
 echo "Ckpt contents:    save=$SFT_CKPT_SAVE_CONTENTS load=$SFT_CKPT_LOAD_CONTENTS"
 
@@ -337,6 +341,10 @@ fi
 
 SAVE_CONTENTS_HYDRA="$(csv_to_hydra_list "$SFT_CKPT_SAVE_CONTENTS")"
 LOAD_CONTENTS_HYDRA="$(csv_to_hydra_list "$SFT_CKPT_LOAD_CONTENTS")"
+TRAINING_STEP_OVERRIDE=()
+if [[ -n "$TRAINER_TOTAL_TRAINING_STEPS" ]]; then
+    TRAINING_STEP_OVERRIDE=(trainer.total_training_steps="$TRAINER_TOTAL_TRAINING_STEPS")
+fi
 TRAIN_EXIT_CODE=0
 "$PYTHON_BIN" -m torch.distributed.run \
     --standalone \
@@ -371,6 +379,7 @@ TRAIN_EXIT_CODE=0
     trainer.project_name=Res-OPD-SFT \
     trainer.experiment_name="$EXPERIMENT_NAME" \
     trainer.total_epochs="$TOTAL_EPOCHS" \
+    ${TRAINING_STEP_OVERRIDE[@]+"${TRAINING_STEP_OVERRIDE[@]}"} \
     trainer.save_freq="$SAVE_FREQ" \
     trainer.test_freq="$TRAINER_TEST_FREQ" \
     trainer.logger="$TRAINER_LOGGER" \
