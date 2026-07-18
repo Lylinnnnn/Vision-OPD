@@ -124,35 +124,59 @@ available_bytes() {
     df -Pk "$path" | awk 'NR==2 {print $4 * 1024}'
 }
 
+fsdp_payload_dir() {
+    local step_dir="$1"
+    if [[ -d "${step_dir}/actor" && -f "${step_dir}/actor/huggingface/config.json" ]]; then
+        echo "${step_dir}/actor"
+    elif [[ -f "${step_dir}/huggingface/config.json" ]]; then
+        echo "$step_dir"
+    else
+        echo ""
+    fi
+}
+
+fsdp_huggingface_dir() {
+    local step_dir="$1"
+    local payload_dir
+    payload_dir="$(fsdp_payload_dir "$step_dir")"
+    if [[ -n "$payload_dir" ]]; then
+        echo "${payload_dir}/huggingface"
+    fi
+}
+
 sum_actor_model_shard_bytes() {
     local step_dir="$1"
-    local actor_dir="${step_dir}/actor"
+    local payload_dir
     local total=0
     local f size
-    [[ -d "$actor_dir" ]] || {
+    payload_dir="$(fsdp_payload_dir "$step_dir")"
+    [[ -n "$payload_dir" && -d "$payload_dir" ]] || {
         echo 0
         return 0
     }
     while IFS= read -r -d '' f; do
         size="$(file_size_bytes "$f")"
         total=$((total + size))
-    done < <(find "$actor_dir" -maxdepth 1 -type f -name 'model_world_size_*_rank_*.pt' -print0)
+    done < <(find "$payload_dir" -maxdepth 1 -type f -name 'model_world_size_*_rank_*.pt' -print0)
     echo "$total"
 }
 
 count_actor_model_shards() {
     local step_dir="$1"
-    local actor_dir="${step_dir}/actor"
-    if [[ ! -d "$actor_dir" ]]; then
+    local payload_dir
+    payload_dir="$(fsdp_payload_dir "$step_dir")"
+    if [[ -z "$payload_dir" || ! -d "$payload_dir" ]]; then
         echo 0
         return 0
     fi
-    find "$actor_dir" -maxdepth 1 -type f -name 'model_world_size_*_rank_*.pt' | wc -l | tr -d '[:space:]'
+    find "$payload_dir" -maxdepth 1 -type f -name 'model_world_size_*_rank_*.pt' | wc -l | tr -d '[:space:]'
 }
 
 expected_actor_world_size() {
     local step_dir="$1"
-    local fsdp_config="${step_dir}/actor/fsdp_config.json"
+    local payload_dir fsdp_config
+    payload_dir="$(fsdp_payload_dir "$step_dir")"
+    fsdp_config="${payload_dir}/fsdp_config.json"
     if [[ ! -f "$fsdp_config" ]]; then
         echo ""
         return 0
@@ -164,25 +188,31 @@ expected_actor_world_size() {
 
 fsdp_checkpoint_missing_reason() {
     local step_dir="$1"
-    local actor_dir="${step_dir}/actor"
-    local hf_config="${actor_dir}/huggingface/config.json"
-    local fsdp_config="${actor_dir}/fsdp_config.json"
+    local payload_dir hf_config fsdp_config
     local shard_count expected_world_size
 
-    if [[ ! -f "${step_dir}/data.pt" ]]; then
-        echo "missing data.pt"
-        return 0
+    if [[ -d "${step_dir}/actor" || -f "${step_dir}/data.pt" ]]; then
+        if [[ ! -f "${step_dir}/data.pt" ]]; then
+            echo "missing data.pt"
+            return 0
+        fi
+        payload_dir="${step_dir}/actor"
+        if [[ ! -d "$payload_dir" ]]; then
+            echo "missing actor/"
+            return 0
+        fi
+    else
+        payload_dir="$step_dir"
     fi
-    if [[ ! -d "$actor_dir" ]]; then
-        echo "missing actor/"
-        return 0
-    fi
+
+    hf_config="${payload_dir}/huggingface/config.json"
+    fsdp_config="${payload_dir}/fsdp_config.json"
     if [[ ! -f "$fsdp_config" ]]; then
-        echo "missing actor/fsdp_config.json"
+        echo "missing fsdp_config.json"
         return 0
     fi
     if [[ ! -f "$hf_config" ]]; then
-        echo "missing actor/huggingface/config.json"
+        echo "missing huggingface/config.json"
         return 0
     fi
 
@@ -221,6 +251,16 @@ cleanup_uploaded_fsdp_shards() {
         log "Cleaning FSDP shards: $(basename "$step_dir") (${reason})"
         rm -rf "${step_dir}/actor" "${step_dir}/critic" "${step_dir}/ref"
         log "  Freed FSDP shard dirs from $(basename "$step_dir")"
+    elif [[ -d "${step_dir}/huggingface" ]]; then
+        log "Cleaning SFT FSDP shard files: $(basename "$step_dir") (${reason})"
+        find "$step_dir" -maxdepth 1 -type f \( \
+            -name 'model_world_size_*_rank_*.pt' -o \
+            -name 'optim_world_size_*_rank_*.pt' -o \
+            -name 'optimizer_world_size_*_rank_*.pt' -o \
+            -name 'extra_state_world_size_*_rank_*.pt' -o \
+            -name 'data_*.pt' \
+        \) -delete
+        log "  Freed SFT shard files from $(basename "$step_dir")"
     fi
 }
 
@@ -285,9 +325,9 @@ ensure_merge_space() {
     available="$(available_bytes "$step_dir")"
     required=$((model_bytes * CKPT_WATCHER_MIN_FREE_MODEL_PCT / 100 + CKPT_WATCHER_MIN_FREE_FIXED_BYTES))
 
-    log "Disk preflight for $(basename "$step_dir"): actor_model_shards=${model_bytes} available=${available} required=${required}"
+    log "Disk preflight for $(basename "$step_dir"): model_shards=${model_bytes} available=${available} required=${required}"
     if (( model_bytes <= 0 )); then
-        log "ERROR: no actor model shards found under ${step_dir}/actor; cannot merge"
+        log "ERROR: no model shards found under ${step_dir}; cannot merge"
         return 1
     fi
     if (( available < required )); then
@@ -302,7 +342,7 @@ merge_and_upload() {
     local oss_name="$2"
     local step_name=$(basename "$step_dir")
     local oss_step_path="${OSS_BASE}/${oss_name}/${step_name}"
-    local missing_reason
+    local missing_reason hf_dir
 
     if missing_reason="$(fsdp_checkpoint_missing_reason "$step_dir")"; then
         log "Checkpoint not ready, skip merge: ${step_name} (${missing_reason})"
@@ -345,6 +385,7 @@ merge_and_upload() {
     ossutil cp "$ckpt_file" "${oss_step_path}/model.safetensors" -f >> "$LOG_FILE" 2>&1 || upload_status=$?
     # Upload sha256 file alongside
     ossutil cp "$sha256_file" "${oss_step_path}/model.safetensors.sha256" -f >> "$LOG_FILE" 2>&1 || upload_status=$?
+    hf_dir="$(fsdp_huggingface_dir "$step_dir")"
     for f in \
         config.json \
         tokenizer_config.json \
@@ -357,10 +398,10 @@ merge_and_upload() {
         video_processor_config.json \
         special_tokens_map.json \
         tokenizer.model \
-        merges.txt \
-        vocab.json; do
-        if [[ -f "${step_dir}/actor/huggingface/$f" ]]; then
-            ossutil cp "${step_dir}/actor/huggingface/$f" "${oss_step_path}/$f" -f >> "$LOG_FILE" 2>&1 || upload_status=$?
+            merges.txt \
+            vocab.json; do
+        if [[ -n "$hf_dir" && -f "${hf_dir}/$f" ]]; then
+            ossutil cp "${hf_dir}/$f" "${oss_step_path}/$f" -f >> "$LOG_FILE" 2>&1 || upload_status=$?
         fi
     done
 

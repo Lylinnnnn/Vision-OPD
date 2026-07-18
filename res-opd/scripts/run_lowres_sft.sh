@@ -113,8 +113,14 @@ POST_TRAIN_SYNC_TO_OSS="${POST_TRAIN_SYNC_TO_OSS:-True}"
 POST_TRAIN_CLEAN_LOCAL="${POST_TRAIN_CLEAN_LOCAL:-True}"
 POST_TRAIN_SYNC_ON_FAILURE="${POST_TRAIN_SYNC_ON_FAILURE:-True}"
 POST_TRAIN_CLEAN_SFT_DATA="${POST_TRAIN_CLEAN_SFT_DATA:-False}"
+POST_TRAIN_UPLOAD_WAIT_SECONDS="${POST_TRAIN_UPLOAD_WAIT_SECONDS:-1800}"
 SFT_CKPT_SAVE_CONTENTS="${SFT_CKPT_SAVE_CONTENTS:-model,extra}"
 SFT_CKPT_LOAD_CONTENTS="${SFT_CKPT_LOAD_CONTENTS:-$SFT_CKPT_SAVE_CONTENTS}"
+TRAINER_MAX_CKPT_TO_KEEP="${TRAINER_MAX_CKPT_TO_KEEP:-null}"
+CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE="${CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE:-True}"
+CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD="${CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD:-False}"
+CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE="${CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE:-True}"
+CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE="${CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE:-False}"
 ENGINE_PARAM_OFFLOAD="${ENGINE_PARAM_OFFLOAD:-$DEFAULT_ENGINE_PARAM_OFFLOAD}"
 ENGINE_OPTIMIZER_OFFLOAD="${ENGINE_OPTIMIZER_OFFLOAD:-$DEFAULT_ENGINE_OPTIMIZER_OFFLOAD}"
 OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
@@ -227,6 +233,8 @@ SFT_DATA_DIR="${SFT_DATA_DIR:-${RES_OPD_ROOT}/sft_data/${EXPERIMENT_NAME}}"
 SFT_TRAIN_FILE="${SFT_TRAIN_FILE:-${SFT_DATA_DIR}/train.parquet}"
 GENERATION_JSONL="${GENERATION_JSONL:-${GENERATION_CACHE_DIR}/lowres_generations.jsonl}"
 TRAINER_DEFAULT_LOCAL_DIR="${TRAINER_DEFAULT_LOCAL_DIR:-${RES_OPD_ROOT}/checkpoints/${EXPERIMENT_NAME}}"
+WATCHER_SCRIPT="${RES_OPD_ROOT}/scripts/ckpt_upload_watcher.sh"
+WATCHER_PID_FILE="${TRAINER_DEFAULT_LOCAL_DIR}/.watcher.pid"
 LOG_DIR="${RES_OPD_ROOT}/logs"
 mkdir -p "$LOG_DIR" "$SFT_DATA_DIR" "$GENERATION_CACHE_DIR"
 
@@ -269,10 +277,20 @@ echo "OSS base:         $OSS_BASE"
 echo "Batch/micro:      $SFT_TRAIN_BATCH_SIZE / $SFT_MICRO_BATCH_SIZE_PER_GPU"
 echo "Total steps:      ${TRAINER_TOTAL_TRAINING_STEPS:-auto}"
 echo "Save/test freq:   $SAVE_FREQ / $TRAINER_TEST_FREQ"
+echo "Max ckpts keep:   $TRAINER_MAX_CKPT_TO_KEEP"
 echo "Ckpt contents:    save=$SFT_CKPT_SAVE_CONTENTS load=$SFT_CKPT_LOAD_CONTENTS"
+echo "Ckpt watcher:     prune_optim=$CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE keep_fsdp=$CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD delete_fsdp_on_merge_fail=$CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE"
 
 if is_truthy "$FORCE_FRESH_START"; then
     echo "FORCE_FRESH_START=True: cleaning local checkpoint dir"
+    if [[ -f "$WATCHER_PID_FILE" ]]; then
+        watcher_pid="$(cat "$WATCHER_PID_FILE" 2>/dev/null || true)"
+        if [[ -n "$watcher_pid" ]] && kill -0 "$watcher_pid" 2>/dev/null; then
+            echo "  Stopping old ckpt_watcher PID: $watcher_pid"
+            kill "$watcher_pid" 2>/dev/null || true
+            sleep 1
+        fi
+    fi
     safe_delete_dir "checkpoint dir" "$TRAINER_DEFAULT_LOCAL_DIR" "${RES_OPD_ROOT}/checkpoints/"
     if is_truthy "$FORCE_REGENERATE"; then
         safe_delete_dir "sft data dir" "$SFT_DATA_DIR" "${RES_OPD_ROOT}/sft_data/"
@@ -300,6 +318,48 @@ wait_for_vllm() {
             echo "ERROR: vLLM server did not become ready after ${waited}s" >&2
             return 1
         fi
+    done
+}
+
+stop_sft_watcher() {
+    if [[ -f "$WATCHER_PID_FILE" ]]; then
+        local watcher_pid
+        watcher_pid="$(cat "$WATCHER_PID_FILE" 2>/dev/null || true)"
+        if [[ -n "$watcher_pid" ]] && kill -0 "$watcher_pid" 2>/dev/null; then
+            echo "Stopping ckpt_watcher PID: $watcher_pid"
+            kill "$watcher_pid" 2>/dev/null || true
+            sleep 1
+        fi
+    fi
+}
+
+all_sft_checkpoint_steps_uploaded() {
+    local step_dir found=false
+    for step_dir in "${TRAINER_DEFAULT_LOCAL_DIR}"/global_step_*; do
+        [[ -d "$step_dir" ]] || continue
+        found=true
+        if [[ ! -f "${step_dir}/.oss_uploaded" ]]; then
+            return 1
+        fi
+    done
+    $found
+}
+
+wait_for_sft_checkpoint_uploads() {
+    local timeout_seconds="${1:-1800}"
+    local interval_seconds=15
+    local waited=0
+
+    while true; do
+        if all_sft_checkpoint_steps_uploaded; then
+            return 0
+        fi
+        if (( waited >= timeout_seconds )); then
+            return 1
+        fi
+        echo "Waiting for SFT checkpoint watcher uploads... (${waited}/${timeout_seconds}s)"
+        sleep "$interval_seconds"
+        waited=$((waited + interval_seconds))
     done
 }
 
@@ -376,6 +436,28 @@ if [[ ! -f "$SFT_TRAIN_FILE" ]]; then
     exit 1
 fi
 
+if is_truthy "$POST_TRAIN_SYNC_TO_OSS"; then
+    if [[ -f "$WATCHER_SCRIPT" ]]; then
+        if [[ -f "$WATCHER_PID_FILE" ]] && kill -0 "$(cat "$WATCHER_PID_FILE")" 2>/dev/null; then
+            echo "Per-experiment ckpt_watcher already running (PID: $(cat "$WATCHER_PID_FILE"))"
+        else
+            echo "Starting per-experiment ckpt_watcher for ${EXPERIMENT_NAME} ..."
+            mkdir -p "$TRAINER_DEFAULT_LOCAL_DIR"
+            env \
+                OSS_BASE="$OSS_BASE" \
+                CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE="$CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE" \
+                CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD="$CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD" \
+                CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE="$CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE" \
+                CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE="$CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE" \
+                nohup bash "$WATCHER_SCRIPT" --watch-dir "$TRAINER_DEFAULT_LOCAL_DIR" > /dev/null 2>&1 &
+            echo $! > "$WATCHER_PID_FILE"
+            echo "  Watcher PID: $! (monitoring: $TRAINER_DEFAULT_LOCAL_DIR)"
+        fi
+    else
+        echo "WARNING: ckpt_upload_watcher.sh not found at $WATCHER_SCRIPT"
+    fi
+fi
+
 SAVE_CONTENTS_HYDRA="$(csv_to_hydra_list "$SFT_CKPT_SAVE_CONTENTS")"
 LOAD_CONTENTS_HYDRA="$(csv_to_hydra_list "$SFT_CKPT_LOAD_CONTENTS")"
 TRAINING_STEP_OVERRIDE=()
@@ -422,7 +504,7 @@ TRAIN_EXIT_CODE=0
     trainer.logger="$TRAINER_LOGGER" \
     trainer.resume_mode="$TRAINER_RESUME_MODE" \
     trainer.n_gpus_per_node="$TRAINER_N_GPUS_PER_NODE" \
-    trainer.max_ckpt_to_keep="${TRAINER_MAX_CKPT_TO_KEEP:-1}" \
+    trainer.max_ckpt_to_keep="$TRAINER_MAX_CKPT_TO_KEEP" \
     || TRAIN_EXIT_CODE=$?
 
 upload_sft_checkpoints() {
@@ -532,8 +614,33 @@ upload_sft_checkpoints() {
 
 POST_EXIT_CODE=0
 if [[ "$TRAIN_EXIT_CODE" -eq 0 ]] || is_truthy "$POST_TRAIN_SYNC_ON_FAILURE"; then
-    upload_sft_checkpoints || POST_EXIT_CODE=$?
+    if is_truthy "$POST_TRAIN_SYNC_TO_OSS" && [[ -f "$WATCHER_SCRIPT" ]]; then
+        if ! wait_for_sft_checkpoint_uploads "$POST_TRAIN_UPLOAD_WAIT_SECONDS"; then
+            echo "SFT checkpoint watcher did not finish before timeout; running one-shot upload scan."
+            ONE_SHOT_STATUS=0
+            OSS_BASE="$OSS_BASE" \
+                CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE="$CKPT_WATCHER_PRUNE_OPTIMIZER_BEFORE_MERGE" \
+                CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD="$CKPT_WATCHER_KEEP_LOCAL_FSDP_AFTER_UPLOAD" \
+                CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE="$CKPT_WATCHER_DELETE_MERGED_ON_UPLOAD_FAILURE" \
+                CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE="$CKPT_WATCHER_DELETE_FSDP_ON_MERGE_FAILURE" \
+                bash "$WATCHER_SCRIPT" --watch-dir "$TRAINER_DEFAULT_LOCAL_DIR" --once || ONE_SHOT_STATUS=$?
+            if [[ "$ONE_SHOT_STATUS" -ne 0 ]]; then
+                echo "WARNING: one-shot SFT checkpoint upload scan exited with ${ONE_SHOT_STATUS}; checking upload markers anyway." >&2
+            fi
+            if ! wait_for_sft_checkpoint_uploads 300; then
+                echo "ERROR: SFT checkpoint upload did not complete after one-shot scan." >&2
+                echo "Checkpoint dir: $TRAINER_DEFAULT_LOCAL_DIR" >&2
+                echo "Watcher log: ${RES_OPD_ROOT}/logs/ckpt_watcher_${EXPERIMENT_NAME}.log" >&2
+                POST_EXIT_CODE=1
+            fi
+        fi
+    fi
+    if [[ "$POST_EXIT_CODE" -eq 0 ]]; then
+        upload_sft_checkpoints || POST_EXIT_CODE=$?
+    fi
 fi
+
+stop_sft_watcher
 
 if [[ "$POST_EXIT_CODE" -eq 0 ]] && is_truthy "$POST_TRAIN_CLEAN_LOCAL"; then
     safe_delete_dir "checkpoint dir" "$TRAINER_DEFAULT_LOCAL_DIR" "${RES_OPD_ROOT}/checkpoints/"

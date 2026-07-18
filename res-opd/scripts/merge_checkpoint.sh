@@ -24,17 +24,22 @@ DEFAULT_BASE_DIR="${RES_OPD_ROOT}/checkpoints"
 BASE_DIR="${BASE_DIR:-${1:-${DEFAULT_BASE_DIR}}}"
 BASE_DIR="${BASE_DIR%/}"
 ACTOR_DIR="${BASE_DIR}/actor"
+MERGE_SOURCE=""
 
-if [ ! -d "${ACTOR_DIR}" ]; then
-    echo "Actor checkpoint directory not found: ${ACTOR_DIR}" >&2
-    echo "Expected structure: <checkpoint>/actor/" >&2
+if [[ -d "${ACTOR_DIR}" && -f "${ACTOR_DIR}/huggingface/config.json" ]]; then
+    MERGE_SOURCE="${ACTOR_DIR}"
+elif [[ -f "${BASE_DIR}/huggingface/config.json" ]]; then
+    MERGE_SOURCE="${BASE_DIR}"
+else
+    echo "FSDP checkpoint directory not found under: ${BASE_DIR}" >&2
+    echo "Expected either <checkpoint>/actor/ or a top-level SFT FSDP checkpoint." >&2
     exit 1
 fi
 
 echo "============================================================"
 echo " Merging FSDP checkpoint"
 echo "============================================================"
-echo "Source:  ${ACTOR_DIR}"
+echo "Source:  ${MERGE_SOURCE}"
 echo "Target:  ${BASE_DIR}"
 
 # Remove previously merged top-level files for clean overwrite.
@@ -63,7 +68,7 @@ PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
 res_opd_validate_python_bin "$PYTHON_BIN"
 "${PYTHON_BIN}" -m verl.model_merger merge \
     --backend fsdp \
-    --local_dir "${ACTOR_DIR}" \
+    --local_dir "${MERGE_SOURCE}" \
     --target_dir "${BASE_DIR}"
 
 echo "Merge completed: ${BASE_DIR}"
