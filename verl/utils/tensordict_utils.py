@@ -162,6 +162,12 @@ def nested_tensor_from_tensor_list(tensors: list[torch.Tensor]) -> torch.Tensor:
     return torch.nested.as_nested_tensor(tensors, layout=torch.jagged).contiguous()
 
 
+def nested_tensor_rows(tensor: torch.Tensor) -> list[torch.Tensor]:
+    # Avoid tensor.unbind() on jagged NestedTensor: with 3D MRoPE
+    # position_ids it can route to split_with_sizes on the wrong dimension.
+    return [tensor[i] for i in range(tensor.size(0))]
+
+
 def concat_nested_tensors(tensors: list[torch.Tensor]) -> torch.Tensor:
     """Concatenate multiple 2D nested tensors along the batch dimension.
 
@@ -191,8 +197,7 @@ def concat_nested_tensors(tensors: list[torch.Tensor]) -> torch.Tensor:
     unbind_tensors = []
     for tensor in tensors:
         assert len(tensor.shape) == 2, f"nested tensor must have 2 dimensions. Got {tensor.shape}"
-        unbind_tensor = tensor.unbind(0)
-        unbind_tensors.extend(list(unbind_tensor))
+        unbind_tensors.extend(nested_tensor_rows(tensor))
 
     return nested_tensor_from_tensor_list(unbind_tensors)
 
@@ -310,7 +315,7 @@ def chunk_tensordict(td: TensorDict, chunks: int) -> list[TensorDict]:
 
     tds = new_td.chunk(chunks=chunks)
     for key in keys:
-        tensors = td[key].unbind(dim=0)
+        tensors = nested_tensor_rows(td[key])
         for i, td in enumerate(tds):
             td[key] = nested_tensor_from_tensor_list(tensors[i * chunk_size : (i + 1) * chunk_size])
 
@@ -433,8 +438,8 @@ def index_select_tensor_dict(batch: TensorDict, indices: torch.Tensor | list[int
             if isinstance(tensor, torch.Tensor) and not tensor.is_nested:
                 data_dict[key] = tensor[indices]
             elif isinstance(tensor, torch.Tensor) and tensor.is_nested:
-                tensor_lst = tensor.unbind()  # for performance
-                data_dict[key] = nested_tensor_from_tensor_list([tensor_lst[idx] for idx in indices])
+                indices_list = indices.tolist()
+                data_dict[key] = nested_tensor_from_tensor_list([tensor[int(idx)] for idx in indices_list])
             else:
                 # This handles NonTensorStack (indexable by batch dim) and NonTensorData (scalar metadata).
                 if tensor.shape:
