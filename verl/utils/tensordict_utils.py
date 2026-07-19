@@ -228,6 +228,33 @@ def select_nested_tensor(tensor: torch.Tensor, indices: torch.Tensor | list[int]
     return nested_tensor_from_tensor_list([rows[idx] for idx in indices_list], ragged_idx=ragged_idx)
 
 
+def nested_position_ids_to_padded(position_ids: torch.Tensor, batch_size: int, max_seq_len: int | torch.Tensor) -> torch.Tensor:
+    """Pad Qwen-VL nested position_ids without mixing batch and MRoPE dims.
+
+    Qwen-VL position_ids samples have shape (rope_dims, seq_len), so the nested
+    tensor must be ragged on dim=2. PyTorch's generic to_padded_tensor can mix
+    batch and rope dimensions for these tensors, so reconstruct them from
+    values/offsets directly.
+    """
+    assert position_ids.is_nested and position_ids.dim() == 3, (
+        f"expect nested 3D position_ids, got {position_ids.dim()=}, {position_ids.is_nested=}"
+    )
+    ragged_idx = nested_tensor_ragged_idx(position_ids)
+    assert ragged_idx == 2, f"expect position_ids ragged on dim=2, got {ragged_idx=}"
+    max_seq = int(max_seq_len.item()) if isinstance(max_seq_len, torch.Tensor) else int(max_seq_len)
+    values = position_ids.values()
+    offsets = position_ids.offsets()
+    rope_dims = int(values.shape[0])
+    assert rope_dims in (3, 4), f"expect Qwen-VL rope dims 3 or 4, got {tuple(values.shape)=}"
+    padded = values.new_zeros((int(batch_size), rope_dims, max_seq))
+    lengths = offsets.diff()
+    for row_idx, seq_len in enumerate(lengths.tolist()):
+        start = int(offsets[row_idx].item())
+        end = int(offsets[row_idx + 1].item())
+        padded[row_idx, :, : int(seq_len)] = values[:, start:end]
+    return padded
+
+
 def concat_nested_tensors(tensors: list[torch.Tensor]) -> torch.Tensor:
     """Concatenate multiple 2D nested tensors along the batch dimension.
 

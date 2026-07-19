@@ -18,6 +18,8 @@ from enum import Enum
 import torch
 from tensordict.tensorclass import NonTensorData
 
+from verl.utils import tensordict_utils as tu
+
 
 class DatasetPadMode(str, Enum):
     """Padding mode for dataset"""
@@ -67,7 +69,10 @@ class SFTTensorCollator:
         for key in tensor_keys:
             if isinstance(batch[0][key], torch.Tensor):
                 tensors = [item[key] for item in batch]
-                final_batch[key] = torch.nested.as_nested_tensor(tensors, layout=torch.jagged)
+                if key == "position_ids" and tensors[0].dim() == 2:
+                    final_batch[key] = tu.nested_tensor_from_tensor_list(tensors, ragged_idx=2)
+                else:
+                    final_batch[key] = torch.nested.as_nested_tensor(tensors, layout=torch.jagged)
             else:
                 tensors = [NonTensorData(item.get(key)) for item in batch]
                 final_batch[key] = torch.stack(tensors, dim=0)
