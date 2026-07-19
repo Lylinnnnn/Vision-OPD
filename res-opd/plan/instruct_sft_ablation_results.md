@@ -530,17 +530,21 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | Model | Compression | Step | CHAIRi↓ | CHAIRs↓ | ObjPrec↑ | ObjRecall↑ | ObjF1↑ | RepRate↓ |
 |---|---|---|---|---|---|---|---|---|
 | **Base** | — | — | 0.2823 | 0.0584 | 0.7177 | 0.7338 | 0.7257 | 0.0187 |
+| **RKL** | tr=0.75 | 50 | 0.2818 | 0.0677 | 0.7182 | 0.7252 | 0.7217 | 0.0249 |
 | **RKL** | tr=0.75 | 100 | 0.2734 | 0.0723 | 0.7266 | 0.7286 | 0.7276 | 0.0311 |
 | **RKL** | tr=0.75 | 150 | 0.2775 | 0.0862 | 0.7225 | 0.7262 | 0.7243 | 0.0281 |
+| **RKL** | tr=0.75 | 156 | 0.2817 | 0.0634 | 0.7183 | 0.7307 | 0.7244 | 0.0277 |
+| **RiskMask** | tr=0.75 | 50 | 0.2799 | 0.0544 | 0.7201 | 0.7328 | 0.7264 | 0.0239 |
+| **RiskMask** | tr=0.75 | 100 | 0.2794 | 0.0643 | 0.7206 | 0.7366 | 0.7285 | 0.0267 |
 | **RiskMask** | tr=0.75 | 150 | 0.2763 | 0.0554 | 0.7237 | 0.7362 | 0.7299 | 0.0209 |
 | **RiskMask** | tr=0.75 | 156 | 0.2743 | 0.0582 | 0.7257 | 0.7390 | 0.7323 | 0.0230 |
 | **SFT** | tr=0.75 | 156 | **0.2719** | **0.0493** | 0.7281 | 0.7210 | 0.7245 | 0.0212 |
 
 ### Analysis
-- **CHAIRi**: SFT (0.2719) achieves the **lowest hallucination rate**, outperforming Base (0.2823) and RKL best (0.2734).
-- **CHAIRs**: SFT (0.0493) achieves the **lowest sentence-level hallucination** among all methods, even better than RiskMask best (0.0554) and Base (0.0584).
-- **ObjPrec**: SFT (0.7281) is higher than Base (0.7177), second only to RiskMask step 156 (0.7257 → actually SFT is higher).
-- **RepRate**: SFT (0.0212) is close to Base (0.0187), much better than RKL variants (0.028-0.031).
+- **CHAIRi**: SFT (0.2719) achieves the **lowest hallucination rate**, outperforming Base (0.2823) and all RKL/RiskMask variants (range: 0.2734–0.2818).
+- **CHAIRs**: SFT (0.0493) achieves the **lowest sentence-level hallucination** among all methods, even better than RiskMask best (0.0544) and Base (0.0584).
+- **ObjPrec**: SFT (0.7281) is higher than Base (0.7177) and most distillation variants.
+- **RepRate**: SFT (0.0212) is close to Base (0.0187), much better than RKL variants (0.0249–0.0311).
 - **ObjF1**: Comparable to Base (0.7245 vs 0.7257), with significantly better hallucination metrics.
 
 ---
@@ -552,7 +556,12 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | Model | Compression | Step | Accuracy↑ | Recall↑ | F1↑ |
 |---|---|---|---|---|---|
 | **Base** | — | — | 0.9439 | 0.9283 | 0.9346 |
+| **RKL** | tr=0.75 | 50 | 0.9426 | 0.9220 | 0.9328 |
+| **RKL** | tr=0.75 | 100 | 0.9437 | 0.9226 | 0.9340 |
 | **RKL** | tr=0.75 | 150 | 0.9443 | 0.9218 | 0.9346 |
+| **RKL** | tr=0.75 | 156 | 0.9439 | 0.9209 | 0.9341 |
+| **RiskMask** | tr=0.75 | 50 | 0.9424 | 0.9212 | 0.9325 |
+| **RiskMask** | tr=0.75 | 100 | 0.9431 | 0.9220 | 0.9334 |
 | **RiskMask** | tr=0.75 | 150 | 0.9447 | 0.9232 | 0.9352 |
 | **RiskMask** | tr=0.75 | 156 | 0.9443 | 0.9221 | 0.9347 |
 | **SFT** | tr=0.75 | 156 | **0.9440** | 0.9230 | 0.9344 |
@@ -562,14 +571,20 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | Model | Compression | Step | adv↑ | pop↑ | random↑ |
 |---|---|---|---|---|---|
 | **Base** | — | — | 0.9271 | 0.9429 | 0.9617 |
+| **RKL** | tr=0.75 | 50 | 0.9261 | 0.9416 | 0.9602 |
+| **RKL** | tr=0.75 | 100 | 0.9274 | 0.9431 | 0.9606 |
 | **RKL** | tr=0.75 | 150 | 0.9290 | 0.9433 | 0.9608 |
+| **RKL** | tr=0.75 | 156 | 0.9286 | 0.9429 | 0.9602 |
+| **RiskMask** | tr=0.75 | 50 | 0.9255 | 0.9414 | 0.9602 |
+| **RiskMask** | tr=0.75 | 100 | 0.9259 | 0.9422 | 0.9613 |
 | **RiskMask** | tr=0.75 | 150 | 0.9288 | 0.9441 | 0.9613 |
+| **RiskMask** | tr=0.75 | 156 | 0.9290 | 0.9435 | 0.9606 |
 | **SFT** | tr=0.75 | 156 | 0.9282 | 0.9429 | **0.9608** |
 
 ### Analysis
-- **Overall Accuracy**: SFT (0.9440) is on par with Base (0.9439) and RKL/RiskMask (~0.9443).
+- **Overall Accuracy**: SFT (0.9440) is on par with Base (0.9439) and RKL/RiskMask (range: 0.9424–0.9447).
 - **Recall**: SFT (0.9230) achieves **higher recall** than most RKL/RiskMask variants, closer to Base (0.9283).
-- **Per-split**: Consistent performance, random split (0.9608) matches RKL best.
+- **Per-split**: Consistent performance across all steps, random split (0.9608) matches RKL step 150.
 - POPE performance is fully maintained at baseline level.
 
 ---
