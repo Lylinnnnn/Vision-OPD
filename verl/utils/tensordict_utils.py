@@ -200,19 +200,14 @@ def nested_tensor_rows(tensor: torch.Tensor) -> list[torch.Tensor]:
 
 
 def _nested_tensor_rows_from_padded(tensor: torch.Tensor) -> list[torch.Tensor]:
-    # Extract rows directly from the underlying values/offsets buffers to avoid
-    # PyTorch NestedTensor dispatch (to_padded_tensor / unbind) which triggers
-    # split_with_sizes errors on 3D MRoPE position_ids.
     ragged_idx = nested_tensor_ragged_idx(tensor)
     cat_dim = ragged_idx - 1
-    offsets = tensor.offsets()
-    values = tensor.values()
+    padded = tensor.to_padded_tensor(0)
+    lengths = tensor.offsets().diff().tolist()
     rows = []
-    for i in range(len(offsets) - 1):
-        start = int(offsets[i])
-        end = int(offsets[i + 1])
-        chunk = values.narrow(cat_dim, start, end - start)
-        rows.append(chunk.contiguous())
+    for row_idx, seq_len in enumerate(lengths):
+        row = padded[row_idx]
+        rows.append(row.narrow(cat_dim, 0, int(seq_len)).contiguous())
     return rows
 
 
