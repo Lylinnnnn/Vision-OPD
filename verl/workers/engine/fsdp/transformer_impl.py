@@ -950,14 +950,14 @@ class FSDPEngineWithLMHead(FSDPEngine):
                     seq_lengths = cu_seqlens.diff()
                     starts = torch.zeros_like(seq_lengths, dtype=torch.int64)
                     logits = torch.nested.narrow(logits, 1, starts, seq_lengths, layout=torch.jagged)
-                    logits_rmpad = torch.cat([t for t in logits.unbind()])
+                    logits_rmpad = torch.cat(tu.nested_tensor_rows(logits))
                     input_ids_rmpad_rolled = output_args["input_ids_rmpad_rolled"]
                     log_probs = logprobs_from_logits(logits=logits_rmpad, labels=input_ids_rmpad_rolled)
                     # (bsz, j1), for each sample, length of each sample: [real_prompt_length + real_response_length]
                     log_probs = torch.nested.nested_tensor_from_jagged(log_probs, cu_seqlens)
                     if calculate_entropy:
                         entropy = torch.nested.narrow(entropy, 1, starts, seq_lengths, layout=torch.jagged)
-                        entropy_rmpad = torch.cat([t for t in entropy.unbind()])
+                        entropy_rmpad = torch.cat(tu.nested_tensor_rows(entropy))
                         entropy = torch.nested.nested_tensor_from_jagged(entropy_rmpad, cu_seqlens)
                 else:
                     raise NotImplementedError(f"pad_mode {pad_mode} not implemented")
@@ -1048,7 +1048,7 @@ class FSDPEngineWithValueHead(FSDPEngineWithLMHead):
                 seq_lengths = cu_seqlens.diff()
                 starts = torch.zeros_like(seq_lengths, dtype=torch.int64)
                 values = torch.nested.narrow(values, 1, starts, seq_lengths, layout=torch.jagged)
-                values_rmpad = torch.cat([t for t in values.unbind()])
+                values_rmpad = torch.cat(tu.nested_tensor_rows(values))
                 # (bsz, j1), for each sample, length of each sample: [real_prompt_length + real_response_length]
                 values = torch.nested.nested_tensor_from_jagged(values_rmpad, cu_seqlens)
             else:

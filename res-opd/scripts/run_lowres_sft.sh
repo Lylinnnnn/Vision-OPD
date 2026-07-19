@@ -100,6 +100,7 @@ SFT_TRAIN_BATCH_SIZE="${SFT_TRAIN_BATCH_SIZE:-$DEFAULT_TRAIN_BATCH_SIZE}"
 SFT_MICRO_BATCH_SIZE_PER_GPU="${SFT_MICRO_BATCH_SIZE_PER_GPU:-$DEFAULT_MICRO_BATCH_SIZE_PER_GPU}"
 SFT_MAX_LENGTH="${SFT_MAX_LENGTH:-8192}"
 SFT_MAX_TOKEN_LEN_PER_GPU="${SFT_MAX_TOKEN_LEN_PER_GPU:-$DEFAULT_MAX_TOKEN_LEN_PER_GPU}"
+SFT_USE_DYNAMIC_BSZ="${SFT_USE_DYNAMIC_BSZ:-True}"
 TOTAL_EPOCHS="${TOTAL_EPOCHS:-1}"
 TRAINER_TOTAL_TRAINING_STEPS="${TRAINER_TOTAL_TRAINING_STEPS:-}"
 SAVE_FREQ="${SAVE_FREQ:-50}"
@@ -275,6 +276,7 @@ echo "Generations:      $GENERATION_JSONL"
 echo "Checkpoint dir:   $TRAINER_DEFAULT_LOCAL_DIR"
 echo "OSS base:         $OSS_BASE"
 echo "Batch/micro:      $SFT_TRAIN_BATCH_SIZE / $SFT_MICRO_BATCH_SIZE_PER_GPU"
+echo "Dynamic bsz:      $SFT_USE_DYNAMIC_BSZ"
 echo "Total steps:      ${TRAINER_TOTAL_TRAINING_STEPS:-auto}"
 echo "Save/test freq:   $SAVE_FREQ / $TRAINER_TEST_FREQ"
 echo "Max ckpts keep:   $TRAINER_MAX_CKPT_TO_KEEP"
@@ -479,6 +481,7 @@ TRAIN_EXIT_CODE=0
     data.val_files=null \
     data.train_batch_size="$SFT_TRAIN_BATCH_SIZE" \
     data.micro_batch_size_per_gpu="$SFT_MICRO_BATCH_SIZE_PER_GPU" \
+    data.use_dynamic_bsz="$SFT_USE_DYNAMIC_BSZ" \
     data.max_token_len_per_gpu="$SFT_MAX_TOKEN_LEN_PER_GPU" \
     data.max_length="$SFT_MAX_LENGTH" \
     data.truncation=right \

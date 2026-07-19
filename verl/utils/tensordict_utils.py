@@ -156,10 +156,35 @@ def get_non_tensor_data(data: TensorDict, key: str, default):
     return unwrap_non_tensor_data(output)
 
 
-def nested_tensor_from_tensor_list(tensors: list[torch.Tensor]) -> torch.Tensor:
-    # Work around PyTorch jagged NestedTensor unbind/chunk corner cases.
-    # See https://github.com/pytorch/pytorch/issues/153238.
-    return torch.nested.as_nested_tensor(tensors, layout=torch.jagged).contiguous()
+def nested_tensor_from_tensor_list(tensors: list[torch.Tensor], ragged_idx: int | None = None) -> torch.Tensor:
+    # Build jagged tensors explicitly so 3D VLM position_ids keep their ragged
+    # dimension metadata. This mirrors the upstream verl workaround for
+    # PyTorch NestedTensor issue https://github.com/pytorch/pytorch/issues/153238.
+    assert len(tensors) > 0, "Must provide at least one tensor"
+    sample_dim = tensors[0].dim()
+    if ragged_idx is None:
+        ragged_idx = 1
+    assert 1 <= ragged_idx <= sample_dim, (
+        f"ragged_idx must be in [1, {sample_dim}]. Got {ragged_idx=} and {sample_dim=}"
+    )
+    if sample_dim == 1:
+        return torch.nested.as_nested_tensor(tensors, layout=torch.jagged).contiguous()
+
+    cat_dim = ragged_idx - 1
+    values = torch.cat(tensors, dim=cat_dim)
+    lengths = torch.tensor([tensor.shape[cat_dim] for tensor in tensors], dtype=torch.long, device=values.device)
+    offsets = torch.zeros(len(tensors) + 1, dtype=torch.long, device=values.device)
+    torch.cumsum(lengths, dim=0, out=offsets[1:])
+    nested_tensor = torch.nested.nested_tensor_from_jagged(values=values, offsets=offsets).contiguous()
+    nested_tensor._ragged_idx = ragged_idx
+    return nested_tensor
+
+
+def nested_tensor_ragged_idx(tensor: torch.Tensor) -> int:
+    # Standard jagged tensors are ragged on the first dimension after batch.
+    # Qwen-VL 3D position_ids are the special case patched by
+    # maybe_fix_3d_position_ids with _ragged_idx = 2.
+    return int(getattr(tensor, "_ragged_idx", 1))
 
 
 def nested_tensor_rows(tensor: torch.Tensor) -> list[torch.Tensor]:
@@ -171,7 +196,36 @@ def nested_tensor_rows(tensor: torch.Tensor) -> list[torch.Tensor]:
     except RuntimeError as exc:
         if "split_with_sizes" not in str(exc):
             raise
-        return [tensor[i] for i in range(tensor.size(0))]
+        return _nested_tensor_rows_from_padded(tensor)
+
+
+def _nested_tensor_rows_from_padded(tensor: torch.Tensor) -> list[torch.Tensor]:
+    ragged_idx = nested_tensor_ragged_idx(tensor)
+    cat_dim = ragged_idx - 1
+    padded = tensor.to_padded_tensor(0)
+    lengths = tensor.offsets().diff().tolist()
+    rows = []
+    for row_idx, seq_len in enumerate(lengths):
+        row = padded[row_idx]
+        rows.append(row.narrow(cat_dim, 0, int(seq_len)).contiguous())
+    return rows
+
+
+def select_nested_tensor(tensor: torch.Tensor, indices: torch.Tensor | list[int]) -> torch.Tensor:
+    if isinstance(indices, torch.Tensor):
+        indices_list = [int(idx) for idx in indices.detach().cpu().tolist()]
+    else:
+        indices_list = [int(idx) for idx in indices]
+    ragged_idx = nested_tensor_ragged_idx(tensor)
+
+    try:
+        rows = list(tensor.unbind(dim=0))
+    except RuntimeError as exc:
+        if "split_with_sizes" not in str(exc):
+            raise
+        rows = _nested_tensor_rows_from_padded(tensor)
+
+    return nested_tensor_from_tensor_list([rows[idx] for idx in indices_list], ragged_idx=ragged_idx)
 
 
 def concat_nested_tensors(tensors: list[torch.Tensor]) -> torch.Tensor:
@@ -202,10 +256,11 @@ def concat_nested_tensors(tensors: list[torch.Tensor]) -> torch.Tensor:
         assert tensor.is_nested and tensor.is_contiguous()
     unbind_tensors = []
     for tensor in tensors:
-        assert len(tensor.shape) == 2, f"nested tensor must have 2 dimensions. Got {tensor.shape}"
+        assert len(tensor.shape) >= 2, f"nested tensor must have 2 or more dimensions. Got {tensor.shape}"
         unbind_tensors.extend(nested_tensor_rows(tensor))
 
-    return nested_tensor_from_tensor_list(unbind_tensors)
+    ragged_idx = nested_tensor_ragged_idx(tensors[0])
+    return nested_tensor_from_tensor_list(unbind_tensors, ragged_idx=ragged_idx)
 
 
 def concat_tensordict_with_none_bsz(data: list[TensorDict]):
@@ -321,10 +376,11 @@ def chunk_tensordict(td: TensorDict, chunks: int) -> list[TensorDict]:
 
     tds = new_td.chunk(chunks=chunks)
     for key in keys:
-        tensors = nested_tensor_rows(td[key])
-        for i, td in enumerate(tds):
-            td[key] = nested_tensor_from_tensor_list(tensors[i * chunk_size : (i + 1) * chunk_size])
-            maybe_fix_3d_position_ids(td)
+        source_tensor = td[key]
+        indices = torch.arange(len(td), device=source_tensor.device)
+        for i, chunk_td in enumerate(tds):
+            chunk_td[key] = select_nested_tensor(source_tensor, indices[i * chunk_size : (i + 1) * chunk_size])
+            maybe_fix_3d_position_ids(chunk_td)
 
     return tds
 
@@ -445,9 +501,7 @@ def index_select_tensor_dict(batch: TensorDict, indices: torch.Tensor | list[int
             if isinstance(tensor, torch.Tensor) and not tensor.is_nested:
                 data_dict[key] = tensor[indices]
             elif isinstance(tensor, torch.Tensor) and tensor.is_nested:
-                indices_list = indices.tolist()
-                tensor_lst = nested_tensor_rows(tensor)
-                data_dict[key] = nested_tensor_from_tensor_list([tensor_lst[int(idx)] for idx in indices_list])
+                data_dict[key] = select_nested_tensor(tensor, indices)
             else:
                 # This handles NonTensorStack (indexable by batch dim) and NonTensorData (scalar metadata).
                 if tensor.shape:
@@ -601,7 +655,7 @@ def assert_tensordict_eq(tensordict1: TensorDict, tensordict2: TensorDict):
                 assert val.is_nested and val2.is_nested, (
                     f"Both tensors must be nested tensors. {val.is_nested=}, {val2.is_nested=}"
                 )
-                t1, t2 = val.unbind(), val2.unbind()
+                t1, t2 = nested_tensor_rows(val), nested_tensor_rows(val2)
                 assert len(t1) == len(t2), f"Nested tensor should have the same lengths. {len(t1)=} vs {len(t2)=}"
                 for c1, c2 in zip(t1, t2, strict=True):
                     assert torch.equal(c1, c2), f"Nested tensor components have different values. {c1=} vs {c2=}"
