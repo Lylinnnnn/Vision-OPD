@@ -163,9 +163,15 @@ def nested_tensor_from_tensor_list(tensors: list[torch.Tensor]) -> torch.Tensor:
 
 
 def nested_tensor_rows(tensor: torch.Tensor) -> list[torch.Tensor]:
-    # Avoid tensor.unbind() on jagged NestedTensor: with 3D MRoPE
-    # position_ids it can route to split_with_sizes on the wrong dimension.
-    return [tensor[i] for i in range(tensor.size(0))]
+    # Prefer the native fast path, but fall back for PyTorch jagged
+    # NestedTensor corner cases where unbind routes split_with_sizes through
+    # the wrong ragged dimension, especially VLM 3D MRoPE position_ids.
+    try:
+        return list(tensor.unbind(dim=0))
+    except RuntimeError as exc:
+        if "split_with_sizes" not in str(exc):
+            raise
+        return [tensor[i] for i in range(tensor.size(0))]
 
 
 def concat_nested_tensors(tensors: list[torch.Tensor]) -> torch.Tensor:
@@ -318,6 +324,7 @@ def chunk_tensordict(td: TensorDict, chunks: int) -> list[TensorDict]:
         tensors = nested_tensor_rows(td[key])
         for i, td in enumerate(tds):
             td[key] = nested_tensor_from_tensor_list(tensors[i * chunk_size : (i + 1) * chunk_size])
+            maybe_fix_3d_position_ids(td)
 
     return tds
 
@@ -439,7 +446,8 @@ def index_select_tensor_dict(batch: TensorDict, indices: torch.Tensor | list[int
                 data_dict[key] = tensor[indices]
             elif isinstance(tensor, torch.Tensor) and tensor.is_nested:
                 indices_list = indices.tolist()
-                data_dict[key] = nested_tensor_from_tensor_list([tensor[int(idx)] for idx in indices_list])
+                tensor_lst = nested_tensor_rows(tensor)
+                data_dict[key] = nested_tensor_from_tensor_list([tensor_lst[int(idx)] for idx in indices_list])
             else:
                 # This handles NonTensorStack (indexable by batch dim) and NonTensorData (scalar metadata).
                 if tensor.shape:
@@ -447,6 +455,7 @@ def index_select_tensor_dict(batch: TensorDict, indices: torch.Tensor | list[int
                 else:
                     data_dict[key] = tensor
         selected_batch = TensorDict(source=data_dict, batch_size=batch_size)
+        maybe_fix_3d_position_ids(selected_batch)
     else:
         selected_batch = None
 
