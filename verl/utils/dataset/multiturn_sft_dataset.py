@@ -323,11 +323,20 @@ class MultiTurnSFTDataset(Dataset):
             second_per_grid_ts = multi_modal_inputs.get("second_per_grid_ts", None)
 
             if is_qwen3_vl:
+                # Construct mm_token_type_ids required by Qwen3VLModel.get_rope_index()
+                mm_token_type_ids = torch.zeros_like(input_ids)
+                image_token_id = getattr(self.processor, "image_token_id", None)
+                if image_token_id is not None:
+                    mm_token_type_ids[input_ids == image_token_id] = 1
+                video_token_id = getattr(self.processor, "video_token_id", None)
+                if video_token_id is not None:
+                    mm_token_type_ids[input_ids == video_token_id] = 2
+
                 position_ids = self.processor.get_rope_index(
                     input_ids=input_ids,
+                    mm_token_type_ids=mm_token_type_ids,
                     image_grid_thw=image_grid_thw,
                     video_grid_thw=video_grid_thw,
-                    second_per_grid_ts=second_per_grid_ts,
                     attention_mask=attention_mask,
                 )
                 if isinstance(position_ids, tuple):
