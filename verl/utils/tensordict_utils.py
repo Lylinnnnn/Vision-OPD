@@ -370,6 +370,9 @@ def chunk_tensordict(td: TensorDict, chunks: int) -> list[TensorDict]:
     assert isinstance(td, TensorDict) and len(td) % chunks == 0, (
         f"expecting td with length divisible by chunks, but got {len(td)} and {chunks}"
     )
+    if chunks == 1:
+        return [td]
+
     chunk_size = len(td) // chunks
     keys = {key for key, val in td.items() if isinstance(val, torch.Tensor) and val.is_nested}
     new_td = TensorDict({k: v for k, v in td.items() if k not in keys}, batch_size=td.batch_size, device=td.device)

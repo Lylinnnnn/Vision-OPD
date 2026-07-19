@@ -396,6 +396,8 @@ def rearrange_micro_batches(
         num_micro_batches = roundup_divisible(num_micro_batches, num_batches_divided_by)
 
     assert num_micro_batches <= len(seq_len_effective)
+    if num_micro_batches == 1:
+        return [batch], [list(range(len(seq_len_effective)))]
 
     # note that seq_len_effective is a GPU tensor. We need to make it a list to avoid D2H!
     workloads = calculate_workload(seq_len_effective).cpu().tolist()
@@ -493,14 +495,14 @@ def restore_dynamic_batch(data: torch.Tensor, batch_idx_list: list[list[int]]) -
     indices = list(chain.from_iterable(batch_idx_list))
     batch_size = data.shape[0]
     assert len(indices) == batch_size, f"{len(indices)} vs. {batch_size}"
-    revert_indices = torch.tensor(get_reverse_idx(indices), dtype=torch.long)
+    revert_indices = get_reverse_idx(indices)
 
     if data.is_nested:
-        data_lst = data.unbind()
+        data_lst = tu.nested_tensor_rows(data)
         tensors = [data_lst[i] for i in revert_indices]
-        reverted_data = torch.nested.as_nested_tensor(tensors, layout=torch.jagged)
+        reverted_data = tu.nested_tensor_from_tensor_list(tensors, ragged_idx=tu.nested_tensor_ragged_idx(data))
     else:
-        reverted_data = data[revert_indices]
+        reverted_data = data[torch.tensor(revert_indices, dtype=torch.long, device=data.device)]
 
     return reverted_data
 
