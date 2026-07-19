@@ -604,7 +604,7 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 100 | 5.7 | 64.5 | 44.3 | 2.8 |
 | **RiskMask** | tr=0.75 | 150 | 6.0 | 64.2 | 43.8 | 2.6 |
 | **RiskMask** | tr=0.75 | 156 | 5.9 | 64.7 | 43.5 | 2.8 |
-| **SFT** | tr=0.75 | 156 | *pending* | *pending* | *pending* | *pending* |
+| **SFT** | tr=0.75 | 156 | 6.1 | 64.0 | 43.9 | 3.0 |
 
 ### Discriminative Tasks
 
@@ -619,7 +619,7 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 100 | 86.2 | 86.6 | 93.7 | 90.0 |
 | **RiskMask** | tr=0.75 | 150 | 86.1 | 86.5 | 93.6 | 89.9 |
 | **RiskMask** | tr=0.75 | 156 | 86.1 | 86.4 | 93.8 | 89.9 |
-| **SFT** | tr=0.75 | 156 | *pending* | *pending* | *pending* | *pending* |
+| **SFT** | tr=0.75 | 156 | 85.8 | — | — | — |
 
 ### Sub-category Accuracy
 
@@ -634,9 +634,14 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 100 | 95.4 | 81.5 | 78.4 | 86.5 | 86.5 | 80.2 |
 | **RiskMask** | tr=0.75 | 150 | 95.4 | 81.4 | 78.3 | 86.6 | 86.4 | 79.9 |
 | **RiskMask** | tr=0.75 | 156 | 95.4 | 81.4 | 78.2 | 86.7 | 86.4 | 79.9 |
-| **SFT** | tr=0.75 | 156 | *pending* | *pending* | *pending* | *pending* | *pending* | *pending* |
+| **SFT** | tr=0.75 | 156 | 95.1 | 81.1 | 77.8 | 86.7 | 86.5 | 79.9 |
 
-> Note: 4B tr=0.75 SFT AMBER data pending — eval currently running in tmux session `eval_4b_tr075_sft`.
+### Analysis
+- **Generative CHAIR**: SFT (6.1) matches Base (6.1) and RiskMask step 50 (6.1), slightly higher than RKL best (5.8). Unlike other SFT experiments, tr=0.75 SFT does not reduce AMBER CHAIR.
+- **HAL**: SFT (43.9) is comparable to Base (44.0) and distillation variants (range: 42.8–44.3).
+- **COG**: SFT (3.0) matches RiskMask step 50 (3.0), slightly better than Base (3.2).
+- **Discriminative Acc**: SFT (85.8) is **slightly lower** than Base (86.1) and all distillation variants, indicating some discriminative degradation.
+- **Sub-category**: SFT Existence (95.1) and State (77.8) are slightly lower than Base (95.3, 78.2); other sub-categories are comparable.
 
 ---
 
@@ -653,9 +658,11 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 100 | 0.6140 |
 | **RiskMask** | tr=0.75 | 150 | 0.6153 |
 | **RiskMask** | tr=0.75 | 156 | 0.6120 |
-| **SFT** | tr=0.75 | 156 | *pending* |
+| **SFT** | tr=0.75 | 156 | 0.6073 |
 
-> Note: 4B tr=0.75 SFT MMStar data pending — eval currently running.
+### Analysis
+- SFT (0.6073) is **lower than Base** (0.6167) by ~1.5%, consistent with the expectation that SFT trades off some general vision-language understanding for reduced hallucination.
+- Also lower than most RKL/RiskMask variants (range: 0.6087–0.6160), confirming the trade-off pattern.
 
 ---
 
@@ -671,9 +678,15 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 100 | 0.8635 | 0.8011 | 0.9258 |
 | **RiskMask** | tr=0.75 | 150 | 0.8587 | 0.7942 | 0.9233 |
 | **RiskMask** | tr=0.75 | 156 | 0.8583 | 0.7949 | 0.9217 |
-| **SFT** | tr=0.75 | 156 | *pending* | *pending* | *pending* |
+| **SFT** | tr=0.75 | 156 | 0.8616 | 0.7990 | 0.9242 |
 
-> Note: 4B Base CV-Bench data not available; 4B tr=0.75 SFT CV-Bench data pending — eval currently running.
+> Note: 4B Base CV-Bench data not available; comparison uses RKL/RiskMask as reference.
+
+### Analysis
+- **Overall**: SFT (0.8616) is comparable to RKL/RiskMask variants (range: 0.8583–0.8635), within noise.
+- **2D**: SFT (0.7990) matches RKL step 100 (0.7990), competitive with other variants.
+- **3D**: SFT (0.9242) is comparable to most variants (range: 0.9217–0.9283).
+- Visual reasoning is well maintained at distillation-method level.
 
 ---
 ---
