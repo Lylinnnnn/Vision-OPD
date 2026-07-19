@@ -373,7 +373,7 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 |---|---|---|---|---|---|---|
 | **Base** | — | — | 6.1 | 65.0 | 44.0 | 3.2 |
 | **RKL** | tr=0.75 | 156 | 5.8 | 64.2 | 42.8 | 2.8 |
-| **RiskMask** | tr=0.75 | 100 | 5.7 | 64.5 | 44.3 | 2.8 |
+| **RiskMask** | tr=0.75 | 156 | 5.9 | 64.7 | 43.5 | 2.8 |
 | **SFT** | tr=0.5 | 156 | **5.4** | 63.7 | **40.6** | **2.6** |
 
 ### Discriminative Tasks
@@ -381,7 +381,7 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | Model | Compression | Step | Acc↑ | Prec↑ | Recall↑ | F1↑ |
 |---|---|---|---|---|---|---|
 | **Base** | — | — | 86.1 | 86.5 | 93.6 | 89.9 |
-| **RKL** | tr=0.75 | 156 | 86.1 | 86.4 | 93.7 | 89.9 |
+| **RKL** | tr=0.75 | 156 | 86.1 | 86.5 | 93.6 | 89.9 |
 | **RiskMask** | tr=0.75 | 156 | 86.1 | 86.4 | 93.8 | 89.9 |
 | **SFT** | tr=0.5 | 156 | 86.1 | 86.4 | 93.8 | 89.9 |
 
@@ -390,14 +390,16 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | Model | Compression | Step | Existence↑ | Attribute↑ | State↑ | Number↑ | Action↑ | Relation↑ |
 |---|---|---|---|---|---|---|---|---|
 | **Base** | — | — | 95.3 | 81.4 | 78.2 | 87.0 | 86.5 | 79.8 |
+| **RKL** | tr=0.75 | 156 | 95.4 | 81.3 | 78.3 | 86.5 | 86.2 | 80.1 |
+| **RiskMask** | tr=0.75 | 156 | 95.4 | 81.4 | 78.2 | 86.7 | 86.4 | 79.9 |
 | **SFT** | tr=0.5 | 156 | 95.4 | 81.4 | 78.1 | 87.2 | 86.5 | 80.0 |
 
 ### Analysis
-- **Generative CHAIR**: SFT (5.4) achieves the **lowest hallucination rate**, outperforming Base (6.1) and all distillation variants.
-- **HAL**: SFT (40.6) achieves the **lowest overall hallucination score**, significantly better than Base (44.0).
-- **COG**: SFT (2.6) achieves the **lowest cognitive grounding error** among all methods.
+- **Generative CHAIR**: SFT (5.4) achieves the **lowest hallucination rate**, outperforming Base (6.1), RKL (5.8), and RiskMask (5.9).
+- **HAL**: SFT (40.6) achieves the **lowest overall hallucination score**, better than Base (44.0), RKL (42.8), and RiskMask (43.5).
+- **COG**: SFT (2.6) achieves the **lowest cognitive grounding error**, better than Base (3.2) and matching RKL/RiskMask (2.8).
 - **Discriminative**: On par with Base and distillation methods.
-- **Sub-category**: Comparable to Base across all sub-categories, no significant degradation.
+- **Sub-category**: Comparable to Base and distillation methods across all sub-categories, no significant degradation.
 
 ---
 
@@ -406,13 +408,13 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | Model | Compression | Step | Overall↑ |
 |---|---|---|---|
 | **Base** | — | — | 0.6167 |
-| **RKL** | tr=0.75 | 156 | 0.6133 |
-| **RiskMask** | tr=0.75 | 156 | 0.6080 |
+| **RKL** | tr=0.75 | 156 | 0.6160 |
+| **RiskMask** | tr=0.75 | 156 | 0.6120 |
 | **SFT** | tr=0.5 | 156 | 0.6033 |
 
 ### Analysis
 - SFT (0.6033) is **lower than Base** (0.6167) by ~2.2%, consistent with the expectation that SFT trades off some general vision-language understanding for reduced hallucination.
-- Performance is comparable to RKL (0.6133) and RiskMask (0.6080), all within normal variation.
+- Also lower than RKL (0.6160) and RiskMask (0.6120), confirming the trade-off pattern.
 
 ---
 
@@ -420,17 +422,17 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 
 | Model | Compression | Step | Overall↑ | 2D↑ | 3D↑ |
 |---|---|---|---|---|---|
-| **RKL** | tr=0.75 | 156 | 0.8550 | 0.7907 | 0.9192 |
-| **RiskMask** | tr=0.75 | 156 | 0.8544 | 0.7879 | 0.9208 |
+| **RKL** | tr=0.75 | 156 | 0.8587 | 0.7942 | 0.9233 |
+| **RiskMask** | tr=0.75 | 156 | 0.8583 | 0.7949 | 0.9217 |
 | **SFT** | tr=0.5 | 156 | 0.8569 | 0.7879 | 0.9258 |
 
 > Note: 4B Base CV-Bench data not available; comparison uses RKL/RiskMask as reference.
 
 ### Analysis
-- **Overall**: SFT (0.8569) is comparable to RKL (0.8550) and RiskMask (0.8544), within noise.
-- **2D**: SFT (0.7879) matches RiskMask (0.7879), slightly lower than RKL (0.7907).
-- **3D**: SFT (0.9258) is the **highest** among compared methods, slightly better than RiskMask (0.9208).
-- Visual reasoning is well maintained at distillation-method level.
+- **Overall**: SFT (0.8569) is slightly lower than RKL (0.8587) and RiskMask (0.8583), within noise.
+- **2D**: SFT (0.7879) is lower than RKL (0.7942) and RiskMask (0.7949).
+- **3D**: SFT (0.9258) is the **highest** among compared methods, slightly better than RKL (0.9233).
+- Visual reasoning is well maintained at distillation-method level, with slight 2D trade-off.
 
 ---
 ---
