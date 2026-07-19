@@ -323,24 +323,29 @@ class MultiTurnSFTDataset(Dataset):
             second_per_grid_ts = multi_modal_inputs.get("second_per_grid_ts", None)
 
             if is_qwen3_vl:
-                # Construct mm_token_type_ids required by Qwen3VLModel.get_rope_index()
-                mm_token_type_ids = torch.zeros_like(input_ids)
+                # get_rope_index expects 2D input_ids (batch, seq_len), but dataset
+                # provides 1D (seq_len,). Unsqueeze before call, squeeze after.
+                input_ids_2d = input_ids.unsqueeze(0)
+                mm_token_type_ids = torch.zeros_like(input_ids_2d)
                 image_token_id = getattr(self.processor, "image_token_id", None)
                 if image_token_id is not None:
-                    mm_token_type_ids[input_ids == image_token_id] = 1
+                    mm_token_type_ids[input_ids_2d == image_token_id] = 1
                 video_token_id = getattr(self.processor, "video_token_id", None)
                 if video_token_id is not None:
-                    mm_token_type_ids[input_ids == video_token_id] = 2
+                    mm_token_type_ids[input_ids_2d == video_token_id] = 2
+
+                attention_mask_2d = attention_mask.unsqueeze(0) if attention_mask is not None else None
 
                 position_ids = self.processor.get_rope_index(
-                    input_ids=input_ids,
+                    input_ids=input_ids_2d,
                     mm_token_type_ids=mm_token_type_ids,
                     image_grid_thw=image_grid_thw,
                     video_grid_thw=video_grid_thw,
-                    attention_mask=attention_mask,
+                    attention_mask=attention_mask_2d,
                 )
                 if isinstance(position_ids, tuple):
                     position_ids = position_ids[0]
+                # Result is (3, 1, seq_len) or (3, seq_len); squeeze batch dim if present
                 if position_ids.dim() == 3 and position_ids.shape[1] == 1:
                     position_ids = position_ids.squeeze(1)
                 if position_ids.dim() != 2 or position_ids.shape[0] != 3:
