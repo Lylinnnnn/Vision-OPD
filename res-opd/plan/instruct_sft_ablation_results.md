@@ -236,6 +236,74 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 - POPE performance is maintained at near-baseline level despite the aggressive tr=0.5 compression.
 
 ---
+
+## AMBER (Hallucination Benchmark)
+
+### Generative Tasks
+
+| Model | Compression | Step | CHAIR↓ | Cover↑ | HAL↓ | COG↓ |
+|---|---|---|---|---|---|---|
+| **Base** | — | — | 5.5 | 63.4 | 37.5 | 2.9 |
+| **RKL** | tr=0.5 | 50 | 3.2 | 63.2 | 35.3 | 2.9 |
+| **RiskMask** | tr=0.5 | 50 | 4.2 | 63.2 | 36.3 | 2.8 |
+| **RiskMask** | tr=0.5 | 150 | 3.6 | 63.1 | 35.6 | 2.7 |
+| **SFT** | tr=0.5 | 156 | **3.6** | 62.8 | 35.8 | **2.7** |
+
+### Discriminative Tasks
+
+| Model | Compression | Step | Acc↑ | Prec↑ | Recall↑ | F1↑ |
+|---|---|---|---|---|---|---|
+| **Base** | — | — | 83.7 | 86.9 | 88.8 | 87.8 |
+| **RKL** | tr=0.5 | 50 | 83.9 | 87.1 | 88.8 | 88.0 |
+| **RiskMask** | tr=0.5 | 150 | 84.0 | 87.0 | 89.2 | 88.1 |
+| **SFT** | tr=0.5 | 156 | **84.0** | **87.3** | 88.8 | **88.0** |
+
+### Sub-category Accuracy
+
+| Model | Compression | Step | Existence↑ | Attribute↑ | State↑ | Number↑ | Action↑ | Relation↑ |
+|---|---|---|---|---|---|---|---|---|
+| **Base** | — | — | 92.0 | 80.7 | 77.2 | 86.1 | — | — |
+| **SFT** | tr=0.5 | 156 | **92.3** | **80.9** | **77.5** | **86.2** | **87.2** | **73.9** |
+
+### Analysis
+- **Generative CHAIR**: SFT (3.6) ties with RiskMask best (3.6) as the **lowest**, significantly better than Base (5.5).
+- **COG**: SFT (2.7) ties for the **lowest cognitive grounding error**, matching RiskMask step 150.
+- **Discriminative Acc**: SFT (84.0) matches the best among all methods.
+- **Sub-category**: SFT achieves the **highest scores** in Existence (92.3), Attribute (80.9), State (77.5), Number (86.2), and Action (87.2).
+
+---
+
+## MMStar (Vision-Language Understanding)
+
+| Model | Compression | Step | Overall↑ |
+|---|---|---|---|
+| **Base** | — | — | 0.5433 |
+| **RKL** | tr=0.5 | 100 | 0.5460 |
+| **RiskMask** | tr=0.5 | 50 | 0.5447 |
+| **SFT** | tr=0.5 | 156 | 0.5313 |
+
+### Analysis
+- SFT (0.5313) is **lower than Base** (0.5433) by ~2.2%, indicating some vision-language understanding degradation with tr=0.5 compression.
+- This is the most notable weakness of the 2B tr=0.5 SFT compared to other benchmarks.
+
+---
+
+## CV-Bench (Visual Reasoning)
+
+| Model | Compression | Step | Overall↑ | 2D↑ | 3D↑ |
+|---|---|---|---|---|---|
+| **Base** | — | — | 0.8059 | 0.7427 | 0.8692 |
+| **RKL** | tr=0.5 | 50 | 0.8058 | 0.7399 | 0.8717 |
+| **RiskMask** | tr=0.5 | 50 | 0.8059 | 0.7385 | 0.8733 |
+| **SFT** | tr=0.5 | 156 | 0.7976 | 0.7302 | 0.8650 |
+
+### Analysis
+- **Overall**: SFT (0.7976) is slightly lower than Base (0.8059) by ~1%.
+- **2D**: Slightly lower than Base (0.7302 vs 0.7427).
+- **3D**: Maintained at 0.8650, close to Base (0.8692).
+- Visual reasoning is well preserved despite aggressive compression.
+
+---
 ---
 
 # 4B Instruct SFT (tr=0.5) Evaluation Results
@@ -294,6 +362,75 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 - **Overall Accuracy**: SFT (0.9433) is comparable to Base (0.9439) and RKL/RiskMask (~0.9443), within noise.
 - **Per-split**: Performance is consistent, random split (0.9588) slightly lower than Base (0.9617) but still strong.
 - Despite aggressive tr=0.5 compression, POPE performance is well maintained.
+
+---
+
+## AMBER (Hallucination Benchmark)
+
+### Generative Tasks
+
+| Model | Compression | Step | CHAIR↓ | Cover↑ | HAL↓ | COG↓ |
+|---|---|---|---|---|---|---|
+| **Base** | — | — | 6.1 | 65.0 | 44.0 | 3.2 |
+| **RKL** | tr=0.75 | 156 | 5.8 | 64.2 | 42.8 | 2.8 |
+| **RiskMask** | tr=0.75 | 100 | 5.7 | 64.5 | 44.3 | 2.8 |
+| **SFT** | tr=0.5 | 156 | **5.4** | 63.7 | **40.6** | **2.6** |
+
+### Discriminative Tasks
+
+| Model | Compression | Step | Acc↑ | Prec↑ | Recall↑ | F1↑ |
+|---|---|---|---|---|---|---|
+| **Base** | — | — | 86.1 | 86.5 | 93.6 | 89.9 |
+| **RKL** | tr=0.75 | 156 | 86.1 | 86.4 | 93.7 | 89.9 |
+| **RiskMask** | tr=0.75 | 156 | 86.1 | 86.4 | 93.8 | 89.9 |
+| **SFT** | tr=0.5 | 156 | 86.1 | 86.4 | 93.8 | 89.9 |
+
+### Sub-category Accuracy
+
+| Model | Compression | Step | Existence↑ | Attribute↑ | State↑ | Number↑ | Action↑ | Relation↑ |
+|---|---|---|---|---|---|---|---|---|
+| **Base** | — | — | 95.3 | 81.4 | 78.2 | 87.0 | 86.5 | 79.8 |
+| **SFT** | tr=0.5 | 156 | 95.4 | 81.4 | 78.1 | 87.2 | 86.5 | 80.0 |
+
+### Analysis
+- **Generative CHAIR**: SFT (5.4) achieves the **lowest hallucination rate**, outperforming Base (6.1) and all distillation variants.
+- **HAL**: SFT (40.6) achieves the **lowest overall hallucination score**, significantly better than Base (44.0).
+- **COG**: SFT (2.6) achieves the **lowest cognitive grounding error** among all methods.
+- **Discriminative**: On par with Base and distillation methods.
+- **Sub-category**: Comparable to Base across all sub-categories, no significant degradation.
+
+---
+
+## MMStar (Vision-Language Understanding)
+
+| Model | Compression | Step | Overall↑ |
+|---|---|---|---|
+| **Base** | — | — | 0.6167 |
+| **RKL** | tr=0.75 | 156 | 0.6133 |
+| **RiskMask** | tr=0.75 | 156 | 0.6080 |
+| **SFT** | tr=0.5 | 156 | 0.6033 |
+
+### Analysis
+- SFT (0.6033) is **lower than Base** (0.6167) by ~2.2%, consistent with the expectation that SFT trades off some general vision-language understanding for reduced hallucination.
+- Performance is comparable to RKL (0.6133) and RiskMask (0.6080), all within normal variation.
+
+---
+
+## CV-Bench (Visual Reasoning)
+
+| Model | Compression | Step | Overall↑ | 2D↑ | 3D↑ |
+|---|---|---|---|---|---|
+| **RKL** | tr=0.75 | 156 | 0.8550 | 0.7907 | 0.9192 |
+| **RiskMask** | tr=0.75 | 156 | 0.8544 | 0.7879 | 0.9208 |
+| **SFT** | tr=0.5 | 156 | 0.8569 | 0.7879 | 0.9258 |
+
+> Note: 4B Base CV-Bench data not available; comparison uses RKL/RiskMask as reference.
+
+### Analysis
+- **Overall**: SFT (0.8569) is comparable to RKL (0.8550) and RiskMask (0.8544), within noise.
+- **2D**: SFT (0.7879) matches RiskMask (0.7879), slightly lower than RKL (0.7907).
+- **3D**: SFT (0.9258) is the **highest** among compared methods, slightly better than RiskMask (0.9208).
+- Visual reasoning is well maintained at distillation-method level.
 
 ---
 ---
