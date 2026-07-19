@@ -825,9 +825,10 @@ class FSDPEngineWithLMHead(FSDPEngine):
                 )
 
                 if position_ids.dim() == 3:
+                    rope_dims = int(position_ids.values().shape[0])
                     position_ids = torch.nested.to_padded_tensor(
-                        position_ids, padding=0, output_size=(batch_size, 4, max_seq_len)
-                    ).transpose(0, 1)  # (4, batch_size, max_seq_len)
+                        position_ids, padding=0, output_size=(batch_size, rope_dims, max_seq_len)
+                    ).transpose(0, 1)  # (rope_dims, batch_size, max_seq_len)
                 else:
                     position_ids = torch.nested.to_padded_tensor(
                         position_ids, padding=0, output_size=(batch_size, max_seq_len)

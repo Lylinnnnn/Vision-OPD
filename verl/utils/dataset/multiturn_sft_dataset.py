@@ -308,21 +308,48 @@ class MultiTurnSFTDataset(Dataset):
             multi_modal_inputs[k] = torch.concat(v, dim=0)
 
         # 2. handle position_ids for Qwen-VL series models
-        if self.processor is not None and "Qwen2VLImageProcessor" in self.processor.image_processor.__class__.__name__:
+        processor_name = self.processor.__class__.__name__ if self.processor is not None else ""
+        processor_model_type = getattr(getattr(self.processor, "config", None), "model_type", None)
+        image_processor_name = (
+            self.processor.image_processor.__class__.__name__
+            if self.processor is not None and hasattr(self.processor, "image_processor")
+            else ""
+        )
+        is_qwen3_vl = processor_name == "Qwen3VLProcessor" or processor_model_type in {"qwen3_vl", "qwen3_vl_moe"}
+        is_qwen_vl = self.processor is not None and ("Qwen2VLImageProcessor" in image_processor_name or is_qwen3_vl)
+        if is_qwen_vl:
             image_grid_thw = multi_modal_inputs.get("image_grid_thw", None)
             video_grid_thw = multi_modal_inputs.get("video_grid_thw", None)
             second_per_grid_ts = multi_modal_inputs.get("second_per_grid_ts", None)
 
-            vision_position_ids = get_rope_index(
-                self.processor,
-                input_ids=input_ids,
-                image_grid_thw=image_grid_thw,
-                video_grid_thw=video_grid_thw,
-                second_per_grid_ts=second_per_grid_ts,
-                attention_mask=attention_mask,
-            )  # (3, seq_len)
-            text_position_ids = torch.arange(input_ids.shape[0], dtype=torch.long).unsqueeze(0)  # (1, seq_len)
-            position_ids = torch.cat((text_position_ids, vision_position_ids), dim=0)  # (4, seq_length)
+            if is_qwen3_vl:
+                position_ids = self.processor.get_rope_index(
+                    input_ids=input_ids,
+                    image_grid_thw=image_grid_thw,
+                    video_grid_thw=video_grid_thw,
+                    second_per_grid_ts=second_per_grid_ts,
+                    attention_mask=attention_mask,
+                )
+                if isinstance(position_ids, tuple):
+                    position_ids = position_ids[0]
+                if position_ids.dim() == 3 and position_ids.shape[1] == 1:
+                    position_ids = position_ids.squeeze(1)
+                if position_ids.dim() != 2 or position_ids.shape[0] != 3:
+                    raise ValueError(
+                        "Qwen3-VL SFT expects 3D MRoPE position_ids with shape (3, seq_len), "
+                        f"but got shape {tuple(position_ids.shape)}"
+                    )
+            else:
+                vision_position_ids = get_rope_index(
+                    self.processor,
+                    input_ids=input_ids,
+                    image_grid_thw=image_grid_thw,
+                    video_grid_thw=video_grid_thw,
+                    second_per_grid_ts=second_per_grid_ts,
+                    attention_mask=attention_mask,
+                )  # (3, seq_len)
+                text_position_ids = torch.arange(input_ids.shape[0], dtype=torch.long).unsqueeze(0)  # (1, seq_len)
+                position_ids = torch.cat((text_position_ids, vision_position_ids), dim=0)  # (4, seq_length)
         else:
             position_ids = torch.arange(input_ids.shape[0], dtype=torch.long)  # (seq_len,)
 
