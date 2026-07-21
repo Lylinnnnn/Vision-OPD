@@ -1,0 +1,4088 @@
+{
+  "config": {
+    "base_name": "base",
+    "base_results": "res-opd/eval_results/instruct/full/Qwen3VL-8B-Instruct/train5000_test1000_original_sr1p0/eval_results.jsonl",
+    "test_json": "/home/liuyanlin.lyl/notebook/lyl/opd/Vision-OPD/res-opd/data/test_1000.json",
+    "caption_field": "auto",
+    "runs": [
+      {
+        "name": "rkl_step312",
+        "results": "res-opd/eval_results/instruct/full/Res-OPD-Qwen3VL-8B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-b16-rn4-full5k-e1_global_step_312/train5000_test1000_original_sr1p0/eval_results.jsonl"
+      },
+      {
+        "name": "riskmask_p30_step100",
+        "results": "res-opd/eval_results/instruct/full/Res-OPD-Qwen3VL-8B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-riskmask-nll-p30-b16-rn4-full5k-e1_global_step_100/train5000_test1000_original_sr1p0/eval_results.jsonl"
+      }
+    ]
+  },
+  "warnings": [],
+  "base_summary": {
+    "records": 1000,
+    "mentioned": 3074,
+    "hallucinated": 930,
+    "correct": 2144,
+    "gt": 2893,
+    "chair_i": 0.302537410540013,
+    "chair_s_proxy": 0.569,
+    "obj_precision": 0.697462589459987,
+    "obj_recall": 0.741099204977532,
+    "obj_f1": 0.7186190715602481,
+    "top_hallucinated_objects": [
+      [
+        "orange",
+        167
+      ],
+      [
+        "person",
+        91
+      ],
+      [
+        "dining table",
+        85
+      ],
+      [
+        "bowl",
+        51
+      ],
+      [
+        "cell phone",
+        39
+      ],
+      [
+        "chair",
+        36
+      ],
+      [
+        "car",
+        34
+      ],
+      [
+        "bed",
+        23
+      ],
+      [
+        "tie",
+        23
+      ],
+      [
+        "traffic light",
+        21
+      ],
+      [
+        "bear",
+        20
+      ],
+      [
+        "bench",
+        20
+      ],
+      [
+        "bottle",
+        19
+      ],
+      [
+        "bird",
+        18
+      ],
+      [
+        "laptop",
+        17
+      ],
+      [
+        "remote",
+        16
+      ],
+      [
+        "truck",
+        14
+      ],
+      [
+        "boat",
+        13
+      ],
+      [
+        "apple",
+        10
+      ],
+      [
+        "keyboard",
+        10
+      ],
+      [
+        "cup",
+        10
+      ],
+      [
+        "sports ball",
+        10
+      ],
+      [
+        "vase",
+        9
+      ],
+      [
+        "skis",
+        9
+      ],
+      [
+        "cow",
+        9
+      ],
+      [
+        "bicycle",
+        9
+      ],
+      [
+        "book",
+        8
+      ],
+      [
+        "tv",
+        8
+      ],
+      [
+        "dog",
+        7
+      ],
+      [
+        "couch",
+        6
+      ]
+    ],
+    "top_correct_objects": [
+      [
+        "person",
+        503
+      ],
+      [
+        "car",
+        95
+      ],
+      [
+        "dining table",
+        83
+      ],
+      [
+        "chair",
+        73
+      ],
+      [
+        "bottle",
+        48
+      ],
+      [
+        "bowl",
+        39
+      ],
+      [
+        "cell phone",
+        37
+      ],
+      [
+        "tv",
+        36
+      ],
+      [
+        "traffic light",
+        36
+      ],
+      [
+        "cat",
+        35
+      ],
+      [
+        "train",
+        33
+      ],
+      [
+        "bench",
+        33
+      ],
+      [
+        "tennis racket",
+        33
+      ],
+      [
+        "dog",
+        32
+      ],
+      [
+        "pizza",
+        31
+      ],
+      [
+        "laptop",
+        30
+      ],
+      [
+        "clock",
+        30
+      ],
+      [
+        "toilet",
+        30
+      ],
+      [
+        "cup",
+        29
+      ],
+      [
+        "fork",
+        28
+      ],
+      [
+        "bicycle",
+        28
+      ],
+      [
+        "skateboard",
+        27
+      ],
+      [
+        "umbrella",
+        26
+      ],
+      [
+        "sink",
+        26
+      ],
+      [
+        "cake",
+        25
+      ],
+      [
+        "skis",
+        25
+      ],
+      [
+        "surfboard",
+        24
+      ],
+      [
+        "boat",
+        24
+      ],
+      [
+        "knife",
+        23
+      ],
+      [
+        "motorcycle",
+        23
+      ]
+    ],
+    "category_counts": {
+      "hallucinated": {
+        "text_logo_graphic": 223,
+        "uncertain_small_background": 480,
+        "ordinary_visual_object": 160,
+        "color_attribute_as_object": 67
+      },
+      "correct": {
+        "text_logo_graphic": 841,
+        "ordinary_visual_object": 249,
+        "uncertain_small_background": 1051,
+        "color_attribute_as_object": 3
+      }
+    },
+    "group_counts": {
+      "hallucinated": {
+        "animal": 66,
+        "furniture": 157,
+        "accessory": 37,
+        "vehicle": 87,
+        "indoor_other": 23,
+        "kitchen_tableware": 92,
+        "person": 91,
+        "sports": 24,
+        "electronics_appliance": 114,
+        "food": 196,
+        "outdoor_sign": 43
+      },
+      "correct": {
+        "indoor_other": 85,
+        "furniture": 232,
+        "electronics_appliance": 209,
+        "person": 503,
+        "kitchen_tableware": 188,
+        "food": 136,
+        "vehicle": 246,
+        "sports": 178,
+        "animal": 184,
+        "outdoor_sign": 96,
+        "accessory": 87
+      }
+    }
+  },
+  "runs": {
+    "rkl_step312": {
+      "results": "res-opd/eval_results/instruct/full/Res-OPD-Qwen3VL-8B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-b16-rn4-full5k-e1_global_step_312/train5000_test1000_original_sr1p0/eval_results.jsonl",
+      "common_images": 1000,
+      "base_only_images": 0,
+      "other_only_images": 0,
+      "run_summary": {
+        "records": 1000,
+        "mentioned": 3027,
+        "hallucinated": 876,
+        "correct": 2151,
+        "gt": 2883,
+        "chair_i": 0.2893954410307235,
+        "chair_s_proxy": 0.559,
+        "obj_precision": 0.7106045589692765,
+        "obj_recall": 0.7460978147762747,
+        "obj_f1": 0.7279187817258883,
+        "top_hallucinated_objects": [
+          [
+            "orange",
+            160
+          ],
+          [
+            "person",
+            86
+          ],
+          [
+            "dining table",
+            85
+          ],
+          [
+            "bowl",
+            60
+          ],
+          [
+            "chair",
+            39
+          ],
+          [
+            "car",
+            34
+          ],
+          [
+            "cell phone",
+            31
+          ],
+          [
+            "traffic light",
+            27
+          ],
+          [
+            "bed",
+            18
+          ],
+          [
+            "tie",
+            18
+          ],
+          [
+            "bear",
+            17
+          ],
+          [
+            "bird",
+            17
+          ],
+          [
+            "truck",
+            17
+          ],
+          [
+            "bench",
+            16
+          ],
+          [
+            "laptop",
+            15
+          ],
+          [
+            "bottle",
+            15
+          ],
+          [
+            "remote",
+            12
+          ],
+          [
+            "cow",
+            11
+          ],
+          [
+            "boat",
+            11
+          ],
+          [
+            "keyboard",
+            10
+          ],
+          [
+            "sports ball",
+            10
+          ],
+          [
+            "oven",
+            9
+          ],
+          [
+            "cup",
+            9
+          ],
+          [
+            "fork",
+            8
+          ],
+          [
+            "vase",
+            7
+          ],
+          [
+            "skis",
+            7
+          ],
+          [
+            "clock",
+            7
+          ],
+          [
+            "tv",
+            7
+          ],
+          [
+            "bicycle",
+            7
+          ],
+          [
+            "apple",
+            7
+          ]
+        ],
+        "top_correct_objects": [
+          [
+            "person",
+            493
+          ],
+          [
+            "car",
+            91
+          ],
+          [
+            "dining table",
+            75
+          ],
+          [
+            "chair",
+            74
+          ],
+          [
+            "bottle",
+            49
+          ],
+          [
+            "cell phone",
+            42
+          ],
+          [
+            "bowl",
+            41
+          ],
+          [
+            "tv",
+            37
+          ],
+          [
+            "cat",
+            36
+          ],
+          [
+            "tennis racket",
+            35
+          ],
+          [
+            "train",
+            34
+          ],
+          [
+            "bench",
+            34
+          ],
+          [
+            "traffic light",
+            33
+          ],
+          [
+            "fork",
+            32
+          ],
+          [
+            "pizza",
+            32
+          ],
+          [
+            "bicycle",
+            32
+          ],
+          [
+            "laptop",
+            30
+          ],
+          [
+            "cup",
+            30
+          ],
+          [
+            "clock",
+            30
+          ],
+          [
+            "toilet",
+            30
+          ],
+          [
+            "dog",
+            29
+          ],
+          [
+            "sink",
+            28
+          ],
+          [
+            "skateboard",
+            27
+          ],
+          [
+            "surfboard",
+            26
+          ],
+          [
+            "cake",
+            25
+          ],
+          [
+            "skis",
+            25
+          ],
+          [
+            "sports ball",
+            24
+          ],
+          [
+            "umbrella",
+            23
+          ],
+          [
+            "boat",
+            23
+          ],
+          [
+            "knife",
+            22
+          ]
+        ],
+        "category_counts": {
+          "hallucinated": {
+            "text_logo_graphic": 207,
+            "uncertain_small_background": 468,
+            "color_attribute_as_object": 58,
+            "ordinary_visual_object": 143
+          },
+          "correct": {
+            "text_logo_graphic": 842,
+            "uncertain_small_background": 1080,
+            "ordinary_visual_object": 226,
+            "color_attribute_as_object": 3
+          }
+        },
+        "group_counts": {
+          "hallucinated": {
+            "vehicle": 83,
+            "animal": 56,
+            "furniture": 155,
+            "kitchen_tableware": 101,
+            "indoor_other": 22,
+            "accessory": 30,
+            "person": 86,
+            "sports": 23,
+            "electronics_appliance": 95,
+            "food": 180,
+            "outdoor_sign": 45
+          },
+          "correct": {
+            "indoor_other": 84,
+            "person": 493,
+            "sports": 189,
+            "vehicle": 244,
+            "furniture": 226,
+            "kitchen_tableware": 197,
+            "food": 138,
+            "electronics_appliance": 220,
+            "animal": 181,
+            "outdoor_sign": 96,
+            "accessory": 83
+          }
+        }
+      },
+      "change_summary": {
+        "total_change_rows": 3505,
+        "by_status": {
+          "kept": 2596,
+          "added": 431,
+          "removed": 478
+        },
+        "by_bucket": {
+          "kept_hallucinated": 588,
+          "kept_correct": 2008,
+          "added_correct": 143,
+          "removed_hallucinated": 342,
+          "removed_correct": 136,
+          "added_hallucinated": 288
+        },
+        "by_primary_category": {
+          "color_attribute_as_object": {
+            "count": 81,
+            "share": 0.02310984308131241,
+            "removed_hallucinated": 14,
+            "added_hallucinated": 10,
+            "removed_correct": 0,
+            "added_correct": 1,
+            "kept_hallucinated": 53,
+            "kept_correct": 3,
+            "net_hallucinated_delta": -4,
+            "net_correct_delta": 1,
+            "removed": 14,
+            "added": 11,
+            "kept": 56,
+            "share_of_removed_hallucinated": 0.04093567251461988,
+            "share_of_removed_correct": 0.0
+          },
+          "ordinary_visual_object": {
+            "count": 500,
+            "share": 0.14265335235378032,
+            "removed_hallucinated": 67,
+            "added_hallucinated": 60,
+            "removed_correct": 23,
+            "added_correct": 31,
+            "kept_hallucinated": 93,
+            "kept_correct": 226,
+            "net_hallucinated_delta": -7,
+            "net_correct_delta": 8,
+            "removed": 90,
+            "added": 91,
+            "kept": 319,
+            "share_of_removed_hallucinated": 0.195906432748538,
+            "share_of_removed_correct": 0.16911764705882354
+          },
+          "text_logo_graphic": {
+            "count": 1151,
+            "share": 0.32838801711840226,
+            "removed_hallucinated": 64,
+            "added_hallucinated": 53,
+            "removed_correct": 30,
+            "added_correct": 34,
+            "kept_hallucinated": 159,
+            "kept_correct": 811,
+            "net_hallucinated_delta": -11,
+            "net_correct_delta": 4,
+            "removed": 94,
+            "added": 87,
+            "kept": 970,
+            "share_of_removed_hallucinated": 0.1871345029239766,
+            "share_of_removed_correct": 0.22058823529411764
+          },
+          "uncertain_small_background": {
+            "count": 1773,
+            "share": 0.505848787446505,
+            "removed_hallucinated": 197,
+            "added_hallucinated": 165,
+            "removed_correct": 83,
+            "added_correct": 77,
+            "kept_hallucinated": 283,
+            "kept_correct": 968,
+            "net_hallucinated_delta": -32,
+            "net_correct_delta": -6,
+            "removed": 280,
+            "added": 242,
+            "kept": 1251,
+            "share_of_removed_hallucinated": 0.5760233918128655,
+            "share_of_removed_correct": 0.6102941176470589
+          }
+        },
+        "by_object_group": {
+          "accessory": {
+            "count": 146,
+            "share": 0.04165477888730385,
+            "removed_hallucinated": 16,
+            "added_hallucinated": 9,
+            "removed_correct": 17,
+            "added_correct": 13,
+            "kept_hallucinated": 21,
+            "kept_correct": 70,
+            "net_hallucinated_delta": -7,
+            "net_correct_delta": -4,
+            "removed": 33,
+            "added": 22,
+            "kept": 91,
+            "share_of_removed_hallucinated": 0.04678362573099415,
+            "share_of_removed_correct": 0.125
+          },
+          "animal": {
+            "count": 268,
+            "share": 0.07646219686162625,
+            "removed_hallucinated": 26,
+            "added_hallucinated": 16,
+            "removed_correct": 5,
+            "added_correct": 2,
+            "kept_hallucinated": 40,
+            "kept_correct": 179,
+            "net_hallucinated_delta": -10,
+            "net_correct_delta": -3,
+            "removed": 31,
+            "added": 18,
+            "kept": 219,
+            "share_of_removed_hallucinated": 0.07602339181286549,
+            "share_of_removed_correct": 0.03676470588235294
+          },
+          "electronics_appliance": {
+            "count": 376,
+            "share": 0.10727532097004279,
+            "removed_hallucinated": 51,
+            "added_hallucinated": 32,
+            "removed_correct": 10,
+            "added_correct": 21,
+            "kept_hallucinated": 63,
+            "kept_correct": 199,
+            "net_hallucinated_delta": -19,
+            "net_correct_delta": 11,
+            "removed": 61,
+            "added": 53,
+            "kept": 262,
+            "share_of_removed_hallucinated": 0.14912280701754385,
+            "share_of_removed_correct": 0.07352941176470588
+          },
+          "food": {
+            "count": 388,
+            "share": 0.11069900142653352,
+            "removed_hallucinated": 63,
+            "added_hallucinated": 47,
+            "removed_correct": 7,
+            "added_correct": 9,
+            "kept_hallucinated": 133,
+            "kept_correct": 129,
+            "net_hallucinated_delta": -16,
+            "net_correct_delta": 2,
+            "removed": 70,
+            "added": 56,
+            "kept": 262,
+            "share_of_removed_hallucinated": 0.18421052631578946,
+            "share_of_removed_correct": 0.051470588235294115
+          },
+          "furniture": {
+            "count": 457,
+            "share": 0.1303851640513552,
+            "removed_hallucinated": 50,
+            "added_hallucinated": 48,
+            "removed_correct": 26,
+            "added_correct": 20,
+            "kept_hallucinated": 107,
+            "kept_correct": 206,
+            "net_hallucinated_delta": -2,
+            "net_correct_delta": -6,
+            "removed": 76,
+            "added": 68,
+            "kept": 313,
+            "share_of_removed_hallucinated": 0.14619883040935672,
+            "share_of_removed_correct": 0.19117647058823528
+          },
+          "indoor_other": {
+            "count": 121,
+            "share": 0.03452211126961484,
+            "removed_hallucinated": 11,
+            "added_hallucinated": 10,
+            "removed_correct": 4,
+            "added_correct": 3,
+            "kept_hallucinated": 12,
+            "kept_correct": 81,
+            "net_hallucinated_delta": -1,
+            "net_correct_delta": -1,
+            "removed": 15,
+            "added": 13,
+            "kept": 93,
+            "share_of_removed_hallucinated": 0.03216374269005848,
+            "share_of_removed_correct": 0.029411764705882353
+          },
+          "kitchen_tableware": {
+            "count": 352,
+            "share": 0.10042796005706134,
+            "removed_hallucinated": 35,
+            "added_hallucinated": 44,
+            "removed_correct": 19,
+            "added_correct": 28,
+            "kept_hallucinated": 57,
+            "kept_correct": 169,
+            "net_hallucinated_delta": 9,
+            "net_correct_delta": 9,
+            "removed": 54,
+            "added": 72,
+            "kept": 226,
+            "share_of_removed_hallucinated": 0.1023391812865497,
+            "share_of_removed_correct": 0.13970588235294118
+          },
+          "outdoor_sign": {
+            "count": 164,
+            "share": 0.046790299572039944,
+            "removed_hallucinated": 16,
+            "added_hallucinated": 18,
+            "removed_correct": 7,
+            "added_correct": 7,
+            "kept_hallucinated": 27,
+            "kept_correct": 89,
+            "net_hallucinated_delta": 2,
+            "net_correct_delta": 0,
+            "removed": 23,
+            "added": 25,
+            "kept": 116,
+            "share_of_removed_hallucinated": 0.04678362573099415,
+            "share_of_removed_correct": 0.051470588235294115
+          },
+          "person": {
+            "count": 632,
+            "share": 0.1803138373751783,
+            "removed_hallucinated": 35,
+            "added_hallucinated": 30,
+            "removed_correct": 18,
+            "added_correct": 8,
+            "kept_hallucinated": 56,
+            "kept_correct": 485,
+            "net_hallucinated_delta": -5,
+            "net_correct_delta": -10,
+            "removed": 53,
+            "added": 38,
+            "kept": 541,
+            "share_of_removed_hallucinated": 0.1023391812865497,
+            "share_of_removed_correct": 0.1323529411764706
+          },
+          "sports": {
+            "count": 227,
+            "share": 0.06476462196861626,
+            "removed_hallucinated": 8,
+            "added_hallucinated": 7,
+            "removed_correct": 7,
+            "added_correct": 18,
+            "kept_hallucinated": 16,
+            "kept_correct": 171,
+            "net_hallucinated_delta": -1,
+            "net_correct_delta": 11,
+            "removed": 15,
+            "added": 25,
+            "kept": 187,
+            "share_of_removed_hallucinated": 0.023391812865497075,
+            "share_of_removed_correct": 0.051470588235294115
+          },
+          "vehicle": {
+            "count": 374,
+            "share": 0.10670470756062768,
+            "removed_hallucinated": 31,
+            "added_hallucinated": 27,
+            "removed_correct": 16,
+            "added_correct": 14,
+            "kept_hallucinated": 56,
+            "kept_correct": 230,
+            "net_hallucinated_delta": -4,
+            "net_correct_delta": -2,
+            "removed": 47,
+            "added": 41,
+            "kept": 286,
+            "share_of_removed_hallucinated": 0.09064327485380116,
+            "share_of_removed_correct": 0.11764705882352941
+          }
+        },
+        "by_flag": {
+          "text_or_graphic": {
+            "count": 1173,
+            "share": 0.3346647646219686,
+            "removed_hallucinated": 68,
+            "added_hallucinated": 55,
+            "removed_correct": 30,
+            "added_correct": 34,
+            "kept_hallucinated": 174,
+            "kept_correct": 812,
+            "net_hallucinated_delta": -13,
+            "net_correct_delta": 4,
+            "removed": 98,
+            "added": 89,
+            "kept": 986
+          },
+          "color_attribute": {
+            "count": 81,
+            "share": 0.02310984308131241,
+            "removed_hallucinated": 14,
+            "added_hallucinated": 10,
+            "removed_correct": 0,
+            "added_correct": 1,
+            "kept_hallucinated": 53,
+            "kept_correct": 3,
+            "net_hallucinated_delta": -4,
+            "net_correct_delta": 1,
+            "removed": 14,
+            "added": 11,
+            "kept": 56
+          },
+          "uncertain_small_background": {
+            "count": 2849,
+            "share": 0.8128388017118402,
+            "removed_hallucinated": 254,
+            "added_hallucinated": 211,
+            "removed_correct": 107,
+            "added_correct": 103,
+            "kept_hallucinated": 449,
+            "kept_correct": 1725,
+            "net_hallucinated_delta": -43,
+            "net_correct_delta": -4,
+            "removed": 361,
+            "added": 314,
+            "kept": 2174
+          },
+          "uppercase_mention": {
+            "count": 68,
+            "share": 0.019400855920114122,
+            "removed_hallucinated": 4,
+            "added_hallucinated": 2,
+            "removed_correct": 3,
+            "added_correct": 2,
+            "kept_hallucinated": 3,
+            "kept_correct": 54,
+            "net_hallucinated_delta": -2,
+            "net_correct_delta": -1,
+            "removed": 7,
+            "added": 4,
+            "kept": 57
+          }
+        },
+        "net": {
+          "hallucinated_delta": -54,
+          "correct_delta": 7,
+          "mentioned_delta": -47
+        }
+      },
+      "examples": {
+        "removed_hallucinated_text_logo_graphic": [
+          {
+            "run": "rkl_step312",
+            "image_id": 84270,
+            "bucket": "removed_hallucinated",
+            "object": "airplane",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "airplane"
+            ],
+            "context": "...bers include \"219-224\" and \"225-232\". The signs also feature small icons, including a red airplane symbol and a blue airplane symbol. To the left, a green sign with a white \"E\" (likely ind..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 161609,
+            "bucket": "removed_hallucinated",
+            "object": "airplane",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "airplane"
+            ],
+            "context": "...n is visible. It reads “Millbrae” in large, white, sans-serif letters, with a small white airplane icon and the letters “BART” to the right of it. To the right of “Millbrae,” there is a wh..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 468965,
+            "bucket": "removed_hallucinated",
+            "object": "airplane",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "airplane",
+              "airplanes"
+            ],
+            "context": "...** The central focus is on four children engaged in playful activity with handmade paper airplanes. - **Boy in the Center (Back to Camera):** A boy with short black hair, wearing a light ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 76416,
+            "bucket": "removed_hallucinated",
+            "object": "apple",
+            "category": "text_logo_graphic",
+            "group": "food",
+            "terms": [
+              "Apple",
+              "apple"
+            ],
+            "context": "...hield. - The entire side of the bus is covered in a large, colorful advertisement for the Apple iPod. - The ad features a repeating geometric pattern of stylized, overlapping shapes in ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 432085,
+            "bucket": "removed_hallucinated",
+            "object": "apple",
+            "category": "text_logo_graphic",
+            "group": "food",
+            "terms": [
+              "apple"
+            ],
+            "context": "...t. - A box of tissues with a colorful, cartoonish design (featuring what looks like a red apple and a yellow sun) is placed behind the water bottle. - A small, clear plastic cup is part..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 479596,
+            "bucket": "removed_hallucinated",
+            "object": "bear",
+            "category": "text_logo_graphic",
+            "group": "animal",
+            "terms": [
+              "bear"
+            ],
+            "context": "...eft and central portions of the frame. The oranges have a glossy, textured peel, and many bear small, circular blue and white stickers, which appear to be brand or quality labels. The ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 170595,
+            "bucket": "removed_hallucinated",
+            "object": "bed",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "bed"
+            ],
+            "context": "...l impression is one of a simple, satisfying, and comforting breakfast, perhaps enjoyed in bed on a lazy morning. There is no visible text or branding in the image."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 163117,
+            "bucket": "removed_hallucinated",
+            "object": "bird",
+            "category": "text_logo_graphic",
+            "group": "animal",
+            "terms": [
+              "bird"
+            ],
+            "context": "...lf of the frame. They are all identical in design: a stylized, angular shape resembling a bird or a geometric symbol, with a red body and black accents. Their bright red color contrast..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 360097,
+            "bucket": "removed_hallucinated",
+            "object": "bird",
+            "category": "text_logo_graphic",
+            "group": "animal",
+            "terms": [
+              "bird"
+            ],
+            "context": "...om right corner, there is a faint, stylized black signature or watermark that resembles a bird or a cursive letter “S”. - The overall lighting is even and diffuse, suggesting an overca..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 405691,
+            "bucket": "removed_hallucinated",
+            "object": "bird",
+            "category": "text_logo_graphic",
+            "group": "animal",
+            "terms": [
+              "bird",
+              "rooster"
+            ],
+            "context": "...mpty glass. Its label is colorful and features a cartoonish illustration of a red bird or rooster. The text on the label is partially legible and includes the words “BENJY” and “MATRAI,” ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 360097,
+            "bucket": "removed_hallucinated",
+            "object": "boat",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "ferry",
+              "ship"
+            ],
+            "context": "...is a high-angle, top-down photograph of a concrete dock or pier area, likely at a port or ferry terminal. The scene is dominated by piles of luggage and a prominent white railing. **Fo..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 369503,
+            "bucket": "removed_hallucinated",
+            "object": "boat",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "sailboat"
+            ],
+            "context": "... with a white horizontal stripe near the hem, which features a small red star and a white sailboat logo. Their left arm is bent, and their hand is near their neck or shoulder. Their dark p..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 54654,
+            "bucket": "removed_hallucinated",
+            "object": "book",
+            "category": "text_logo_graphic",
+            "group": "indoor_other",
+            "terms": [
+              "book"
+            ],
+            "context": "... the words \"my raggedy\" and \"don't\" can be discerned, suggesting it might be a children's book or poster. To the right of the person, a white door or cabinet is visible, with several ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 119365,
+            "bucket": "removed_hallucinated",
+            "object": "book",
+            "category": "text_logo_graphic",
+            "group": "indoor_other",
+            "terms": [
+              "book"
+            ],
+            "context": "...e center, a poster with a blue border and a speech bubble graphic shows a child reading a book. - To the right, a prominent white poster with a blue border is titled \"Building vocabula..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 22892,
+            "bucket": "removed_hallucinated",
+            "object": "bowl",
+            "category": "text_logo_graphic",
+            "group": "kitchen_tableware",
+            "terms": [
+              "container"
+            ],
+            "context": "...e a young tomato or pepper plant, with several stems and leaves. It is planted in a small container filled with dark soil. The pot is partially visible, showing a yellow and white label wit..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 194471,
+            "bucket": "removed_hallucinated",
+            "object": "bowl",
+            "category": "text_logo_graphic",
+            "group": "kitchen_tableware",
+            "terms": [
+              "bowl"
+            ],
+            "context": "...ment of athletic motion. He is riding a skateboard on the curved edge of a concrete skate bowl. - He is wearing a black short-sleeved t-shirt with a white graphic on the chest, light-w..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 28993,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "cars"
+            ],
+            "context": "...ue to the depth of field. To the left, a street runs parallel to the sidewalk, with a few cars and street signs visible. A blue and white vertical sign is mounted on a pole on the left..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 109900,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "SUV"
+            ],
+            "context": "... in discussion or waiting. - **Vehicle:** To the right, a white, rugged, four-wheel-drive SUV is parked. It has a black roof rack and a tall antenna on the front. The vehicle is clear..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 143572,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "car"
+            ],
+            "context": "...printed in large, white, sans-serif letters. - To the left, the logo and text “esurance car insurance” are visible. - To the right, the URL “usopen.org” is displayed in white. - A..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 336628,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "Car",
+              "car"
+            ],
+            "context": "...an in a highly stylized and colorful costume standing on the open-air platform of a cable car, likely during a parade or festive street event. **The Central Figure:** The man is the ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 460929,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "car"
+            ],
+            "context": "This is a candid, sunlit photograph of a casual meal, likely taken from inside a car, as suggested by the window in the background. The scene is composed of a hot dog and a b..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 468965,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "car"
+            ],
+            "context": "... white design with a large red letter “E” and cartoon-like illustrations, including a red car and a blue bird. - **Child in the Foreground (Left Side):** In the lower-left foreground..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 575081,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "cars"
+            ],
+            "context": "...d brightly patterned pajama pants with a red, blue, and white design featuring cartoonish cars and road signs. His bare feet are on the wooden floor, and he is wearing white socks. His..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 223747,
+            "bucket": "removed_hallucinated",
+            "object": "cell phone",
+            "category": "text_logo_graphic",
+            "group": "electronics_appliance",
+            "terms": [
+              "phone"
+            ],
+            "context": "...w, with visible pixelation and blurriness, suggesting it was taken with a small camera or phone in a low-light environment. There is no text or discernible fine detail beyond the basic ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 356612,
+            "bucket": "removed_hallucinated",
+            "object": "cell phone",
+            "category": "text_logo_graphic",
+            "group": "electronics_appliance",
+            "terms": [
+              "phone"
+            ],
+            "context": "...on its front grille. - The yellow bus has text on its side, including \"THE COLLEGE\" and a phone number. This image is a vivid snapshot of a moment in time, blending the mundane with th..."
+          }
+        ],
+        "removed_hallucinated_uncertain_small": [
+          {
+            "run": "rkl_step312",
+            "image_id": 110884,
+            "bucket": "removed_hallucinated",
+            "object": "airplane",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "airplane"
+            ],
+            "context": "...s is a photograph of a compact, utilitarian bathroom, likely from a hotel room, train, or airplane cabin, characterized by its small size and functional design. The image has a strong gree..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 56344,
+            "bucket": "removed_hallucinated",
+            "object": "apple",
+            "category": "uncertain_small_background",
+            "group": "food",
+            "terms": [
+              "Apple"
+            ],
+            "context": "... is a slim, white, full-sized keyboard with a standard QWERTY layout. It appears to be an Apple Magic Keyboard. - To the right of the keyboard is a white, ergonomic computer mouse, like..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 425390,
+            "bucket": "removed_hallucinated",
+            "object": "apple",
+            "category": "uncertain_small_background",
+            "group": "food",
+            "terms": [
+              "Apple"
+            ],
+            "context": "...ambient light. **The Laptop** - The cat is resting on a silver-colored laptop, likely an Apple MacBook, given the design of the trackpad and the overall aesthetic. - The laptop is open..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 210388,
+            "bucket": "removed_hallucinated",
+            "object": "backpack",
+            "category": "uncertain_small_background",
+            "group": "accessory",
+            "terms": [
+              "backpack"
+            ],
+            "context": "...N” and possibly “SUMMIT” below it. He is also wearing yellow gloves and has a small, dark backpack or bag slung over his shoulder. * **On the right:** A woman with shoulder-length brown ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 57150,
+            "bucket": "removed_hallucinated",
+            "object": "bear",
+            "category": "uncertain_small_background",
+            "group": "animal",
+            "terms": [
+              "bear"
+            ],
+            "context": "...laid skirt, white tights, and dark shoes. She is holding a very large, fluffy white teddy bear that towers over her. The bear is oversized, with a prominent red bow tied around its nec..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 231879,
+            "bucket": "removed_hallucinated",
+            "object": "bear",
+            "category": "uncertain_small_background",
+            "group": "animal",
+            "terms": [
+              "bear"
+            ],
+            "context": "...entle, focused expression. The cake is decorated with a small, brown figurine (possibly a bear or animal) on top and a single, thin candle. **Background Elements:** - Behind the main ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 315492,
+            "bucket": "removed_hallucinated",
+            "object": "bear",
+            "category": "uncertain_small_background",
+            "group": "animal",
+            "terms": [
+              "Bear",
+              "bear"
+            ],
+            "context": "...nded toward it, suggesting she is either pulling a sheet or adjusting the roll. - **Teddy Bear:** On the floor, to the child’s left, sits a large, brown teddy bear. The bear is lying o..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 370478,
+            "bucket": "removed_hallucinated",
+            "object": "bear",
+            "category": "uncertain_small_background",
+            "group": "animal",
+            "terms": [
+              "bears"
+            ],
+            "context": "...rter or sheet featuring a repeating pattern of small, dark cartoon-like figures (possibly bears or animals) and stars. - A black jacket or piece of clothing is draped over the edge of t..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 188439,
+            "bucket": "removed_hallucinated",
+            "object": "bed",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "bed"
+            ],
+            "context": "...arcane. The cane is stacked high, extending far beyond the cab and the sides of the truck bed, forming a dense, brownish-green mass. The sugarcane stalks are bundled together and secu..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 368038,
+            "bucket": "removed_hallucinated",
+            "object": "bed",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "bed"
+            ],
+            "context": "...green tree. **Environment and Background** * **Ground:** The cabooses sit on a gravel bed next to a patch of grassy, slightly uneven ground. The grass is a mix of green and brown,..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 550471,
+            "bucket": "removed_hallucinated",
+            "object": "bed",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "bed"
+            ],
+            "context": "... pale, almost translucent rind. The slice is positioned slightly off-center, resting on a bed of delicate green microgreens. - The microgreens, which appear to be radish sprouts or a ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 575081,
+            "bucket": "removed_hallucinated",
+            "object": "bed",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "bed"
+            ],
+            "context": "...re strewn across the floor, connecting the gaming equipment. A small, woven basket or pet bed is on the floor near the boy’s feet. A small, dark-colored mug sits on a shelf on the ent..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 69213,
+            "bucket": "removed_hallucinated",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "...le:** In the background, other people can be seen. One person is sitting on a low step or bench near the building, wearing a red top. Another person is partially visible further back on..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 87038,
+            "bucket": "removed_hallucinated",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "...nd is riding a small, black-and-white BMX bike. The bike is positioned near a low, wooden bench or platform. - The ground is a flat, gray asphalt surface, typical of a skatepark. Severa..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 386352,
+            "bucket": "removed_hallucinated",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "... the court area from the spectator seating. - Behind the railing, a blue plastic chair or bench is partially visible. - The setting appears to be an outdoor or well-lit indoor tennis co..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 411530,
+            "bucket": "removed_hallucinated",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "...k, and gray—and are waiting to board the lift. Some are standing, others are sitting on a bench near a small building. **Midground:** - A chairlift system is the central focus. It cons..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 431896,
+            "bucket": "removed_hallucinated",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "benches"
+            ],
+            "context": "... warm glow. Further down the platform, other station infrastructure is visible, including benches and what appears to be a ticket machine or information kiosk. - **Spatial Relationship:**..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 476491,
+            "bucket": "removed_hallucinated",
+            "object": "bicycle",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "bike"
+            ],
+            "context": "...oreground is a dark, textured asphalt or concrete surface, likely a pedestrian walkway or bike lane. It is marked with large, bold yellow Japanese characters: “スクールゾーン” (Sukūru Zōn), w..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 534827,
+            "bucket": "removed_hallucinated",
+            "object": "bicycle",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "bike",
+              "bikes"
+            ],
+            "context": "... strong backlighting creates silhouettes and highlights the edges of the riders and their bikes. - Long, dark shadows are cast by the motorcycles and riders onto the road, stretching to..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 270122,
+            "bucket": "removed_hallucinated",
+            "object": "bird",
+            "category": "uncertain_small_background",
+            "group": "animal",
+            "terms": [
+              "birds"
+            ],
+            "context": "... cool, moody atmosphere. - A few small, dark specks are visible high in the sky, possibly birds or distant objects. - The ocean extends to the horizon, appearing vast and unbroken. **T..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 400922,
+            "bucket": "removed_hallucinated",
+            "object": "bird",
+            "category": "uncertain_small_background",
+            "group": "animal",
+            "terms": [
+              "bird"
+            ],
+            "context": "...is a vibrant blue, filled with large, fluffy white clouds. A small, dark object, likely a bird or a drone, is captured in mid-flight against the sky, positioned above the KeyBank sign...."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 540932,
+            "bucket": "removed_hallucinated",
+            "object": "boat",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "sailboard"
+            ],
+            "context": "...submerged or resting on the sand. It appears to be a piece of equipment, possibly a small sailboard or a kiteboard, with a black and yellow board attached to it. A person is sitting on the ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 78426,
+            "bucket": "removed_hallucinated",
+            "object": "book",
+            "category": "uncertain_small_background",
+            "group": "indoor_other",
+            "terms": [
+              "book"
+            ],
+            "context": "...stands out among them. - **In the bottom left corner:** The edge of a notebook or another book is partially visible. **Background and Environment:** - The background is softly blurred..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 415194,
+            "bucket": "removed_hallucinated",
+            "object": "book",
+            "category": "uncertain_small_background",
+            "group": "indoor_other",
+            "terms": [
+              "book"
+            ],
+            "context": "... a few small items, including a brown box and a small, rectangular object that might be a book or a box of matches. - **Window:** On the far right, a window with vertical blinds is par..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 21167,
+            "bucket": "removed_hallucinated",
+            "object": "bottle",
+            "category": "uncertain_small_background",
+            "group": "kitchen_tableware",
+            "terms": [
+              "bottles"
+            ],
+            "context": "...eading to another room. Through the doorway, a shelving unit with various items (possibly bottles or decorative objects) can be seen. - To the right of the man, there is a white door fram..."
+          }
+        ],
+        "removed_correct_text_logo_graphic": [
+          {
+            "run": "rkl_step312",
+            "image_id": 185599,
+            "bucket": "removed_correct",
+            "object": "apple",
+            "category": "text_logo_graphic",
+            "group": "food",
+            "terms": [
+              "apple",
+              "apples"
+            ],
+            "context": "...red. - **Center (Background):** Nestled between the two foreground fruits is a cluster of apples. One apple is visible directly behind the left orange, showing a blend of red and yellow ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 481390,
+            "bucket": "removed_correct",
+            "object": "bench",
+            "category": "text_logo_graphic",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "... on the sideline, including a man in a black jacket and another in a white shirt near the bench area. **The Players and Their Actions:** There are eight players clearly visible on the ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 384527,
+            "bucket": "removed_correct",
+            "object": "book",
+            "category": "text_logo_graphic",
+            "group": "indoor_other",
+            "terms": [
+              "book",
+              "books"
+            ],
+            "context": "...pears to be a classic model. - Behind the green chairs, a wooden bookshelf is filled with books. The spines of the books are mostly red and white, creating a striking visual contrast. -..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 473219,
+            "bucket": "removed_correct",
+            "object": "book",
+            "category": "text_logo_graphic",
+            "group": "indoor_other",
+            "terms": [
+              "book"
+            ],
+            "context": "...ny. He is wearing a dark suit, a white shirt, and a patterned tie. He holds an open black book, likely a Bible or wedding service book, in his hands and appears to be reading or speaki..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 396274,
+            "bucket": "removed_correct",
+            "object": "broccoli",
+            "category": "text_logo_graphic",
+            "group": "food",
+            "terms": [
+              "broccoli"
+            ],
+            "context": "...robust plants with broad, dark green, slightly crinkled leaves. These are identifiable as broccoli plants, with some showing developing green florets. The leaves have prominent, lighter-co..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 86483,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "car"
+            ],
+            "context": "...e of the sign on the left. Further in the background, more trees and a glimpse of a white car parked on a street can be seen. - **Foreground:** The sign sits on a low, stone-faced wal..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 130386,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "SUV"
+            ],
+            "context": "...ed on a sidewalk. In the background, a street with traffic is visible, including a silver SUV and a red double-decker bus partially seen on the left. Several pedestrians can be seen w..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 507667,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "SUV",
+              "van"
+            ],
+            "context": "...her person in a pink shirt is partially visible. - **Further Background:** A white van or SUV is parked behind the motorcycle. Further back, there are trees, other pedestrians, and wh..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 481390,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "seats"
+            ],
+            "context": "...sible on the red sideline barrier. * The “Coca-Cola” logo is visible on the black bench seats in the background. **Overall Composition:** The photograph captures a moment of intense ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 500478,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "seats"
+            ],
+            "context": "...is a vibrant green. - **Background:** Behind the pitcher, there are rows of green stadium seats. The seats are mostly empty, but a few spectators are visible. They are seated in the sta..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 189752,
+            "bucket": "removed_correct",
+            "object": "cup",
+            "category": "text_logo_graphic",
+            "group": "kitchen_tableware",
+            "terms": [
+              "cup"
+            ],
+            "context": "... long-sleeved shirt and appear to be eating or drinking from a straw. A small white paper cup with red and black text is on the table in front of them. The text on the cup is partiall..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 555009,
+            "bucket": "removed_correct",
+            "object": "cup",
+            "category": "text_logo_graphic",
+            "group": "kitchen_tableware",
+            "terms": [
+              "Cup",
+              "cup"
+            ],
+            "context": "... the keyboard. The headphones are not on anyone's head. * **Other Objects:** * **Cup:** A green and white patterned ceramic mug or cup sits on the desk between the two monito..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 157418,
+            "bucket": "removed_correct",
+            "object": "dining table",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "dining table",
+              "table"
+            ],
+            "context": "This is a close-up, slightly angled photograph of a casual meal setup, likely on a dining table. The scene is composed of several food items and condiments, with a focus on a can of SPA..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 160012,
+            "bucket": "removed_correct",
+            "object": "dining table",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "table"
+            ],
+            "context": "... board, with another pizza partially visible in the background. A person is seated at the table, interacting with the food. **Foreground and Center:** - The main subject is a large, ro..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 277689,
+            "bucket": "removed_correct",
+            "object": "dining table",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "Table",
+              "table"
+            ],
+            "context": "This is a vibrant, sun-drenched photograph of an outdoor wedding or celebration cake table, set against a tropical backdrop. The composition is carefully arranged to draw the eye t..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 261888,
+            "bucket": "removed_correct",
+            "object": "horse",
+            "category": "text_logo_graphic",
+            "group": "animal",
+            "terms": [
+              "horse",
+              "horses"
+            ],
+            "context": "...a wide-angle, eye-level photograph capturing a cyclist paused on a paved road, facing two horses that are walking toward him in the distance. The scene is set on a bright, sunny day unde..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 492362,
+            "bucket": "removed_correct",
+            "object": "hot dog",
+            "category": "text_logo_graphic",
+            "group": "food",
+            "terms": [
+              "hot dogs"
+            ],
+            "context": "...od items. Visible text includes \"HALAL FOOD\" in green and yellow, and below it, images of hot dogs and a bowl of what appears to be beans or nuts. A green sign at the bottom reads \"Salsa, ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 35326,
+            "bucket": "removed_correct",
+            "object": "oven",
+            "category": "text_logo_graphic",
+            "group": "electronics_appliance",
+            "terms": [
+              "Stove",
+              "oven",
+              "stove"
+            ],
+            "context": "...ash area, captured from a slightly elevated, eye-level perspective. **Central Focus: The Stove and Countertop** The main subject is a black, flat electric cooktop with four circular he..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 283717,
+            "bucket": "removed_correct",
+            "object": "oven",
+            "category": "text_logo_graphic",
+            "group": "electronics_appliance",
+            "terms": [
+              "oven"
+            ],
+            "context": "...tral Focus: The Appliance Stack** - **Top Appliance**: A vintage, silver-colored toaster oven. It has a heavily used, reflective surface with visible smudges and darkened areas, parti..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 330818,
+            "bucket": "removed_correct",
+            "object": "oven",
+            "category": "text_logo_graphic",
+            "group": "electronics_appliance",
+            "terms": [
+              "oven",
+              "stove",
+              "stovetop"
+            ],
+            "context": "...nate, brass-colored handles and knobs, giving it a classic, somewhat vintage look. On the stovetop, there are several pans, including a large frying pan on the left side, and a small pot o..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 93437,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "Man",
+              "man"
+            ],
+            "context": "This is a candid, indoor photograph of an elderly man, likely in his 70s or 80s, who is the central focus of the image. He is smiling broadly a..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 188439,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "People",
+              "person"
+            ],
+            "context": "...helter. - A small, white sign with red markings is mounted on a post near the pole. - **People:** A person wearing a blue shirt and dark pants is visible standing in the background, ne..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 251824,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "person"
+            ],
+            "context": "This is a close-up, first-person perspective photograph of a person’s hands working on a craft project on a wooden desk. T..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 330818,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "man",
+              "person"
+            ],
+            "context": "This is a candid, slightly grainy photograph of a person working in a commercial kitchen, likely a diner or small restaurant, captured from a slig..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 369812,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "people"
+            ],
+            "context": "...ble-decker bus is visible, a classic symbol of London. - Other cars and a bus stop with people waiting can be seen in the distance. - **Sidewalk and Pedestrians:** A paved sidewalk ru..."
+          }
+        ],
+        "removed_correct_uncertain_small": [
+          {
+            "run": "rkl_step312",
+            "image_id": 86755,
+            "bucket": "removed_correct",
+            "object": "backpack",
+            "category": "uncertain_small_background",
+            "group": "accessory",
+            "terms": [
+              "backpack"
+            ],
+            "context": "...ark jacket with a red or magenta panel on the shoulders and chest, dark pants, and a dark backpack. They are holding ski poles and have a pair of red skis on their feet. - The second skier..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 309964,
+            "bucket": "removed_correct",
+            "object": "backpack",
+            "category": "uncertain_small_background",
+            "group": "accessory",
+            "terms": [
+              "Backpack",
+              "backpack"
+            ],
+            "context": "...dle. It appears to be filled with small, greenish items, possibly fish or bait. * **Backpack:** Between the two people, on the ground, is a colorful, pixelated or mosaic-patterned ba..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 134722,
+            "bucket": "removed_correct",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "...f with a red trim. A red downpipe runs vertically down the side of the brick structure. A bench is visible on the platform near this building. **Background and Environment:** Behind th..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 87038,
+            "bucket": "removed_correct",
+            "object": "bicycle",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "bike"
+            ],
+            "context": "...iddle of a flip or kickflip. - To the left of the airborne skater, another rider on a BMX bike is visible. This person is wearing a pink or magenta hooded sweatshirt and dark pants, an..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 459809,
+            "bucket": "removed_correct",
+            "object": "boat",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "sailboats",
+              "vessels"
+            ],
+            "context": "...ndmass or mountain range forms the horizon line. A few small, indistinct shapes, possibly sailboats or other vessels, are visible on the water near the left edge of the frame. **Foreground..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 222825,
+            "bucket": "removed_correct",
+            "object": "bottle",
+            "category": "uncertain_small_background",
+            "group": "kitchen_tableware",
+            "terms": [
+              "bottle"
+            ],
+            "context": "...ount sink is set into the countertop, with a white, curved faucet. A small, white plastic bottle (possibly dish soap) and a black smartphone are resting on the counter near the sink. - *..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 349480,
+            "bucket": "removed_correct",
+            "object": "bottle",
+            "category": "uncertain_small_background",
+            "group": "kitchen_tableware",
+            "terms": [
+              "bottle"
+            ],
+            "context": "..., a red apple, and a cluster of purple grapes. * **Beverages:** A small, dark green bottle (possibly wine or soda) and a small, white ceramic pitcher with a blue floral pattern. ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 498747,
+            "bucket": "removed_correct",
+            "object": "bottle",
+            "category": "uncertain_small_background",
+            "group": "kitchen_tableware",
+            "terms": [
+              "bottle"
+            ],
+            "context": "...ing motion and the dynamic nature of the party. The hand appears to be holding a glass or bottle, which is partially visible and blurred. **Foreground and Background Details:** - In the..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 425226,
+            "bucket": "removed_correct",
+            "object": "bowl",
+            "category": "uncertain_small_background",
+            "group": "kitchen_tableware",
+            "terms": [
+              "container"
+            ],
+            "context": "...hair. Their posture suggests they are looking for something specific, perhaps a bottle or container, located on a higher shelf. **The Refrigerator:** The refrigerator is a white, top-freez..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 344795,
+            "bucket": "removed_correct",
+            "object": "cake",
+            "category": "uncertain_small_background",
+            "group": "food",
+            "terms": [
+              "cake"
+            ],
+            "context": "...t glow on the scene. **Central Object:** The main focus is a round, baked dish, likely a cake or a pie, resting on a metal baking sheet. The dish is completely covered with crinkled a..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 160012,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "car"
+            ],
+            "context": "...onment:** - The background is out of focus, but it shows a street scene at night. A white car is visible parked on the street, with its headlights or taillights glowing. There are blu..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 341921,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "cars"
+            ],
+            "context": "...ce, nestled among more trees. - Further in the background, beyond the trees, a few parked cars can be seen, suggesting the park is near a street or residential area. **Overall Composi..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 344029,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "cars",
+              "hatchback",
+              "sedan"
+            ],
+            "context": "...ther Vehicles:** - To the left, a line of parked cars is visible, including a dark blue hatchback and a silver sedan. - Further down the street, another bus, which appears to be green a..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 345361,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "car"
+            ],
+            "context": "...rther in the background, another house with white siding can be seen, along with a parked car and some trees or bushes. - The ground is a well-maintained green lawn. - The lighting su..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 369442,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "van"
+            ],
+            "context": "...rcial or institutional structure. - To the left of the building, a green and white bus or van is partially visible behind some trees. - A blue and white circular traffic sign (a \"no e..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 433774,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "cars"
+            ],
+            "context": "...sense of perspective. The street is paved and appears empty of traffic, with a few parked cars visible far down the road. On the left side of the street, a traffic light is suspended o..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 424721,
+            "bucket": "removed_correct",
+            "object": "carrot",
+            "category": "uncertain_small_background",
+            "group": "food",
+            "terms": [
+              "carrots"
+            ],
+            "context": "...- **On the right side of the pan, extending toward the front:** A bundle of bright orange carrots, still attached to their green, leafy tops. The carrots are long and slender, and their v..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 423123,
+            "bucket": "removed_correct",
+            "object": "cell phone",
+            "category": "uncertain_small_background",
+            "group": "electronics_appliance",
+            "terms": [
+              "phone"
+            ],
+            "context": "...is reaching into the fridge, while their left hand holds a small, dark object, possibly a phone or a remote control. - Behind them, another person in a camouflage-patterned uniform (gre..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 7818,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "chair"
+            ],
+            "context": "... colors are white (tablecloth, flowers, napkins, plates) and black/dark gray (background, chair backs, table edges). The warm glow from beneath the vase adds a touch of golden light, cr..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 177861,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "chairs"
+            ],
+            "context": "...ear the center. - To the right, a small outdoor seating area with metal-framed tables and chairs is visible, partially covered by a canopy or awning. A black horse-drawn carriage is park..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 379476,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "chairs"
+            ],
+            "context": "...tends far into the background, where the faint glow of more lights and the silhouettes of chairs or benches can be seen, suggesting a long, continuous dining area. The perspective is enh..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 386352,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "chair"
+            ],
+            "context": "...eparating the court area from the spectator seating. - Behind the railing, a blue plastic chair or bench is partially visible. - The setting appears to be an outdoor or well-lit indoor ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 181969,
+            "bucket": "removed_correct",
+            "object": "couch",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "couch"
+            ],
+            "context": "...on a light-colored, possibly beige or cream-colored surface, which appears to be a bed or couch with a soft, textured fabric. The surface has some visible creases and folds, suggesting ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 157767,
+            "bucket": "removed_correct",
+            "object": "cup",
+            "category": "uncertain_small_background",
+            "group": "kitchen_tableware",
+            "terms": [
+              "cup"
+            ],
+            "context": "...ir, wearing a dark blazer over a collared shirt and dark trousers. He is holding a yellow cup or glass in his right hand and appears to be speaking or gesturing with his left hand. A ..."
+          },
+          {
+            "run": "rkl_step312",
+            "image_id": 487583,
+            "bucket": "removed_correct",
+            "object": "cup",
+            "category": "uncertain_small_background",
+            "group": "kitchen_tableware",
+            "terms": [
+              "cup"
+            ],
+            "context": "...attice pattern. The table appears to be of a small, personal size, suitable for holding a cup or a snack. - **The Cookie:** On the table’s surface, there is a single, round, golden-br..."
+          }
+        ]
+      }
+    },
+    "riskmask_p30_step100": {
+      "results": "res-opd/eval_results/instruct/full/Res-OPD-Qwen3VL-8B-Instruct-orig-sr1.0-tr0.75-a1.0-frozen-rkl-riskmask-nll-p30-b16-rn4-full5k-e1_global_step_100/train5000_test1000_original_sr1p0/eval_results.jsonl",
+      "common_images": 1000,
+      "base_only_images": 0,
+      "other_only_images": 0,
+      "run_summary": {
+        "records": 1000,
+        "mentioned": 3021,
+        "hallucinated": 868,
+        "correct": 2153,
+        "gt": 2877,
+        "chair_i": 0.28732207878186034,
+        "chair_s_proxy": 0.548,
+        "obj_precision": 0.7126779212181397,
+        "obj_recall": 0.7483489746263469,
+        "obj_f1": 0.7300779925398441,
+        "top_hallucinated_objects": [
+          [
+            "orange",
+            156
+          ],
+          [
+            "person",
+            86
+          ],
+          [
+            "dining table",
+            80
+          ],
+          [
+            "bowl",
+            48
+          ],
+          [
+            "cell phone",
+            47
+          ],
+          [
+            "chair",
+            39
+          ],
+          [
+            "car",
+            31
+          ],
+          [
+            "bed",
+            27
+          ],
+          [
+            "traffic light",
+            24
+          ],
+          [
+            "bird",
+            20
+          ],
+          [
+            "tie",
+            20
+          ],
+          [
+            "bottle",
+            20
+          ],
+          [
+            "bear",
+            17
+          ],
+          [
+            "bench",
+            15
+          ],
+          [
+            "truck",
+            15
+          ],
+          [
+            "laptop",
+            14
+          ],
+          [
+            "remote",
+            14
+          ],
+          [
+            "sports ball",
+            14
+          ],
+          [
+            "cow",
+            10
+          ],
+          [
+            "skis",
+            9
+          ],
+          [
+            "boat",
+            9
+          ],
+          [
+            "cup",
+            9
+          ],
+          [
+            "vase",
+            8
+          ],
+          [
+            "keyboard",
+            8
+          ],
+          [
+            "train",
+            8
+          ],
+          [
+            "couch",
+            7
+          ],
+          [
+            "potted plant",
+            7
+          ],
+          [
+            "clock",
+            7
+          ],
+          [
+            "fork",
+            6
+          ],
+          [
+            "bicycle",
+            6
+          ]
+        ],
+        "top_correct_objects": [
+          [
+            "person",
+            494
+          ],
+          [
+            "car",
+            94
+          ],
+          [
+            "dining table",
+            82
+          ],
+          [
+            "chair",
+            70
+          ],
+          [
+            "bottle",
+            51
+          ],
+          [
+            "cell phone",
+            42
+          ],
+          [
+            "bowl",
+            42
+          ],
+          [
+            "tv",
+            36
+          ],
+          [
+            "tennis racket",
+            36
+          ],
+          [
+            "cat",
+            35
+          ],
+          [
+            "train",
+            34
+          ],
+          [
+            "traffic light",
+            34
+          ],
+          [
+            "bicycle",
+            33
+          ],
+          [
+            "fork",
+            32
+          ],
+          [
+            "pizza",
+            31
+          ],
+          [
+            "cup",
+            31
+          ],
+          [
+            "dog",
+            30
+          ],
+          [
+            "laptop",
+            30
+          ],
+          [
+            "clock",
+            30
+          ],
+          [
+            "toilet",
+            30
+          ],
+          [
+            "bench",
+            27
+          ],
+          [
+            "knife",
+            26
+          ],
+          [
+            "sink",
+            26
+          ],
+          [
+            "skateboard",
+            26
+          ],
+          [
+            "skis",
+            25
+          ],
+          [
+            "truck",
+            24
+          ],
+          [
+            "umbrella",
+            24
+          ],
+          [
+            "cake",
+            24
+          ],
+          [
+            "backpack",
+            24
+          ],
+          [
+            "motorcycle",
+            23
+          ]
+        ],
+        "category_counts": {
+          "hallucinated": {
+            "text_logo_graphic": 192,
+            "uncertain_small_background": 465,
+            "ordinary_visual_object": 145,
+            "color_attribute_as_object": 66
+          },
+          "correct": {
+            "text_logo_graphic": 823,
+            "ordinary_visual_object": 241,
+            "uncertain_small_background": 1087,
+            "color_attribute_as_object": 2
+          }
+        },
+        "group_counts": {
+          "hallucinated": {
+            "animal": 57,
+            "furniture": 163,
+            "vehicle": 79,
+            "electronics_appliance": 102,
+            "indoor_other": 21,
+            "outdoor_sign": 41,
+            "accessory": 29,
+            "person": 86,
+            "sports": 29,
+            "food": 172,
+            "kitchen_tableware": 89
+          },
+          "correct": {
+            "indoor_other": 84,
+            "outdoor_sign": 93,
+            "furniture": 227,
+            "kitchen_tableware": 204,
+            "person": 494,
+            "food": 136,
+            "electronics_appliance": 217,
+            "vehicle": 254,
+            "animal": 181,
+            "sports": 178,
+            "accessory": 85
+          }
+        }
+      },
+      "change_summary": {
+        "total_change_rows": 3475,
+        "by_status": {
+          "kept": 2620,
+          "added": 401,
+          "removed": 454
+        },
+        "by_bucket": {
+          "kept_hallucinated": 607,
+          "kept_correct": 2013,
+          "added_hallucinated": 261,
+          "removed_hallucinated": 323,
+          "removed_correct": 131,
+          "added_correct": 140
+        },
+        "by_primary_category": {
+          "color_attribute_as_object": {
+            "count": 80,
+            "share": 0.02302158273381295,
+            "removed_hallucinated": 14,
+            "added_hallucinated": 10,
+            "removed_correct": 0,
+            "added_correct": 0,
+            "kept_hallucinated": 53,
+            "kept_correct": 3,
+            "net_hallucinated_delta": -4,
+            "net_correct_delta": 0,
+            "removed": 14,
+            "added": 10,
+            "kept": 56,
+            "share_of_removed_hallucinated": 0.043343653250773995,
+            "share_of_removed_correct": 0.0
+          },
+          "ordinary_visual_object": {
+            "count": 502,
+            "share": 0.14446043165467626,
+            "removed_hallucinated": 61,
+            "added_hallucinated": 59,
+            "removed_correct": 22,
+            "added_correct": 34,
+            "kept_hallucinated": 99,
+            "kept_correct": 227,
+            "net_hallucinated_delta": -2,
+            "net_correct_delta": 12,
+            "removed": 83,
+            "added": 93,
+            "kept": 326,
+            "share_of_removed_hallucinated": 0.18885448916408668,
+            "share_of_removed_correct": 0.16793893129770993
+          },
+          "text_logo_graphic": {
+            "count": 1141,
+            "share": 0.32834532374100717,
+            "removed_hallucinated": 68,
+            "added_hallucinated": 43,
+            "removed_correct": 29,
+            "added_correct": 34,
+            "kept_hallucinated": 155,
+            "kept_correct": 812,
+            "net_hallucinated_delta": -25,
+            "net_correct_delta": 5,
+            "removed": 97,
+            "added": 77,
+            "kept": 967,
+            "share_of_removed_hallucinated": 0.21052631578947367,
+            "share_of_removed_correct": 0.22137404580152673
+          },
+          "uncertain_small_background": {
+            "count": 1752,
+            "share": 0.5041726618705036,
+            "removed_hallucinated": 180,
+            "added_hallucinated": 149,
+            "removed_correct": 80,
+            "added_correct": 72,
+            "kept_hallucinated": 300,
+            "kept_correct": 971,
+            "net_hallucinated_delta": -31,
+            "net_correct_delta": -8,
+            "removed": 260,
+            "added": 221,
+            "kept": 1271,
+            "share_of_removed_hallucinated": 0.5572755417956656,
+            "share_of_removed_correct": 0.6106870229007634
+          }
+        },
+        "by_object_group": {
+          "accessory": {
+            "count": 148,
+            "share": 0.042589928057553954,
+            "removed_hallucinated": 20,
+            "added_hallucinated": 12,
+            "removed_correct": 14,
+            "added_correct": 12,
+            "kept_hallucinated": 17,
+            "kept_correct": 73,
+            "net_hallucinated_delta": -8,
+            "net_correct_delta": -2,
+            "removed": 34,
+            "added": 24,
+            "kept": 90,
+            "share_of_removed_hallucinated": 0.06191950464396285,
+            "share_of_removed_correct": 0.10687022900763359
+          },
+          "animal": {
+            "count": 266,
+            "share": 0.07654676258992806,
+            "removed_hallucinated": 24,
+            "added_hallucinated": 15,
+            "removed_correct": 4,
+            "added_correct": 1,
+            "kept_hallucinated": 42,
+            "kept_correct": 180,
+            "net_hallucinated_delta": -9,
+            "net_correct_delta": -3,
+            "removed": 28,
+            "added": 16,
+            "kept": 222,
+            "share_of_removed_hallucinated": 0.07430340557275542,
+            "share_of_removed_correct": 0.030534351145038167
+          },
+          "electronics_appliance": {
+            "count": 371,
+            "share": 0.10676258992805755,
+            "removed_hallucinated": 45,
+            "added_hallucinated": 33,
+            "removed_correct": 7,
+            "added_correct": 15,
+            "kept_hallucinated": 69,
+            "kept_correct": 202,
+            "net_hallucinated_delta": -12,
+            "net_correct_delta": 8,
+            "removed": 52,
+            "added": 48,
+            "kept": 271,
+            "share_of_removed_hallucinated": 0.1393188854489164,
+            "share_of_removed_correct": 0.05343511450381679
+          },
+          "food": {
+            "count": 376,
+            "share": 0.10820143884892086,
+            "removed_hallucinated": 61,
+            "added_hallucinated": 37,
+            "removed_correct": 7,
+            "added_correct": 7,
+            "kept_hallucinated": 135,
+            "kept_correct": 129,
+            "net_hallucinated_delta": -24,
+            "net_correct_delta": 0,
+            "removed": 68,
+            "added": 44,
+            "kept": 264,
+            "share_of_removed_hallucinated": 0.18885448916408668,
+            "share_of_removed_correct": 0.05343511450381679
+          },
+          "furniture": {
+            "count": 454,
+            "share": 0.1306474820143885,
+            "removed_hallucinated": 42,
+            "added_hallucinated": 48,
+            "removed_correct": 22,
+            "added_correct": 17,
+            "kept_hallucinated": 115,
+            "kept_correct": 210,
+            "net_hallucinated_delta": 6,
+            "net_correct_delta": -5,
+            "removed": 64,
+            "added": 65,
+            "kept": 325,
+            "share_of_removed_hallucinated": 0.13003095975232198,
+            "share_of_removed_correct": 0.16793893129770993
+          },
+          "indoor_other": {
+            "count": 119,
+            "share": 0.034244604316546766,
+            "removed_hallucinated": 9,
+            "added_hallucinated": 7,
+            "removed_correct": 5,
+            "added_correct": 4,
+            "kept_hallucinated": 14,
+            "kept_correct": 80,
+            "net_hallucinated_delta": -2,
+            "net_correct_delta": -1,
+            "removed": 14,
+            "added": 11,
+            "kept": 94,
+            "share_of_removed_hallucinated": 0.02786377708978328,
+            "share_of_removed_correct": 0.03816793893129771
+          },
+          "kitchen_tableware": {
+            "count": 346,
+            "share": 0.09956834532374101,
+            "removed_hallucinated": 38,
+            "added_hallucinated": 35,
+            "removed_correct": 15,
+            "added_correct": 31,
+            "kept_hallucinated": 54,
+            "kept_correct": 173,
+            "net_hallucinated_delta": -3,
+            "net_correct_delta": 16,
+            "removed": 53,
+            "added": 66,
+            "kept": 227,
+            "share_of_removed_hallucinated": 0.11764705882352941,
+            "share_of_removed_correct": 0.11450381679389313
+          },
+          "outdoor_sign": {
+            "count": 159,
+            "share": 0.045755395683453236,
+            "removed_hallucinated": 14,
+            "added_hallucinated": 12,
+            "removed_correct": 11,
+            "added_correct": 8,
+            "kept_hallucinated": 29,
+            "kept_correct": 85,
+            "net_hallucinated_delta": -2,
+            "net_correct_delta": -3,
+            "removed": 25,
+            "added": 20,
+            "kept": 114,
+            "share_of_removed_hallucinated": 0.043343653250773995,
+            "share_of_removed_correct": 0.08396946564885496
+          },
+          "person": {
+            "count": 632,
+            "share": 0.1818705035971223,
+            "removed_hallucinated": 30,
+            "added_hallucinated": 25,
+            "removed_correct": 22,
+            "added_correct": 13,
+            "kept_hallucinated": 61,
+            "kept_correct": 481,
+            "net_hallucinated_delta": -5,
+            "net_correct_delta": -9,
+            "removed": 52,
+            "added": 38,
+            "kept": 542,
+            "share_of_removed_hallucinated": 0.09287925696594428,
+            "share_of_removed_correct": 0.16793893129770993
+          },
+          "sports": {
+            "count": 228,
+            "share": 0.0656115107913669,
+            "removed_hallucinated": 7,
+            "added_hallucinated": 12,
+            "removed_correct": 14,
+            "added_correct": 14,
+            "kept_hallucinated": 17,
+            "kept_correct": 164,
+            "net_hallucinated_delta": 5,
+            "net_correct_delta": 0,
+            "removed": 21,
+            "added": 26,
+            "kept": 181,
+            "share_of_removed_hallucinated": 0.021671826625386997,
+            "share_of_removed_correct": 0.10687022900763359
+          },
+          "vehicle": {
+            "count": 376,
+            "share": 0.10820143884892086,
+            "removed_hallucinated": 33,
+            "added_hallucinated": 25,
+            "removed_correct": 10,
+            "added_correct": 18,
+            "kept_hallucinated": 54,
+            "kept_correct": 236,
+            "net_hallucinated_delta": -8,
+            "net_correct_delta": 8,
+            "removed": 43,
+            "added": 43,
+            "kept": 290,
+            "share_of_removed_hallucinated": 0.1021671826625387,
+            "share_of_removed_correct": 0.07633587786259542
+          }
+        },
+        "by_flag": {
+          "text_or_graphic": {
+            "count": 1161,
+            "share": 0.33410071942446046,
+            "removed_hallucinated": 72,
+            "added_hallucinated": 43,
+            "removed_correct": 29,
+            "added_correct": 34,
+            "kept_hallucinated": 170,
+            "kept_correct": 813,
+            "net_hallucinated_delta": -29,
+            "net_correct_delta": 5,
+            "removed": 101,
+            "added": 77,
+            "kept": 983
+          },
+          "color_attribute": {
+            "count": 80,
+            "share": 0.02302158273381295,
+            "removed_hallucinated": 14,
+            "added_hallucinated": 10,
+            "removed_correct": 0,
+            "added_correct": 0,
+            "kept_hallucinated": 53,
+            "kept_correct": 3,
+            "net_hallucinated_delta": -4,
+            "net_correct_delta": 0,
+            "removed": 14,
+            "added": 10,
+            "kept": 56
+          },
+          "uncertain_small_background": {
+            "count": 2812,
+            "share": 0.8092086330935252,
+            "removed_hallucinated": 238,
+            "added_hallucinated": 182,
+            "removed_correct": 104,
+            "added_correct": 95,
+            "kept_hallucinated": 465,
+            "kept_correct": 1728,
+            "net_hallucinated_delta": -56,
+            "net_correct_delta": -9,
+            "removed": 342,
+            "added": 277,
+            "kept": 2193
+          },
+          "uppercase_mention": {
+            "count": 68,
+            "share": 0.019568345323741007,
+            "removed_hallucinated": 4,
+            "added_hallucinated": 2,
+            "removed_correct": 1,
+            "added_correct": 2,
+            "kept_hallucinated": 3,
+            "kept_correct": 56,
+            "net_hallucinated_delta": -2,
+            "net_correct_delta": 1,
+            "removed": 5,
+            "added": 4,
+            "kept": 59
+          }
+        },
+        "net": {
+          "hallucinated_delta": -62,
+          "correct_delta": 9,
+          "mentioned_delta": -53
+        }
+      },
+      "examples": {
+        "removed_hallucinated_text_logo_graphic": [
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 84270,
+            "bucket": "removed_hallucinated",
+            "object": "airplane",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "airplane"
+            ],
+            "context": "...bers include \"219-224\" and \"225-232\". The signs also feature small icons, including a red airplane symbol and a blue airplane symbol. To the left, a green sign with a white \"E\" (likely ind..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 161609,
+            "bucket": "removed_hallucinated",
+            "object": "airplane",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "airplane"
+            ],
+            "context": "...n is visible. It reads “Millbrae” in large, white, sans-serif letters, with a small white airplane icon and the letters “BART” to the right of it. To the right of “Millbrae,” there is a wh..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 56288,
+            "bucket": "removed_hallucinated",
+            "object": "apple",
+            "category": "text_logo_graphic",
+            "group": "food",
+            "terms": [
+              "Apple"
+            ],
+            "context": "...adsheet with text and lines, though the content is not legible. - The monitor has a green Apple logo sticker on its lower bezel, suggesting it is an Apple computer. - In front of the mo..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 432085,
+            "bucket": "removed_hallucinated",
+            "object": "apple",
+            "category": "text_logo_graphic",
+            "group": "food",
+            "terms": [
+              "apple"
+            ],
+            "context": "...t. - A box of tissues with a colorful, cartoonish design (featuring what looks like a red apple and a yellow sun) is placed behind the water bottle. - A small, clear plastic cup is part..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 579902,
+            "bucket": "removed_hallucinated",
+            "object": "backpack",
+            "category": "text_logo_graphic",
+            "group": "accessory",
+            "terms": [
+              "backpack"
+            ],
+            "context": "... sleeves and shoulders, and blue jeans. - The rider is carrying a large, brightly colored backpack or saddlebag that is strapped to the back of the motorcycle. The bag has a vibrant, geome..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 463802,
+            "bucket": "removed_hallucinated",
+            "object": "bear",
+            "category": "text_logo_graphic",
+            "group": "animal",
+            "terms": [
+              "bear"
+            ],
+            "context": "..., dark brown, textured object that strongly resembles the head and upper torso of a teddy bear. - The material appears to be a coarse, woven fabric, possibly a type of felt or heavy kn..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 170595,
+            "bucket": "removed_hallucinated",
+            "object": "bed",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "bed"
+            ],
+            "context": "...l impression is one of a simple, satisfying, and comforting breakfast, perhaps enjoyed in bed on a lazy morning. There is no visible text or branding in the image."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 48924,
+            "bucket": "removed_hallucinated",
+            "object": "bicycle",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "bike"
+            ],
+            "context": "... is angled slightly toward the viewer, with its front wheel and handlebars prominent. The bike is equipped for touring or off-road travel, featuring: - A black rear fender and a blac..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 236599,
+            "bucket": "removed_hallucinated",
+            "object": "bird",
+            "category": "text_logo_graphic",
+            "group": "animal",
+            "terms": [
+              "bird"
+            ],
+            "context": "...Kite:** Dominating the upper center is a large, multi-colored kite shaped like a stylized bird or dragon with long, flowing tail feathers. It has a white body with blue and red accents..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 360097,
+            "bucket": "removed_hallucinated",
+            "object": "bird",
+            "category": "text_logo_graphic",
+            "group": "animal",
+            "terms": [
+              "bird"
+            ],
+            "context": "...om right corner, there is a faint, stylized black signature or watermark that resembles a bird or a cursive letter “S”. - The overall lighting is even and diffuse, suggesting an overca..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 533493,
+            "bucket": "removed_hallucinated",
+            "object": "bird",
+            "category": "text_logo_graphic",
+            "group": "animal",
+            "terms": [
+              "bird"
+            ],
+            "context": "...sses and a black t-shirt with a small, white, stylized logo on the left chest (possibly a bird or a similar figure). He is holding a white frisbee in his left hand, which is raised and..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 360097,
+            "bucket": "removed_hallucinated",
+            "object": "boat",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "ferry",
+              "ship"
+            ],
+            "context": "...is a high-angle, top-down photograph of a concrete dock or pier area, likely at a port or ferry terminal. The scene is dominated by piles of luggage and a prominent white railing. **Fo..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 369503,
+            "bucket": "removed_hallucinated",
+            "object": "boat",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "sailboat"
+            ],
+            "context": "... with a white horizontal stripe near the hem, which features a small red star and a white sailboat logo. Their left arm is bent, and their hand is near their neck or shoulder. Their dark p..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 54654,
+            "bucket": "removed_hallucinated",
+            "object": "book",
+            "category": "text_logo_graphic",
+            "group": "indoor_other",
+            "terms": [
+              "book"
+            ],
+            "context": "... the words \"my raggedy\" and \"don't\" can be discerned, suggesting it might be a children's book or poster. To the right of the person, a white door or cabinet is visible, with several ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 119365,
+            "bucket": "removed_hallucinated",
+            "object": "book",
+            "category": "text_logo_graphic",
+            "group": "indoor_other",
+            "terms": [
+              "book"
+            ],
+            "context": "...e center, a poster with a blue border and a speech bubble graphic shows a child reading a book. - To the right, a prominent white poster with a blue border is titled \"Building vocabula..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 251824,
+            "bucket": "removed_hallucinated",
+            "object": "bottle",
+            "category": "text_logo_graphic",
+            "group": "kitchen_tableware",
+            "terms": [
+              "Bottle",
+              "bottle",
+              "bottles"
+            ],
+            "context": "...age captures a moment of focused, hands-on crafting, likely involving repurposing plastic bottles into a new object, possibly a toy, a tool, or a piece of art."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 22892,
+            "bucket": "removed_hallucinated",
+            "object": "bowl",
+            "category": "text_logo_graphic",
+            "group": "kitchen_tableware",
+            "terms": [
+              "container"
+            ],
+            "context": "...e a young tomato or pepper plant, with several stems and leaves. It is planted in a small container filled with dark soil. The pot is partially visible, showing a yellow and white label wit..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 194471,
+            "bucket": "removed_hallucinated",
+            "object": "bowl",
+            "category": "text_logo_graphic",
+            "group": "kitchen_tableware",
+            "terms": [
+              "bowl"
+            ],
+            "context": "...ment of athletic motion. He is riding a skateboard on the curved edge of a concrete skate bowl. - He is wearing a black short-sleeved t-shirt with a white graphic on the chest, light-w..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 309678,
+            "bucket": "removed_hallucinated",
+            "object": "bowl",
+            "category": "text_logo_graphic",
+            "group": "kitchen_tableware",
+            "terms": [
+              "container"
+            ],
+            "context": "...ems, possibly carrots or sweet potatoes. - In the upper right background, a clear plastic container with a label is partially visible. The word “CINNAMON” can be seen on the label, suggesti..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 28993,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "cars"
+            ],
+            "context": "...ue to the depth of field. To the left, a street runs parallel to the sidewalk, with a few cars and street signs visible. A blue and white vertical sign is mounted on a pole on the left..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 109900,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "SUV"
+            ],
+            "context": "... in discussion or waiting. - **Vehicle:** To the right, a white, rugged, four-wheel-drive SUV is parked. It has a black roof rack and a tall antenna on the front. The vehicle is clear..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 143572,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "car"
+            ],
+            "context": "...printed in large, white, sans-serif letters. - To the left, the logo and text “esurance car insurance” are visible. - To the right, the URL “usopen.org” is displayed in white. - A..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 336628,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "Car",
+              "car"
+            ],
+            "context": "...an in a highly stylized and colorful costume standing on the open-air platform of a cable car, likely during a parade or festive street event. **The Central Figure:** The man is the ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 460929,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "car"
+            ],
+            "context": "This is a candid, sunlit photograph of a casual meal, likely taken from inside a car, as suggested by the window in the background. The scene is composed of a hot dog and a b..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 468965,
+            "bucket": "removed_hallucinated",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "car"
+            ],
+            "context": "... white design with a large red letter “E” and cartoon-like illustrations, including a red car and a blue bird. - **Child in the Foreground (Left Side):** In the lower-left foreground..."
+          }
+        ],
+        "removed_hallucinated_uncertain_small": [
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 110884,
+            "bucket": "removed_hallucinated",
+            "object": "airplane",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "airplane"
+            ],
+            "context": "...s is a photograph of a compact, utilitarian bathroom, likely from a hotel room, train, or airplane cabin, characterized by its small size and functional design. The image has a strong gree..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 56344,
+            "bucket": "removed_hallucinated",
+            "object": "apple",
+            "category": "uncertain_small_background",
+            "group": "food",
+            "terms": [
+              "Apple"
+            ],
+            "context": "... is a slim, white, full-sized keyboard with a standard QWERTY layout. It appears to be an Apple Magic Keyboard. - To the right of the keyboard is a white, ergonomic computer mouse, like..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 147205,
+            "bucket": "removed_hallucinated",
+            "object": "apple",
+            "category": "uncertain_small_background",
+            "group": "food",
+            "terms": [
+              "apple"
+            ],
+            "context": "... submerged in the sauce. - A single, thin slice of what appears to be caramelized pear or apple is placed beside the chestnuts, adding a contrasting color and texture. **The Plate and ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 210388,
+            "bucket": "removed_hallucinated",
+            "object": "backpack",
+            "category": "uncertain_small_background",
+            "group": "accessory",
+            "terms": [
+              "backpack"
+            ],
+            "context": "...N” and possibly “SUMMIT” below it. He is also wearing yellow gloves and has a small, dark backpack or bag slung over his shoulder. * **On the right:** A woman with shoulder-length brown ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 57150,
+            "bucket": "removed_hallucinated",
+            "object": "bear",
+            "category": "uncertain_small_background",
+            "group": "animal",
+            "terms": [
+              "bear"
+            ],
+            "context": "...laid skirt, white tights, and dark shoes. She is holding a very large, fluffy white teddy bear that towers over her. The bear is oversized, with a prominent red bow tied around its nec..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 231879,
+            "bucket": "removed_hallucinated",
+            "object": "bear",
+            "category": "uncertain_small_background",
+            "group": "animal",
+            "terms": [
+              "bear"
+            ],
+            "context": "...entle, focused expression. The cake is decorated with a small, brown figurine (possibly a bear or animal) on top and a single, thin candle. **Background Elements:** - Behind the main ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 315492,
+            "bucket": "removed_hallucinated",
+            "object": "bear",
+            "category": "uncertain_small_background",
+            "group": "animal",
+            "terms": [
+              "Bear",
+              "bear"
+            ],
+            "context": "...nded toward it, suggesting she is either pulling a sheet or adjusting the roll. - **Teddy Bear:** On the floor, to the child’s left, sits a large, brown teddy bear. The bear is lying o..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 370478,
+            "bucket": "removed_hallucinated",
+            "object": "bear",
+            "category": "uncertain_small_background",
+            "group": "animal",
+            "terms": [
+              "bears"
+            ],
+            "context": "...rter or sheet featuring a repeating pattern of small, dark cartoon-like figures (possibly bears or animals) and stars. - A black jacket or piece of clothing is draped over the edge of t..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 368038,
+            "bucket": "removed_hallucinated",
+            "object": "bed",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "bed"
+            ],
+            "context": "...green tree. **Environment and Background** * **Ground:** The cabooses sit on a gravel bed next to a patch of grassy, slightly uneven ground. The grass is a mix of green and brown,..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 575081,
+            "bucket": "removed_hallucinated",
+            "object": "bed",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "bed"
+            ],
+            "context": "...re strewn across the floor, connecting the gaming equipment. A small, woven basket or pet bed is on the floor near the boy’s feet. A small, dark-colored mug sits on a shelf on the ent..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 87038,
+            "bucket": "removed_hallucinated",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "...nd is riding a small, black-and-white BMX bike. The bike is positioned near a low, wooden bench or platform. - The ground is a flat, gray asphalt surface, typical of a skatepark. Severa..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 145020,
+            "bucket": "removed_hallucinated",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "benches"
+            ],
+            "context": "...scene. On the far left, a group of visitors, including children and adults, are seated on benches or standing near the signpost. In the middle ground, a few people are walking or standing..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 319369,
+            "bucket": "removed_hallucinated",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "...the third in a white top and dark shorts. - To the left, a man is sitting on a low wooden bench or stool, wearing sunglasses and a patterned shirt. He appears to be relaxing. - To the r..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 379476,
+            "bucket": "removed_hallucinated",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "benches"
+            ],
+            "context": "...into the background, where the faint glow of more lights and the silhouettes of chairs or benches can be seen, suggesting a long, continuous dining area. The perspective is enhanced by th..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 411530,
+            "bucket": "removed_hallucinated",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "...k, and gray—and are waiting to board the lift. Some are standing, others are sitting on a bench near a small building. **Midground:** - A chairlift system is the central focus. It cons..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 431896,
+            "bucket": "removed_hallucinated",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "benches"
+            ],
+            "context": "... warm glow. Further down the platform, other station infrastructure is visible, including benches and what appears to be a ticket machine or information kiosk. - **Spatial Relationship:**..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 500270,
+            "bucket": "removed_hallucinated",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "...isible in the background of the skatepark, also in silhouette. One person is sitting on a bench or ledge, while others are scattered around the various features of the park. **Backgrou..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 476491,
+            "bucket": "removed_hallucinated",
+            "object": "bicycle",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "bike"
+            ],
+            "context": "...oreground is a dark, textured asphalt or concrete surface, likely a pedestrian walkway or bike lane. It is marked with large, bold yellow Japanese characters: “スクールゾーン” (Sukūru Zōn), w..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 534827,
+            "bucket": "removed_hallucinated",
+            "object": "bicycle",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "bike",
+              "bikes"
+            ],
+            "context": "... strong backlighting creates silhouettes and highlights the edges of the riders and their bikes. - Long, dark shadows are cast by the motorcycles and riders onto the road, stretching to..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 344100,
+            "bucket": "removed_hallucinated",
+            "object": "bird",
+            "category": "uncertain_small_background",
+            "group": "animal",
+            "terms": [
+              "turkey"
+            ],
+            "context": "...made with whole wheat or multigrain bread, and the filling appears to be layers of ham or turkey and a slice of white cheese, with some of the filling slightly oozing out. - To the left ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 400922,
+            "bucket": "removed_hallucinated",
+            "object": "bird",
+            "category": "uncertain_small_background",
+            "group": "animal",
+            "terms": [
+              "bird"
+            ],
+            "context": "...is a vibrant blue, filled with large, fluffy white clouds. A small, dark object, likely a bird or a drone, is captured in mid-flight against the sky, positioned above the KeyBank sign...."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 296284,
+            "bucket": "removed_hallucinated",
+            "object": "boat",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "liner"
+            ],
+            "context": "...he ambient light. The background behind the donuts on each shelf is a patterned paper or liner with a repeating orange and white geometric design, possibly a stylized checkered or diam..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 304812,
+            "bucket": "removed_hallucinated",
+            "object": "boat",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "boats",
+              "ships"
+            ],
+            "context": "...ark shapes against the bright sky. On the far left horizon, a few small, distant ships or boats can be seen on the water, adding a sense of scale and distance to the scene. **Overall I..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 463527,
+            "bucket": "removed_hallucinated",
+            "object": "boat",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "liner"
+            ],
+            "context": "...irplane meal tray, likely from a premium or business class cabin, set on a dark blue tray liner with a subtle striped pattern. The tray is positioned on an airplane seat, with the windo..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 540932,
+            "bucket": "removed_hallucinated",
+            "object": "boat",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "sailboard"
+            ],
+            "context": "...submerged or resting on the sand. It appears to be a piece of equipment, possibly a small sailboard or a kiteboard, with a black and yellow board attached to it. A person is sitting on the ..."
+          }
+        ],
+        "removed_correct_text_logo_graphic": [
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 185599,
+            "bucket": "removed_correct",
+            "object": "apple",
+            "category": "text_logo_graphic",
+            "group": "food",
+            "terms": [
+              "apple",
+              "apples"
+            ],
+            "context": "...red. - **Center (Background):** Nestled between the two foreground fruits is a cluster of apples. One apple is visible directly behind the left orange, showing a blend of red and yellow ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 219283,
+            "bucket": "removed_correct",
+            "object": "banana",
+            "category": "text_logo_graphic",
+            "group": "food",
+            "terms": [
+              "BANANAS",
+              "Bananas",
+              "banana",
+              "bananas"
+            ],
+            "context": "... has a large, rectangular cutout on its side and a smaller circular hole. The text “ALITY BANANAS” is visible on its side, suggesting it was used for shipping bananas. Below this, the wor..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 97988,
+            "bucket": "removed_correct",
+            "object": "bench",
+            "category": "text_logo_graphic",
+            "group": "outdoor_sign",
+            "terms": [
+              "Bench",
+              "bench"
+            ],
+            "context": "...ly more stylized font. The banner is slightly wrinkled, indicating it is fabric. - **Park Bench:** To the right of the man, a green park bench is visible. Two people are seated on it, p..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 206994,
+            "bucket": "removed_correct",
+            "object": "bench",
+            "category": "text_logo_graphic",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "...-roofed shelter with a metal frame stands on the platform. Inside the shelter, there is a bench with blue and yellow seating. A small, yellow sign with a blue border is mounted on the s..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 481390,
+            "bucket": "removed_correct",
+            "object": "bench",
+            "category": "text_logo_graphic",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "... on the sideline, including a man in a black jacket and another in a white shirt near the bench area. **The Players and Their Actions:** There are eight players clearly visible on the ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 459500,
+            "bucket": "removed_correct",
+            "object": "bird",
+            "category": "text_logo_graphic",
+            "group": "animal",
+            "terms": [
+              "Birds",
+              "bird",
+              "birds",
+              "herons"
+            ],
+            "context": "... dark, rectangular pedestal. The sculpture depicts three stylized birds, likely cranes or herons, rendered in a metallic, weathered material that appears to be steel or iron. Their forms..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 396274,
+            "bucket": "removed_correct",
+            "object": "broccoli",
+            "category": "text_logo_graphic",
+            "group": "food",
+            "terms": [
+              "broccoli"
+            ],
+            "context": "...robust plants with broad, dark green, slightly crinkled leaves. These are identifiable as broccoli plants, with some showing developing green florets. The leaves have prominent, lighter-co..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 86483,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "text_logo_graphic",
+            "group": "vehicle",
+            "terms": [
+              "car"
+            ],
+            "context": "...e of the sign on the left. Further in the background, more trees and a glimpse of a white car parked on a street can be seen. - **Foreground:** The sign sits on a low, stone-faced wal..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 40083,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "chair",
+              "stool"
+            ],
+            "context": "...se of everyday urban life. **Main Subjects:** - **Man on the left:** Seated in a folding chair, he is wearing a dark, long-sleeved shirt and dark pants. He has his legs crossed and is ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 481390,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "seats"
+            ],
+            "context": "...sible on the red sideline barrier. * The “Coca-Cola” logo is visible on the black bench seats in the background. **Overall Composition:** The photograph captures a moment of intense ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 189752,
+            "bucket": "removed_correct",
+            "object": "cup",
+            "category": "text_logo_graphic",
+            "group": "kitchen_tableware",
+            "terms": [
+              "cup"
+            ],
+            "context": "... long-sleeved shirt and appear to be eating or drinking from a straw. A small white paper cup with red and black text is on the table in front of them. The text on the cup is partiall..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 555009,
+            "bucket": "removed_correct",
+            "object": "cup",
+            "category": "text_logo_graphic",
+            "group": "kitchen_tableware",
+            "terms": [
+              "Cup",
+              "cup"
+            ],
+            "context": "... the keyboard. The headphones are not on anyone's head. * **Other Objects:** * **Cup:** A green and white patterned ceramic mug or cup sits on the desk between the two monito..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 157601,
+            "bucket": "removed_correct",
+            "object": "dining table",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "Table",
+              "table"
+            ],
+            "context": "...fé or coffee shop. The image is taken from a low angle, looking up at the subject and the table, which creates a sense of intimacy and immediacy. **Main Subject:** - A person with shor..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 160012,
+            "bucket": "removed_correct",
+            "object": "dining table",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "table"
+            ],
+            "context": "... board, with another pizza partially visible in the background. A person is seated at the table, interacting with the food. **Foreground and Center:** - The main subject is a large, ro..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 231097,
+            "bucket": "removed_correct",
+            "object": "dining table",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "dining table",
+              "table"
+            ],
+            "context": "This is a low-light, close-up photograph of a partially eaten meal on a dining table, conveying a sense of intimacy and casual dining. **Main Subject: The Plate of Food** - ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 277689,
+            "bucket": "removed_correct",
+            "object": "dining table",
+            "category": "text_logo_graphic",
+            "group": "furniture",
+            "terms": [
+              "Table",
+              "table"
+            ],
+            "context": "This is a vibrant, sun-drenched photograph of an outdoor wedding or celebration cake table, set against a tropical backdrop. The composition is carefully arranged to draw the eye t..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 261888,
+            "bucket": "removed_correct",
+            "object": "horse",
+            "category": "text_logo_graphic",
+            "group": "animal",
+            "terms": [
+              "horse",
+              "horses"
+            ],
+            "context": "...a wide-angle, eye-level photograph capturing a cyclist paused on a paved road, facing two horses that are walking toward him in the distance. The scene is set on a bright, sunny day unde..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 93437,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "Man",
+              "man"
+            ],
+            "context": "This is a candid, indoor photograph of an elderly man, likely in his 70s or 80s, who is the central focus of the image. He is smiling broadly a..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 97337,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "people"
+            ],
+            "context": "...eddish-brown wooden stand. The TV screen is on, displaying a black-and-white image of two people in what appears to be a dynamic, possibly athletic or dance-like pose. The image is somew..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 133000,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "driver"
+            ],
+            "context": "...ame. - The front carriage is clearly visible, featuring a large, curved windshield with a driver inside. The train’s number, “31,” is displayed in white on a black background above the w..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 182021,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "player",
+              "players"
+            ],
+            "context": "...field: the green of the grass, the brown of the dirt, and the dark and light tones of the players' uniforms. * The overall impression is one of action and anticipation, capturing a flee..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 330818,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "man",
+              "person"
+            ],
+            "context": "This is a candid, slightly grainy photograph of a person working in a commercial kitchen, likely a diner or small restaurant, captured from a slig..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 369812,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "people"
+            ],
+            "context": "...ble-decker bus is visible, a classic symbol of London. - Other cars and a bus stop with people waiting can be seen in the distance. - **Sidewalk and Pedestrians:** A paved sidewalk ru..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 393056,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "person",
+              "rider"
+            ],
+            "context": "...y. **Main Subject:** The central focus is a single surfer riding a wave. The surfer is a person with short, light-colored hair, likely blond or light brown, visible above the collar of ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 462643,
+            "bucket": "removed_correct",
+            "object": "person",
+            "category": "text_logo_graphic",
+            "group": "person",
+            "terms": [
+              "person"
+            ],
+            "context": "This is a close-up, angled photograph of a person’s hand holding a disassembled or partially disassembled smartwatch, revealing its interna..."
+          }
+        ],
+        "removed_correct_uncertain_small": [
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 161609,
+            "bucket": "removed_correct",
+            "object": "backpack",
+            "category": "uncertain_small_background",
+            "group": "accessory",
+            "terms": [
+              "backpack"
+            ],
+            "context": "...lack or charcoal grey, hooded sweatshirt or vest over a white t-shirt. A large, dark grey backpack is slung over their shoulders. The most striking feature is a small, tan or light brown d..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 341921,
+            "bucket": "removed_correct",
+            "object": "backpack",
+            "category": "uncertain_small_background",
+            "group": "accessory",
+            "terms": [
+              "backpack"
+            ],
+            "context": "...ath. - To the right of the boy, on the ground next to the bench, lies a black, soft-sided backpack or small bag. **Midground:** - The area directly behind the boy and extending to the lef..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 425221,
+            "bucket": "removed_correct",
+            "object": "backpack",
+            "category": "uncertain_small_background",
+            "group": "accessory",
+            "terms": [
+              "backpack"
+            ],
+            "context": "...n is seen in silhouette, standing and looking out the window. They appear to be wearing a backpack and are turned slightly away from the camera, gazing toward the right. - To the right, an..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 370375,
+            "bucket": "removed_correct",
+            "object": "baseball bat",
+            "category": "uncertain_small_background",
+            "group": "sports",
+            "terms": [
+              "baseball bat"
+            ],
+            "context": "...small, stylized logo or design on the front. - The child is holding a bright blue plastic baseball bat with a silver-colored barrel. The grip of the bat is black with a textured, possibly spir..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 134722,
+            "bucket": "removed_correct",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "...f with a red trim. A red downpipe runs vertically down the side of the brick structure. A bench is visible on the platform near this building. **Background and Environment:** Behind th..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 336209,
+            "bucket": "removed_correct",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "Bench",
+              "bench"
+            ],
+            "context": "...bove it. The ramp is constructed from plywood and has a rough, unfinished look. - **Metal Bench:** To the right of the ramp, a long, weathered metal bench with a wooden top is visible. ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 419408,
+            "bucket": "removed_correct",
+            "object": "bench",
+            "category": "uncertain_small_background",
+            "group": "outdoor_sign",
+            "terms": [
+              "bench"
+            ],
+            "context": "...ject (Observer):** - To the right, another young man is seated on a dark green metal park bench. He is casually dressed in a blue jacket over a red shirt and dark pants. - He is looking..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 459809,
+            "bucket": "removed_correct",
+            "object": "boat",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "sailboats",
+              "vessels"
+            ],
+            "context": "...ndmass or mountain range forms the horizon line. A few small, indistinct shapes, possibly sailboats or other vessels, are visible on the water near the left edge of the frame. **Foreground..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 396526,
+            "bucket": "removed_correct",
+            "object": "book",
+            "category": "uncertain_small_background",
+            "group": "indoor_other",
+            "terms": [
+              "book"
+            ],
+            "context": "... A small, dark wooden side table sits beside the lamp. On it rests a closed, dark-colored book or notebook. * **Door and View:** A large, white-framed glass door or window is set int..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 458410,
+            "bucket": "removed_correct",
+            "object": "book",
+            "category": "uncertain_small_background",
+            "group": "indoor_other",
+            "terms": [
+              "books"
+            ],
+            "context": "...h a white tablecloth and has various items on it, including what appears to be a stack of books or magazines, a green box, and other small objects. The table is supported by metal legs...."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 226984,
+            "bucket": "removed_correct",
+            "object": "bottle",
+            "category": "uncertain_small_background",
+            "group": "kitchen_tableware",
+            "terms": [
+              "bottle",
+              "bottles"
+            ],
+            "context": "...the sink. - **Above the Stove:** A decorative wooden shelf or rack holds various jars and bottles, possibly spices or condiments. - **Wall Decor:** A framed picture hangs on the wall abov..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 91779,
+            "bucket": "removed_correct",
+            "object": "bowl",
+            "category": "uncertain_small_background",
+            "group": "kitchen_tableware",
+            "terms": [
+              "container",
+              "containers"
+            ],
+            "context": "... cup, possibly for water or soda. - Next to the cup, there are two small, white plastic containers with lids. One contains a yellowish substance (possibly mustard or a dipping sauce), and ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 150417,
+            "bucket": "removed_correct",
+            "object": "bowl",
+            "category": "uncertain_small_background",
+            "group": "kitchen_tableware",
+            "terms": [
+              "bowl",
+              "container"
+            ],
+            "context": "...s:** In the foreground, a large blue plastic object (possibly a vacuum cleaner or a large container) is partially visible on the left. A white plastic bag is also on the counter near the bl..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 157418,
+            "bucket": "removed_correct",
+            "object": "bowl",
+            "category": "uncertain_small_background",
+            "group": "kitchen_tableware",
+            "terms": [
+              "bowl",
+              "containers"
+            ],
+            "context": "...rom the side or front, casting soft shadows and highlighting the textures of the food and containers. - The table surface is visible at the bottom of the frame, covered with a yellow and whi..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 447522,
+            "bucket": "removed_correct",
+            "object": "broccoli",
+            "category": "uncertain_small_background",
+            "group": "food",
+            "terms": [
+              "Broccoli",
+              "broccoli"
+            ],
+            "context": "... is a colorful mixture of sautéed or stir-fried vegetables. The most prominent are: - **Broccoli**: Several florets of green broccoli are scattered throughout the dish. Some are whole sm..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 344795,
+            "bucket": "removed_correct",
+            "object": "cake",
+            "category": "uncertain_small_background",
+            "group": "food",
+            "terms": [
+              "cake"
+            ],
+            "context": "...t glow on the scene. **Central Object:** The main focus is a round, baked dish, likely a cake or a pie, resting on a metal baking sheet. The dish is completely covered with crinkled a..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 228436,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "cars"
+            ],
+            "context": "... metal, with vertical posts and horizontal bars. - On the left side of the canal, several cars are parked along the street, partially obscured by the trees. - The trees are bare, with ..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 260470,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "car"
+            ],
+            "context": "...shirt is visible on the left, and another person in a grey shirt is further back. A white car is partially visible through the glass, suggesting the bakery is located on a street. The..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 345361,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "car"
+            ],
+            "context": "...rther in the background, another house with white siding can be seen, along with a parked car and some trees or bushes. - The ground is a well-maintained green lawn. - The lighting su..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 369442,
+            "bucket": "removed_correct",
+            "object": "car",
+            "category": "uncertain_small_background",
+            "group": "vehicle",
+            "terms": [
+              "van"
+            ],
+            "context": "...rcial or institutional structure. - To the left of the building, a green and white bus or van is partially visible behind some trees. - A blue and white circular traffic sign (a \"no e..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 7818,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "chair"
+            ],
+            "context": "... colors are white (tablecloth, flowers, napkins, plates) and black/dark gray (background, chair backs, table edges). The warm glow from beneath the vase adds a touch of golden light, cr..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 115245,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "chairs"
+            ],
+            "context": "...is characterized by light-colored wooden flooring and long, white tables with red plastic chairs, suggesting a communal or functional space. **Foreground and Center:** - A large, black,..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 139684,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "seat"
+            ],
+            "context": "...wn or black dog is curled up and sleeping on the right side of the sofa, partially on the seat and partially on the backrest. A light-colored, possibly beige or cream, throw blanket is..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 177861,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "chairs"
+            ],
+            "context": "...ear the center. - To the right, a small outdoor seating area with metal-framed tables and chairs is visible, partially covered by a canopy or awning. A black horse-drawn carriage is park..."
+          },
+          {
+            "run": "riskmask_p30_step100",
+            "image_id": 259597,
+            "bucket": "removed_correct",
+            "object": "chair",
+            "category": "uncertain_small_background",
+            "group": "furniture",
+            "terms": [
+              "chairs"
+            ],
+            "context": "... boy as the main subject. The people are dressed in casual attire, and some are seated on chairs visible to the left. **Background:** - The background is softly blurred but reveals the ..."
+          }
+        ]
+      }
+    }
+  }
+}
