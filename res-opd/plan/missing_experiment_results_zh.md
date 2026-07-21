@@ -8,11 +8,11 @@
 |---|---|---|---|---|
 | Original-image OPD controls | Qwen3VL-8B-Instruct Frozen RKL, `tr=1.0` | CHAIRi/CHAIRs/ObjF1、POPE Overall F1、AMBER generative CHAIR/HAL、MMStar、CV-Bench | 正文已在 `tab:orig_image_opd_controls` 预留 `--` | 补跑或从服务器找 8B 原图 teacher 的 uniform RKL 结果 |
 | Original-image OPD controls | Qwen3VL-8B-Instruct Res-OPD/RiskMask, `tr=1.0` | CHAIRi/CHAIRs/ObjF1、POPE Overall F1、AMBER generative CHAIR/HAL、MMStar、CV-Bench | 正文已在 `tab:orig_image_opd_controls` 预留 `--` | 补跑或从服务器找 8B 原图 teacher 的 RiskMask 结果 |
-| Native low-resolution inference controls | 2B Res-OPD, ratio/tr=0.25, step 50 | POPE Overall Accuracy/Recall/F1，正文只需要 F1 | `instruct_tr025_eval_results.md` 只有 `adv/pop/rand Acc = 0.9194/0.9418/0.9527` | 查服务器 raw POPE prediction 或重新跑 overall aggregator |
-| Native low-resolution inference controls | 2B Res-OPD, ratio/tr=0.50, step 50 | POPE Overall Accuracy/Recall/F1，正文只需要 F1 | `instruct_tr05_eval_results.md` 只有 `adv/pop/rand Acc = 0.9200/0.9439/0.9583` | 查服务器 raw POPE prediction 或重新跑 overall aggregator |
-| Native low-resolution inference controls | 8B Res-OPD, ratio/tr=0.25, step 200 | POPE Overall Accuracy/Recall/F1，正文只需要 F1 | `instruct_tr025_eval_results.md` 只有 `adv/pop/rand Acc = 0.9184/0.9364/0.9533` | 查服务器 raw POPE prediction 或重新跑 overall aggregator |
-| Native low-resolution inference controls | 8B Res-OPD, ratio/tr=0.50, step 50 | POPE Overall Accuracy/Recall/F1，正文只需要 F1 | `instruct_tr05_eval_results.md` 只有 `adv/pop/rand Acc = 0.9159/0.9374/0.9621` | 查服务器 raw POPE prediction 或重新跑 overall aggregator |
-| General visual capability / Fixed-teacher controls | 4B Base | CV-Bench Overall/2D/3D | 多个 plan 文件里 4B Base CV-Bench 记为 `--` / `—` | 如果保留 4B Base CV 对比，需要补跑或从服务器找 4B base CV-Bench |
+| ~~Native low-resolution inference controls~~ | 2B Res-OPD, ratio/tr=0.25, step 50 | POPE Overall F1 | ✅ **已完成**：macro_f1=0.9270, macro_accuracy=0.9380（来源：pope_summary.json） | 已填入 `instruct_tr025_eval_results.md` |
+| ~~Native low-resolution inference controls~~ | 2B Res-OPD, ratio/tr=0.50, step 50 | POPE Overall F1 | ✅ **已完成**：macro_f1=0.9313, macro_accuracy=0.9407（来源：pope_summary.json） | 已填入 `instruct_tr05_eval_results.md` |
+| ~~Native low-resolution inference controls~~ | 8B Res-OPD, ratio/tr=0.25, step 200 | POPE Overall F1 | ✅ **已完成**：macro_f1=0.9249, macro_accuracy=0.9361（来源：pope_summary.json） | 已填入 `instruct_tr025_eval_results.md` |
+| ~~Native low-resolution inference controls~~ | 8B Res-OPD, ratio/tr=0.50, step 50 | POPE Overall F1 | ✅ **已完成**：macro_f1=0.9292, macro_accuracy=0.9385（来源：pope_summary.json） | 已填入 `instruct_tr05_eval_results.md` |
+| ~~General visual capability / Fixed-teacher controls~~ | 4B Base | CV-Bench Overall/2D/3D | ✅ **已完成**：Overall=0.8680, 2D=0.8060, 3D=0.9300（来源：cvbench_breakdown.json） | 已填入 `instruct_sft_ablation_results.md` |
 
 说明：POPE 的三个 split accuracy 不能可靠还原 overall F1。F1 需要总体 TP/FP/FN，或者至少需要 overall precision/recall；只有 adv/pop/random 三个 accuracy 不够。
 

@@ -502,8 +502,7 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.5 | 150 | 0.8570 | 0.7907 | 0.9233 |
 | **RiskMask** | tr=0.5 | 156 | 0.8544 | 0.7879 | 0.9208 |
 | **SFT** | tr=0.5 | 156 | 0.8569 | 0.7879 | 0.9258 |
-
-> Note: 4B Base CV-Bench data not available; comparison uses RKL/RiskMask tr=0.5 as reference.
+| **Base** | — | — | 0.8680 | 0.8060 | 0.9300 |
 
 ### Analysis
 - **Overall**: SFT (0.8569) is comparable to RKL/RiskMask tr=0.5 variants (range: 0.8544–0.8592), within noise.
@@ -706,8 +705,7 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **SFT** | tr=0.75 | 100 | 0.8597 | 0.7928 | 0.9267 |
 | 🌟**SFT** | tr=0.75 | 150 | **0.8596** | 0.7935 | 0.9258 |
 | **SFT** | tr=0.75 | 156 | 0.8616 | 0.7990 | 0.9242 |
-
-> Note: 4B Base CV-Bench data not available; comparison uses RKL/RiskMask as reference.
+| **Base** | — | — | 0.8680 | 0.8060 | 0.9300 |
 
 ### Analysis
 - **Overall**: SFT step 50 (0.8632) is the highest among SFT steps, comparable to RKL/RiskMask best (0.8635). Performance is stable across steps: 0.8632 → 0.8597 → 0.8596 → 0.8616.

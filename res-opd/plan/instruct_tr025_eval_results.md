@@ -37,6 +37,12 @@
 | **RiskMask** | 150 | 0.9125 | 0.9336 | 0.9464 |
 | **RiskMask** | 156 | 0.9127 | 0.9345 | 0.9473 |
 
+#### Overall (from pope_summary.json)
+
+| Model | Step | Accuracy↑ | Recall↑ | F1↑ |
+|---|---|---|---|---|
+| **RiskMask** | 50 | 0.9380 | — | 0.9270 |
+
 ### AMBER (Hallucination Benchmark)
 
 #### Generative Tasks
@@ -257,6 +263,12 @@
 | **RiskMask** | 250 | 0.9158 | 0.9357 | 0.9535 |
 | **RiskMask** | 300 | 0.9158 | 0.9351 | 0.9510 |
 | **RiskMask** | 312 | 0.9158 | 0.9349 | 0.9518 |
+
+#### Overall (from pope_summary.json)
+
+| Model | Step | Accuracy↑ | Recall↑ | F1↑ |
+|---|---|---|---|---|
+| **RiskMask** | 200 | 0.9361 | — | 0.9249 |
 
 ### AMBER (Hallucination Benchmark)
 
