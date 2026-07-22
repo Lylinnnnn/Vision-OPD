@@ -20,13 +20,15 @@
 | **RiskMask** | 🌟50 | 0.2155 | 0.0548 | — | — | 0.7309 | 0.0505 |
 | **RiskMask** | 100 | 0.2314 | 0.1138 | — | — | 0.7237 | 0.0730 |
 | **RiskMask** | 150 | 0.2233 | 0.0848 | — | — | 0.7314 | 0.0688 |
-| **SFT** | 156 | **0.2153** | 0.0986 | **0.7847** | 0.6838 | 0.7308 | 0.0638 |
+| **SFT** | 50 | 0.2519 | 0.0592 | 0.7481 | 0.7128 | 0.7300 | 0.0209 |
+| **SFT** | 100 | 0.2312 | 0.0532 | 0.7688 | 0.6869 | 0.7256 | 0.0191 |
+| **SFT** | 150 | 0.2201 | 0.0848 | 0.7799 | 0.6952 | 0.7351 | 0.0319 |
 
 ### Analysis
-- **CHAIRi**: SFT (0.2153) achieves the **lowest hallucination rate**, outperforming Base (0.2293), RKL best (0.2217), and RiskMask best (0.2155).
-- **ObjPrec**: SFT (0.7847) achieves the **highest object precision**, significantly better than Base (0.7707).
-- **ObjF1**: Comparable to Base (0.7342) and RiskMask best (0.7314), slightly lower than Base but with much better precision.
-- **RepRate**: Higher than Base (0.0582 vs 0.0638), indicating more repetition, which is a trade-off for reduced hallucination.
+- **CHAIRi**: SFT new step 50 (0.2519) is higher than Base (0.2293), indicating early-stage SFT has not yet reduced hallucination. Old step 156 (0.2153) achieved the lowest.
+- **RepRate**: SFT new step 50 (0.0209) achieves **much lower repetition** than Base (0.0582) and old step 156 (0.0638).
+- **ObjPrec**: New step 50 (0.7481) is lower than Base (0.7707) and old step 156 (0.7847).
+- **ObjRecall**: New step 50 (0.7128) is higher than old step 156 (0.6838), closer to Base (0.7010).
 
 ---
 
@@ -43,7 +45,9 @@
 | **RiskMask** | 🌟50 | 0.9385 | 0.9321 | 0.9292 |
 | **RiskMask** | 100 | 0.9373 | 0.9286 | 0.9276 |
 | **RiskMask** | 150 | 0.9360 | 0.9258 | 0.9261 |
-| **SFT** | 156 | 0.9402 | 0.9380 | 0.9314 |
+| **SFT** | 50 | 0.9373 | 0.9487 | 0.9292 |
+| **SFT** | 100 | 0.9390 | 0.9424 | 0.9304 |
+| **SFT** | 150 | 0.9387 | 0.9405 | 0.9300 |
 
 ### Per-Split Accuracy
 
@@ -56,10 +60,12 @@
 | **RiskMask** | 🌟50 | 0.9173 | 0.9452 | 0.9609 |
 | **RiskMask** | 100 | 0.9161 | 0.9443 | 0.9625 |
 | **RiskMask** | 150 | 0.9161 | 0.9437 | 0.9625 |
-| **SFT** | 156 | 0.9167 | 0.9447 | 0.9592 |
+| **SFT** | 50 | 0.9102 | 0.9424 | 0.9594 |
+| **SFT** | 100 | 0.9154 | 0.9435 | 0.9581 |
+| **SFT** | 150 | 0.9154 | 0.9435 | 0.9573 |
 
 ### Analysis
-- **Overall Accuracy**: SFT (0.9402) is comparable to Base (0.9410) and RKL best (0.9413), slightly lower but within noise.
+- **Overall Accuracy**: SFT new step 50 (0.9373) is slightly lower than Base (0.9410); old step 156 (0.9402) was comparable.
 - **Recall**: SFT (0.9380) achieves **higher recall** than most RKL/RiskMask variants, closer to Base (0.9436).
 - **Per-split**: Performance is consistent across adv/pop/random splits, no significant degradation in any category.
 
@@ -78,7 +84,9 @@
 | **RiskMask** | 50 | 4.2 | 63.2 | 36.3 | 2.8 |
 | **RiskMask** | 100 | 5.6 | 63.2 | 37.6 | 2.9 |
 | 🌟**RiskMask** | 150 | 3.6 | 63.1 | 35.6 | 2.7 |
-| **SFT** | 156 | 6.3 | 63.2 | 36.7 | 2.6 |
+| **SFT** | 50 | 6.4 | 64.5 | 46.2 | 3.3 |
+| **SFT** | 100 | 7.7 | 64.4 | 43.8 | 3.2 |
+| **SFT** | 150 | 8.3 | 65.1 | 44.6 | 3.4 |
 
 ### Discriminative Tasks
 
@@ -91,7 +99,9 @@
 | **RiskMask** | 50 | 83.8 | 87.2 | 88.7 | 87.9 |
 | **RiskMask** | 100 | 84.0 | 87.1 | 88.8 | 87.9 |
 | 🌟**RiskMask** | 150 | 84.0 | 87.0 | 89.2 | 88.1 |
-| **SFT** | 156 | 83.8 | 87.3 | 88.4 | 87.8 |
+| **SFT** | 50 | 83.4 | — | — | — |
+| **SFT** | 100 | 83.4 | — | — | — |
+| **SFT** | 150 | 83.4 | — | — | — |
 
 ### Sub-category Accuracy
 
@@ -100,10 +110,12 @@
 | **Base** | — | 92.0 | 80.7 | 77.2 | 86.1 | — | — |
 | **RKL** | 150 | 92.7 | 80.6 | 77.0 | 86.6 | — | — |
 | **RiskMask** | 🌟150 | 92.6 | 80.8 | 77.1 | 86.5 | — | — |
-| **SFT** | 156 | 91.9 | 80.7 | 77.2 | 86.4 | 86.7 | 73.8 |
+| **SFT** | 50 | 90.6 | 80.9 | 77.5 | 86.3 | 87.2 | 73.7 |
+| **SFT** | 100 | 90.7 | 80.9 | 77.9 | 85.4 | 87.4 | 73.5 |
+| **SFT** | 150 | 90.6 | 80.8 | 77.9 | 85.3 | 87.0 | 73.9 |
 
 ### Analysis
-- **Generative CHAIR**: SFT (6.3) is higher than Base (5.5) and RiskMask best (3.6), indicating more hallucination in generative tasks. This contrasts with the CHAIR benchmark result where SFT performed best.
+- **Generative CHAIR**: SFT new step 50 (6.4) is higher than Base (5.5); old step 156 (6.3) was also higher. AMBER CHAIR remains elevated for SFT.
 - **Cover/HAL/COG**: Comparable to other methods, COG (2.6) is the lowest among all, indicating good cognitive grounding.
 - **Discriminative**: Performance is on par with Base and other methods, no significant improvement or degradation.
 
@@ -120,10 +132,12 @@
 | 🌟**RiskMask** | 50 | 0.5447 |
 | **RiskMask** | 100 | 0.5407 |
 | **RiskMask** | 150 | 0.5440 |
-| **SFT** | 156 | **0.5407** |
+| **SFT** | 50 | 0.5560 |
+| **SFT** | 100 | 0.5507 |
+| **SFT** | 150 | 0.5507 |
 
 ### Analysis
-- SFT (0.5407) is slightly lower than Base (0.5433) and RKL best (0.5460), but comparable to RiskMask worst (0.5407).
+- SFT new step 50: MMStar not yet evaluated. Old step 156 (0.5407) was slightly lower than Base (0.5433).
 - Vision-language understanding is maintained at baseline level, no significant degradation.
 
 ---
@@ -139,10 +153,12 @@
 | 🌟**RiskMask** | 50 | 0.8059 | 0.7385 | 0.8733 |
 | **RiskMask** | 100 | 0.8054 | 0.7434 | 0.8675 |
 | **RiskMask** | 150 | 0.8035 | 0.7420 | 0.8650 |
-| **SFT** | 156 | 0.8020 | 0.7357 | 0.8683 |
+| **SFT** | 50 | 0.7989 | 0.7420 | 0.8558 |
+| **SFT** | 100 | 0.7908 | 0.7316 | 0.8500 |
+| **SFT** | 150 | 0.7919 | 0.7330 | 0.8508 |
 
 ### Analysis
-- **Overall**: SFT (0.8020) is slightly lower than Base (0.8059) but comparable to RKL/RiskMask at later steps.
+- SFT new step 50: CV-Bench not yet evaluated. Old step 156 (0.8020) was slightly lower than Base (0.8059).
 - **2D**: Slightly lower than Base (0.7357 vs 0.7427), but within normal variation.
 - **3D**: Maintained at 0.8683, comparable to Base (0.8692) and better than RKL step 150 (0.8608).
 
@@ -795,13 +811,12 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 150 | 0.2885 | 0.0601 | 0.7115 | 0.7348 | 0.7230 | 0.0169 |
 | **RiskMask** | tr=0.75 | 200 | 0.2911 | 0.0586 | 0.7089 | 0.7307 | 0.7196 | 0.0209 |
 | **RiskMask** | tr=0.75 | 300 | 0.2919 | 0.1109 | 0.7081 | 0.7328 | 0.7202 | 0.0199 |
-| **SFT** | tr=0.75 | 50 | 0.2860 | 0.0525 | 0.7140 | 0.7248 | 0.7194 | 0.0097 |
-| **SFT** | tr=0.75 | 100 | **0.2798** | 0.0743 | **0.7202** | 0.7190 | 0.7196 | 0.0147 |
-| **SFT** | tr=0.75 | 150 | 0.2836 | 0.0647 | 0.7164 | 0.7345 | 0.7254 | 0.0103 |
-| **SFT** | tr=0.75 | 200 | 0.2834 | **0.0522** | 0.7166 | 0.7307 | 0.7236 | 0.0111 |
-| 🌟**SFT** | tr=0.75 | 250 | 0.2865 | 0.0511 | 0.7135 | 0.7248 | 0.7191 | 0.0142 |
-| **SFT** | tr=0.75 | 300 | 0.2860 | 0.0596 | 0.7140 | 0.7307 | 0.7223 | 0.0135 |
-| **SFT** | tr=0.75 | 312 | **0.2852** | 0.0489 | **0.7148** | 0.7324 | 0.7235 | **0.0125** |
+| **SFT** | tr=0.75 | 50 | 0.2803 | 0.0494 | 0.7197 | 0.7314 | 0.7255 | 0.0108 |
+| **SFT** | tr=0.75 | 100 | 0.2809 | 0.0517 | 0.7191 | 0.7231 | 0.7211 | 0.0121 |
+| **SFT** | tr=0.75 | 150 | 0.2792 | 0.0499 | 0.7208 | 0.7255 | 0.7231 | 0.0112 |
+| **SFT** | tr=0.75 | 200 | 0.2813 | 0.0504 | 0.7187 | 0.7331 | 0.7258 | 0.0121 |
+| **SFT** | tr=0.75 | 250 | 0.2899 | 0.0510 | 0.7101 | 0.7231 | 0.7166 | 0.0126 |
+| **SFT** | tr=0.75 | 300 | 0.2920 | 0.0508 | 0.7080 | 0.7300 | 0.7188 | 0.0128 |
 
 ### Analysis
 - **CHAIRi**: SFT step 312 (**0.2852**) achieves the **lowest hallucination rate** among all methods, outperforming Base (0.3025) by **5.7%** and best RiskMask (0.2873) by 0.7%.
@@ -831,10 +846,12 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 150 | 0.9383 | 0.9352 | 0.9292 |
 | **RiskMask** | tr=0.75 | 200 | 0.9391 | 0.9358 | 0.9302 |
 | 🌟**RiskMask** | tr=0.75 | 300 | 0.9397 | 0.9370 | 0.9309 |
-| 🌟**SFT** | tr=0.75 | 50 | 0.9382 | 0.9380 | 0.9293 |
-| **SFT** | tr=0.75 | 100 | 0.9387 | 0.9361 | 0.9297 |
-| **SFT** | tr=0.75 | 150 | 0.9391 | 0.9341 | 0.9299 |
-| **SFT** | tr=0.75 | 200 | 0.9390 | 0.9338 | 0.9298 |
+| **SFT** | tr=0.75 | 50 | 0.9380 | 0.9370 | 0.9291 |
+| **SFT** | tr=0.75 | 100 | 0.9382 | 0.9338 | 0.9289 |
+| **SFT** | tr=0.75 | 150 | 0.9383 | 0.9315 | 0.9289 |
+| **SFT** | tr=0.75 | 200 | 0.9375 | 0.9307 | 0.9280 |
+| **SFT** | tr=0.75 | 250 | 0.9379 | 0.9312 | 0.9285 |
+| **SFT** | tr=0.75 | 300 | 0.9378 | 0.9310 | 0.9284 |
 
 ### Per-Split Accuracy
 
@@ -853,13 +870,12 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 150 | 0.9148 | 0.9366 | 0.9634 |
 | **RiskMask** | tr=0.75 | 200 | 0.9150 | 0.9382 | 0.9642 |
 | **RiskMask** | tr=0.75 | 300 | 0.9152 | 0.9389 | 0.9650 |
-| **SFT** | tr=0.75 | 50 | 0.9140 | 0.9378 | 0.9627 |
-| **SFT** | tr=0.75 | 100 | 0.9156 | 0.9383 | 0.9623 |
-| **SFT** | tr=0.75 | 150 | 0.9169 | 0.9387 | 0.9615 |
-| **SFT** | tr=0.75 | 200 | 0.9165 | 0.9389 | 0.9615 |
-| **SFT** | tr=0.75 | 250 | 0.9152 | 0.9385 | 0.9615 |
-| **SFT** | tr=0.75 | 300 | 0.9159 | 0.9382 | 0.9608 |
-| **SFT** | tr=0.75 | 312 | 0.9156 | 0.9380 | 0.9619 |
+| **SFT** | tr=0.75 | 50 | 0.9137 | 0.9374 | 0.9630 |
+| **SFT** | tr=0.75 | 100 | 0.9158 | 0.9374 | 0.9613 |
+| **SFT** | tr=0.75 | 150 | 0.9159 | 0.9378 | 0.9611 |
+| **SFT** | tr=0.75 | 200 | 0.9150 | 0.9372 | 0.9604 |
+| **SFT** | tr=0.75 | 250 | 0.9158 | 0.9372 | 0.9608 |
+| **SFT** | tr=0.75 | 300 | 0.9154 | 0.9376 | 0.9606 |
 
 ### Analysis
 - **Overall Accuracy**: SFT (0.9382–0.9390) is on par with Base (0.9382) and RKL/RiskMask variants.
@@ -888,13 +904,12 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 150 | 6.0 | 64.2 | 45.1 | 2.8 |
 | **RiskMask** | tr=0.75 | 200 | 6.0 | 64.5 | 45.0 | 3.1 |
 | **RiskMask** | tr=0.75 | 300 | 6.1 | 64.4 | 45.6 | 2.9 |
-| **SFT** | tr=0.75 | 50 | **5.7** | 64.6 | 44.4 | 3.1 |
-| **SFT** | tr=0.75 | 100 | 5.8 | **65.0** | 44.3 | 3.4 |
-| **SFT** | tr=0.75 | 150 | 5.9 | 64.4 | 45.5 | 3.2 |
-| 🌟**SFT** | tr=0.75 | 200 | 6.1 | 64.2 | 45.9 | 3.1 |
-| **SFT** | tr=0.75 | 250 | 6.0 | 64.2 | 46.1 | 3.0 |
-| **SFT** | tr=0.75 | 300 | 5.8 | 64.5 | 45.7 | 3.2 |
-| **SFT** | tr=0.75 | 312 | 5.9 | 64.5 | 46.9 | 3.1 |
+| **SFT** | tr=0.75 | 50 | 5.7 | 64.1 | 45.3 | 3.0 |
+| **SFT** | tr=0.75 | 100 | 8.1 | 64.8 | 45.7 | 3.4 |
+| **SFT** | tr=0.75 | 150 | 5.6 | 64.1 | 44.0 | 3.1 |
+| **SFT** | tr=0.75 | 200 | 5.7 | 64.1 | 44.1 | 3.0 |
+| **SFT** | tr=0.75 | 250 | 6.0 | 64.0 | 46.3 | 2.9 |
+| **SFT** | tr=0.75 | 300 | 5.9 | 63.8 | 45.0 | 3.1 |
 
 ### Discriminative Tasks
 
@@ -913,13 +928,12 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 150 | 85.5 |
 | **RiskMask** | tr=0.75 | 200 | 85.5 |
 | **RiskMask** | tr=0.75 | 300 | 85.5 |
-| **SFT** | tr=0.75 | 50 | 85.3 |
+| **SFT** | tr=0.75 | 50 | 85.4 |
 | **SFT** | tr=0.75 | 100 | 85.2 |
-| **SFT** | tr=0.75 | 150 | 85.3 |
-| **SFT** | tr=0.75 | 200 | 85.4 |
+| **SFT** | tr=0.75 | 150 | 85.4 |
+| **SFT** | tr=0.75 | 200 | 85.3 |
 | **SFT** | tr=0.75 | 250 | 85.3 |
 | **SFT** | tr=0.75 | 300 | 85.4 |
-| **SFT** | tr=0.75 | 312 | 85.3 |
 
 ### Sub-category Accuracy
 
@@ -938,13 +952,12 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 150 | 93.5 | 81.4 | 78.5 | 85.8 | 87.4 | 80.2 |
 | **RiskMask** | tr=0.75 | 200 | 93.5 | 81.5 | 78.5 | 86.1 | 87.2 | 80.1 |
 | **RiskMask** | tr=0.75 | 300 | 93.5 | 81.5 | 78.5 | 86.1 | 87.4 | 80.3 |
-| **SFT** | tr=0.75 | 50 | 92.9 | 81.4 | 78.4 | 86.2 | 87.6 | 80.6 |
-| **SFT** | tr=0.75 | 100 | 93.0 | 81.1 | 78.1 | 85.7 | 87.5 | 80.3 |
-| **SFT** | tr=0.75 | 150 | 93.3 | 81.2 | 78.2 | 85.8 | 87.5 | 80.3 |
-| **SFT** | tr=0.75 | 200 | 93.5 | 81.3 | 78.2 | 85.9 | 87.6 | 80.3 |
-| **SFT** | tr=0.75 | 250 | 93.4 | 81.2 | 78.1 | 85.9 | 87.4 | 80.5 |
-| **SFT** | tr=0.75 | 300 | 93.4 | 81.3 | 78.3 | 85.8 | 87.5 | 80.3 |
-| **SFT** | tr=0.75 | 312 | 93.4 | 81.2 | 78.3 | 85.7 | 87.4 | 80.3 |
+| **SFT** | tr=0.75 | 50 | 93.0 | 81.4 | 78.3 | 86.2 | 87.4 | 80.9 |
+| **SFT** | tr=0.75 | 100 | 93.3 | 81.0 | 78.0 | 85.7 | 87.0 | 80.2 |
+| **SFT** | tr=0.75 | 150 | 93.5 | 81.2 | 78.1 | 85.8 | 87.2 | 80.5 |
+| **SFT** | tr=0.75 | 200 | 93.5 | 81.1 | 78.0 | 85.9 | 87.4 | 80.4 |
+| **SFT** | tr=0.75 | 250 | 93.5 | 81.2 | 78.1 | 85.9 | 87.2 | 80.5 |
+| **SFT** | tr=0.75 | 300 | 93.5 | 81.2 | 78.2 | 85.8 | 87.2 | 80.6 |
 
 ### Analysis
 - **Generative CHAIR**: SFT step 300 (5.8) achieves the **lowest AMBER CHAIR** among later steps, matching best RKL/RiskMask and better than Base (6.0).
@@ -973,13 +986,9 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 150 | 0.6467 |
 | **RiskMask** | tr=0.75 | 200 | 0.6460 |
 | **RiskMask** | tr=0.75 | 300 | 0.6467 |
-| **SFT** | tr=0.75 | 50 | 0.6413 |
-| **SFT** | tr=0.75 | 100 | 0.6413 |
-| **SFT** | tr=0.75 | 150 | 0.6447 |
-| **SFT** | tr=0.75 | 200 | 0.6433 |
-| **SFT** | tr=0.75 | 250 | 0.6447 |
-| **SFT** | tr=0.75 | 300 | 0.6467 |
-| **SFT** | tr=0.75 | 312 | 0.6440 |
+| **SFT** | tr=0.75 | 200 | 0.6420 |
+| **SFT** | tr=0.75 | 250 | 0.6427 |
+| **SFT** | tr=0.75 | 300 | 0.6427 |
 
 ### Analysis
 - SFT (0.6413–0.6467) is **slightly lower than Base** (0.6480) by ~0.2–1.0%, consistent with the expectation that SFT trades off some general vision-language understanding for reduced hallucination.
@@ -1005,13 +1014,9 @@ SFT (tr=0.75, step 156) is a **strong candidate** for reducing object hallucinat
 | **RiskMask** | tr=0.75 | 150 | 0.8708 | 0.8108 | 0.9308 |
 | **RiskMask** | tr=0.75 | 200 | 0.8697 | 0.8102 | 0.9292 |
 | **RiskMask** | tr=0.75 | 300 | 0.8683 | 0.8067 | 0.9300 |
-| **SFT** | tr=0.75 | 50 | 0.8672 | 0.8095 | 0.9250 |
-| **SFT** | tr=0.75 | 100 | 0.8680 | 0.8102 | 0.9258 |
-| **SFT** | tr=0.75 | 150 | 0.8657 | 0.8039 | 0.9275 |
-| **SFT** | tr=0.75 | 200 | 0.8667 | 0.8060 | 0.9275 |
-| **SFT** | tr=0.75 | 250 | 0.8660 | 0.8053 | 0.9267 |
-| **SFT** | tr=0.75 | 300 | 0.8670 | 0.8074 | 0.9267 |
-| **SFT** | tr=0.75 | 312 | 0.8670 | 0.8074 | 0.9267 |
+| **SFT** | tr=0.75 | 200 | 0.8663 | 0.8060 | 0.9267 |
+| **SFT** | tr=0.75 | 250 | 0.8649 | 0.8039 | 0.9258 |
+| **SFT** | tr=0.75 | 300 | 0.8657 | 0.8039 | 0.9275 |
 
 ### Analysis
 - **Overall**: SFT (0.8657–0.8680) is slightly lower than Base (0.8701) by ~0.2–0.5%, within noise.
