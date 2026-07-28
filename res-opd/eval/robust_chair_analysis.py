@@ -249,7 +249,9 @@ def repetition_rate(text):
 
 
 def compute_per_sample(records, mscoco_objects, inverse_synonym_dict,
-                       double_word_dict, hit_max_threshold=750):
+                       double_word_dict, hit_max_threshold=750,
+                       deduplicate_chair_i=False,
+                       gt_source="instances_and_captions"):
     """Compute per-caption CHAIR values and custom unique-object metrics.
 
     Official CHAIR uses every generated object mention for CHAIRi and marks a
@@ -257,11 +259,17 @@ def compute_per_sample(records, mscoco_objects, inverse_synonym_dict,
     hallucinated object.  ObjPrec/ObjRecall/ObjF1 remain the repository's
     category-level metrics and therefore use unique canonical categories.
 
-    Ground-truth objects are the union of instance categories and object words
-    found in the reference captions, matching the official CHAIR protocol.
+    By default, ground-truth objects are the union of instance categories and
+    object words found in the reference captions, matching the official CHAIR
+    protocol. ``gt_source="instances_only"`` disables the caption-derived
+    ground truth. ``deduplicate_chair_i=True`` counts each generated canonical
+    category at most once per caption for the CHAIRi numerator and denominator.
 
     Returns dict keyed by image_id.
     """
+    if gt_source not in {"instances_and_captions", "instances_only"}:
+        raise ValueError(f"Unsupported CHAIR ground-truth source: {gt_source}")
+
     per_sample = {}
     for record in records:
         image_id = record.get("image_id", record.get("sample_id"))
@@ -269,11 +277,12 @@ def compute_per_sample(records, mscoco_objects, inverse_synonym_dict,
             inverse_synonym_dict.get(str(obj).lower(), str(obj).lower())
             for obj in record.get("gt_objects", [])
         }
-        for gt_caption in record.get("gt_captions", []) or []:
-            _, gt_node_words = caption_to_words(
-                gt_caption, mscoco_objects, inverse_synonym_dict, double_word_dict
-            )
-            gt_categories.update(gt_node_words)
+        if gt_source == "instances_and_captions":
+            for gt_caption in record.get("gt_captions", []) or []:
+                _, gt_node_words = caption_to_words(
+                    gt_caption, mscoco_objects, inverse_synonym_dict, double_word_dict
+                )
+                gt_categories.update(gt_node_words)
         generated_text = record["generated_text"]
 
         # Extract objects using official method
@@ -282,8 +291,11 @@ def compute_per_sample(records, mscoco_objects, inverse_synonym_dict,
         )
 
         # Official CHAIRi counts all mentions, including repeated categories.
-        mention_hallucinated = sum(obj not in gt_categories for obj in node_words)
-        mention_correct = len(node_words) - mention_hallucinated
+        # The deduplicated diagnostic counts each canonical category once per
+        # caption while preserving caption-level CHAIRs.
+        chair_objects = set(node_words) if deduplicate_chair_i else node_words
+        mention_hallucinated = sum(obj not in gt_categories for obj in chair_objects)
+        mention_correct = len(chair_objects) - mention_hallucinated
         has_hallucination = int(mention_hallucinated > 0)
 
         # The repository's object precision/recall/F1 use unique categories.
@@ -315,7 +327,7 @@ def compute_per_sample(records, mscoco_objects, inverse_synonym_dict,
         token_len = record.get("generated_ids_len", 0)
 
         per_sample[image_id] = {
-            "chair_object_mentions": len(node_words),
+            "chair_object_mentions": len(chair_objects),
             "chair_hallucinated_mentions": mention_hallucinated,
             "chair_correct_mentions": mention_correct,
             "chair_has_hallucination": has_hallucination,

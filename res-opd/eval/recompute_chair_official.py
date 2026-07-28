@@ -65,6 +65,24 @@ def parse_args():
         type=Path,
         default=Path("res-opd/eval_results/chair_paper_selection_resolved.json"),
     )
+    parser.add_argument(
+        "--chair-i-mode",
+        choices=("mentions", "unique"),
+        default="mentions",
+        help=(
+            "CHAIRi counting unit: all generated object mentions (official) or "
+            "unique canonical object categories per caption."
+        ),
+    )
+    parser.add_argument(
+        "--gt-source",
+        choices=("instances_and_captions", "instances_only"),
+        default="instances_and_captions",
+        help=(
+            "Ground-truth source: official union of instance annotations and "
+            "reference captions, or instance annotations only."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -270,7 +288,14 @@ def is_chair_rows(rows):
     )
 
 
-def score(path, mscoco_objects, inverse_synonym_dict, double_word_dict):
+def score(
+    path,
+    mscoco_objects,
+    inverse_synonym_dict,
+    double_word_dict,
+    chair_i_mode="mentions",
+    gt_source="instances_and_captions",
+):
     rows = read_jsonl(path)
     if not is_chair_rows(rows):
         return None
@@ -324,9 +349,30 @@ def score(path, mscoco_objects, inverse_synonym_dict, double_word_dict):
         )
 
     per_sample = compute_per_sample(
-        records, mscoco_objects, inverse_synonym_dict, double_word_dict
+        records,
+        mscoco_objects,
+        inverse_synonym_dict,
+        double_word_dict,
+        deduplicate_chair_i=(chair_i_mode == "unique"),
+        gt_source=gt_source,
     )
     metrics = aggregate_from_arrays(per_sample, list(per_sample))
+    if chair_i_mode == "mentions" and gt_source == "instances_and_captions":
+        metric_schema = "official_chair_caption_and_mention_v1"
+    elif chair_i_mode == "unique" and gt_source == "instances_and_captions":
+        metric_schema = "chair_caption_and_unique_category_v1"
+    elif chair_i_mode == "unique" and gt_source == "instances_only":
+        metric_schema = "chair_instance_only_caption_and_unique_category_v1"
+    else:
+        metric_schema = "chair_instance_only_caption_and_mention_v1"
+    metrics.update(
+        {
+            "metric_schema": metric_schema,
+            "chair_i_mode": chair_i_mode,
+            "chair_s_mode": "caption_has_hallucinated_object",
+            "gt_source": gt_source,
+        }
+    )
     legacy_metrics_path = path.parent / "chair_metrics.json"
     legacy_metrics = {}
     if legacy_metrics_path.exists():
@@ -386,7 +432,14 @@ def main():
     failures = []
     for path in inputs:
         try:
-            metrics = score(path, mscoco_objects, inverse_synonym_dict, double_word_dict)
+            metrics = score(
+                path,
+                mscoco_objects,
+                inverse_synonym_dict,
+                double_word_dict,
+                chair_i_mode=args.chair_i_mode,
+                gt_source=args.gt_source,
+            )
         except Exception as exc:
             failures.append({"path": str(path), "error": str(exc)})
             print(f"ERROR {path}: {exc}", file=sys.stderr)
@@ -409,7 +462,12 @@ def main():
         )
 
     payload = {
-        "metric_schema": "official_chair_caption_and_mention_v1",
+        "metric_schema": (
+            summaries[0]["metric_schema"] if summaries else "unknown"
+        ),
+        "chair_i_mode": args.chair_i_mode,
+        "chair_s_mode": "caption_has_hallucinated_object",
+        "gt_source": args.gt_source,
         "num_scored_runs": len(summaries),
         "num_non_chair_jsonl_skipped": len(skipped),
         "num_failed_chair_runs": len(failures),
