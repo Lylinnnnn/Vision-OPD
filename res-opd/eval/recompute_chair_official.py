@@ -159,10 +159,15 @@ def resolve_selection_manifest(roots, manifest_path, output_path, dry_run=False)
         path_include = [str(x).lower() for x in spec.get("result_path_include", [])]
         path_exclude = [str(x).lower() for x in spec.get("result_path_exclude", [])]
         path_regex = spec.get("result_path_regex")
+        metrics_path_exact = spec.get("metrics_path_exact")
+        if metrics_path_exact:
+            metrics_path_exact = str(Path(metrics_path_exact).expanduser().resolve())
         matches = []
         for candidate in candidates:
             name = candidate["experiment_name"].lower()
             result_path = candidate["result_dir"].lower()
+            if metrics_path_exact and candidate["metrics_path"] != metrics_path_exact:
+                continue
             if any(token not in name for token in include):
                 continue
             if any(token in name for token in exclude):
