@@ -128,7 +128,8 @@
       "expected": {"CHAIRi": 0.2150, "CHAIRs": 0.0697, "ObjF1": 0.6971},
       "experiment_name_include": ["2b", "frozen-rkl"],
       "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sft", "fixed"],
-      "result_path_regex": "sr0(?:p|[._-])25.*tr1(?:p0|[._-]0)?.*global_step[_-]?[0-9]+"
+      "experiment_name_regex": "sr0(?:p|[._-])25.*tr1(?:p0|[._-]0)?.*global_step[_-]?[0-9]+",
+      "result_path_regex": "sr0(?:p|[._-])25"
     },
     {
       "label": "2b/native_base/sr05",
@@ -136,7 +137,8 @@
       "expected": {"CHAIRi": 0.2320, "CHAIRs": 0.0730, "ObjF1": 0.7210},
       "experiment_name_include": ["2b", "frozen-rkl"],
       "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sft", "fixed"],
-      "result_path_regex": "sr0(?:p|[._-])5(?:0)?.*tr1(?:p0|[._-]0)?.*global_step[_-]?[0-9]+"
+      "experiment_name_regex": "sr0(?:p|[._-])5(?:0)?.*tr1(?:p0|[._-]0)?.*global_step[_-]?[0-9]+",
+      "result_path_regex": "sr0(?:p|[._-])5(?:0)?"
     },
     {
       "label": "2b/native_base/sr075",
@@ -144,7 +146,8 @@
       "expected": {"CHAIRi": 0.2262, "CHAIRs": 0.0708, "ObjF1": 0.7289},
       "experiment_name_include": ["2b", "frozen-rkl"],
       "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sft", "fixed"],
-      "result_path_regex": "sr0(?:p|[._-])75.*tr1(?:p0|[._-]0)?.*global_step[_-]?[0-9]+"
+      "experiment_name_regex": "sr0(?:p|[._-])75.*tr1(?:p0|[._-]0)?.*global_step[_-]?[0-9]+",
+      "result_path_regex": "sr0(?:p|[._-])75"
     },
     {
       "label": "2b/riskmask/tr025/p30/s50",
