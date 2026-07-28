@@ -1,0 +1,26 @@
+{
+  "description": "Legacy CHAIR anchors copied from tab:main_results in res-opd/paper/sections/experiments.tex. They are used only to resolve the exact existing caption files before official-definition rescoring.",
+  "metric_tolerance": 0.000051,
+  "rows": [
+    {"label": "main/2b/base", "expected": {"CHAIRi": 0.2293, "CHAIRs": 0.0878, "ObjF1": 0.7342}, "experiment_name_include": ["2b"], "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"]},
+    {"label": "main/2b/frozen_rkl", "expected": {"CHAIRi": 0.2287, "CHAIRs": 0.0857, "ObjF1": 0.7210}, "experiment_name_include": ["2b", "frozen-rkl"], "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft"]},
+    {"label": "main/2b/lowres_sft", "expected": {"CHAIRi": 0.2519, "CHAIRs": 0.0592, "ObjF1": 0.7300}, "experiment_name_include": ["2b", "sft"]},
+    {"label": "main/2b/res_opsd", "expected": {"CHAIRi": 0.2155, "CHAIRs": 0.0548, "ObjF1": 0.7309}, "experiment_name_include": ["2b", "riskmask", "p30"], "experiment_name_exclude": ["entropy"]},
+    {"label": "main/2b/randommask", "expected": {"CHAIRi": 0.2259, "CHAIRs": 0.0748, "ObjF1": 0.7271}, "experiment_name_include": ["2b", "randommask"]},
+    {"label": "main/2b/entropymask", "expected": {"CHAIRi": 0.2254, "CHAIRs": 0.0585, "ObjF1": 0.7302}, "experiment_name_include": ["2b", "entropymask"]},
+
+    {"label": "main/4b/base", "expected": {"CHAIRi": 0.2823, "CHAIRs": 0.0584, "ObjF1": 0.7257}, "experiment_name_include": ["4b"], "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"]},
+    {"label": "main/4b/frozen_rkl", "expected": {"CHAIRi": 0.2818, "CHAIRs": 0.0677, "ObjF1": 0.7217}, "experiment_name_include": ["4b", "frozen-rkl"], "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft", "fixed"]},
+    {"label": "main/4b/lowres_sft", "expected": {"CHAIRi": 0.2838, "CHAIRs": 0.0560, "ObjF1": 0.7235}, "experiment_name_include": ["4b", "sft"]},
+    {"label": "main/4b/res_opsd", "expected": {"CHAIRi": 0.2743, "CHAIRs": 0.0582, "ObjF1": 0.7323}, "experiment_name_include": ["4b", "riskmask", "p30"], "experiment_name_exclude": ["entropy"]},
+    {"label": "main/4b/randommask", "expected": {"CHAIRi": 0.2753, "CHAIRs": 0.0840, "ObjF1": 0.7296}, "experiment_name_include": ["4b", "randommask"]},
+    {"label": "main/4b/entropymask", "expected": {"CHAIRi": 0.2776, "CHAIRs": 0.0723, "ObjF1": 0.7210}, "experiment_name_include": ["4b", "entropymask"]},
+
+    {"label": "main/8b/base", "expected": {"CHAIRi": 0.3025, "CHAIRs": 0.0597, "ObjF1": 0.7178}, "experiment_name_include": ["8b"], "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"]},
+    {"label": "main/8b/frozen_rkl", "expected": {"CHAIRi": 0.2894, "CHAIRs": 0.0702, "ObjF1": 0.7258}, "experiment_name_include": ["8b", "frozen-rkl"], "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft", "fixed"]},
+    {"label": "main/8b/lowres_sft", "expected": {"CHAIRi": 0.2899, "CHAIRs": 0.0510, "ObjF1": 0.7166}, "experiment_name_include": ["8b", "sft"]},
+    {"label": "main/8b/res_opsd", "expected": {"CHAIRi": 0.2873, "CHAIRs": 0.0555, "ObjF1": 0.7272}, "experiment_name_include": ["8b", "riskmask", "p30"], "experiment_name_exclude": ["entropy"]},
+    {"label": "main/8b/randommask", "expected": {"CHAIRi": 0.2913, "CHAIRs": 0.0691, "ObjF1": 0.7207}, "experiment_name_include": ["8b", "randommask"]},
+    {"label": "main/8b/entropymask", "expected": {"CHAIRi": 0.2877, "CHAIRs": 0.0601, "ObjF1": 0.7236}, "experiment_name_include": ["8b", "entropymask"]}
+  ]
+}

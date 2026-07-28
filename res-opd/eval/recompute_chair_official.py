@@ -9,6 +9,7 @@ default.
 
 import argparse
 import csv
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -50,6 +51,19 @@ def parse_args():
         type=Path,
         default=Path("res-opd/eval_results/chair_official_recompute_summary.csv"),
     )
+    parser.add_argument(
+        "--selection-manifest",
+        type=Path,
+        help=(
+            "Resolve paper rows against legacy chair_metrics.json files before scoring. "
+            "No captions are rescored unless every row resolves unambiguously."
+        ),
+    )
+    parser.add_argument(
+        "--resolved-selection-json",
+        type=Path,
+        default=Path("res-opd/eval_results/chair_paper_selection_resolved.json"),
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -66,6 +80,147 @@ def discover_inputs(roots):
         else:
             raise FileNotFoundError(root)
     return sorted(paths)
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def experiment_name_for_metrics(metrics_path):
+    result_dir = metrics_path.parent
+    if result_dir.parent != result_dir:
+        return result_dir.parent.name
+    return result_dir.name
+
+
+def discover_legacy_metric_candidates(roots):
+    candidates = []
+    seen = set()
+    for root in roots:
+        search_paths = []
+        if root.is_dir():
+            search_paths = root.rglob("chair_metrics.json")
+        elif root.is_file() and root.name == "chair_metrics.json":
+            search_paths = [root]
+        elif not root.exists():
+            raise FileNotFoundError(root)
+        for metrics_path in search_paths:
+            metrics_path = metrics_path.resolve()
+            if metrics_path in seen:
+                continue
+            seen.add(metrics_path)
+            eval_results = metrics_path.parent / "eval_results.jsonl"
+            if not eval_results.is_file():
+                continue
+            try:
+                metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise RuntimeError(f"Could not read {metrics_path}: {exc}") from exc
+            candidates.append(
+                {
+                    "metrics_path": str(metrics_path),
+                    "eval_results": str(eval_results.resolve()),
+                    "result_dir": str(metrics_path.parent),
+                    "experiment_name": experiment_name_for_metrics(metrics_path),
+                    "metrics": metrics,
+                }
+            )
+    return candidates
+
+
+def metric_matches(actual, expected, tolerance):
+    return (
+        isinstance(actual, (int, float))
+        and abs(float(actual) - float(expected)) <= tolerance
+    )
+
+
+def resolve_selection_manifest(roots, manifest_path, output_path, dry_run=False):
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    rows = manifest.get("rows")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError(f"Selection manifest has no rows: {manifest_path}")
+    candidates = discover_legacy_metric_candidates(roots)
+    tolerance = float(manifest.get("metric_tolerance", 0.000051))
+    resolved_rows = []
+    unresolved_rows = []
+
+    for spec in rows:
+        label = spec["label"]
+        expected = spec.get("expected", {})
+        include = [str(x).lower() for x in spec.get("experiment_name_include", [])]
+        exclude = [str(x).lower() for x in spec.get("experiment_name_exclude", [])]
+        matches = []
+        for candidate in candidates:
+            name = candidate["experiment_name"].lower()
+            if any(token not in name for token in include):
+                continue
+            if any(token in name for token in exclude):
+                continue
+            metrics = candidate["metrics"]
+            if not all(
+                metric_matches(metrics.get(key), value, tolerance)
+                for key, value in expected.items()
+            ):
+                continue
+            matches.append(candidate)
+
+        # Duplicate directory layouts are harmless only when they contain the
+        # exact same generated captions. Different hashes remain ambiguous.
+        by_hash = {}
+        for candidate in matches:
+            content_hash = file_sha256(Path(candidate["eval_results"]))
+            candidate = {**candidate, "eval_results_sha256": content_hash}
+            by_hash.setdefault(content_hash, []).append(candidate)
+        if len(by_hash) == 1:
+            aliases = next(iter(by_hash.values()))
+            selected = sorted(aliases, key=lambda item: (len(item["eval_results"]), item["eval_results"]))[0]
+            resolved_rows.append(
+                {
+                    "label": label,
+                    "expected": expected,
+                    "selected": selected,
+                    "equivalent_aliases": aliases,
+                }
+            )
+        else:
+            unresolved_rows.append(
+                {
+                    "label": label,
+                    "expected": expected,
+                    "reason": "no_match" if not matches else "multiple_distinct_caption_files",
+                    "candidates": [item for values in by_hash.values() for item in values],
+                }
+            )
+
+    payload = {
+        "source_manifest": str(manifest_path),
+        "metric_tolerance": tolerance,
+        "legacy_metric_candidates_scanned": len(candidates),
+        "resolved_count": len(resolved_rows),
+        "unresolved_count": len(unresolved_rows),
+        "resolved_rows": resolved_rows,
+        "unresolved_rows": unresolved_rows,
+    }
+    # The selection audit is always written, including in dry-run mode; it is
+    # the artifact the user reviews before any legacy paper result is replaced.
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+    print(f"Wrote selection audit: {output_path}")
+    if unresolved_rows:
+        labels = ", ".join(row["label"] for row in unresolved_rows)
+        raise RuntimeError(
+            f"Paper CHAIR selection is ambiguous/incomplete for {len(unresolved_rows)} rows: "
+            f"{labels}. Inspect {output_path}; no captions were rescored."
+        )
+    selected_paths = {
+        Path(row["selected"]["eval_results"]).resolve() for row in resolved_rows
+    }
+    return sorted(selected_paths)
 
 
 def read_jsonl(path):
@@ -188,7 +343,15 @@ def score(path, mscoco_objects, inverse_synonym_dict, double_word_dict):
 
 def main():
     args = parse_args()
-    inputs = discover_inputs(args.roots)
+    if args.selection_manifest:
+        inputs = resolve_selection_manifest(
+            args.roots,
+            args.selection_manifest,
+            args.resolved_selection_json,
+            args.dry_run,
+        )
+    else:
+        inputs = discover_inputs(args.roots)
     if not inputs:
         raise FileNotFoundError("No eval_results.jsonl files found.")
 
