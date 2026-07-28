@@ -196,8 +196,14 @@ def main():
     double_word_dict = build_double_word_dict()
     summaries = []
     skipped = []
+    failures = []
     for path in inputs:
-        metrics = score(path, mscoco_objects, inverse_synonym_dict, double_word_dict)
+        try:
+            metrics = score(path, mscoco_objects, inverse_synonym_dict, double_word_dict)
+        except Exception as exc:
+            failures.append({"path": str(path), "error": str(exc)})
+            print(f"ERROR {path}: {exc}", file=sys.stderr)
+            continue
         if metrics is None:
             skipped.append(str(path))
             continue
@@ -210,7 +216,7 @@ def main():
             output.write_text(json.dumps(metrics, ensure_ascii=False, indent=2) + "\n")
         summaries.append({"result_dir": str(path.parent), "metrics_path": str(output), **metrics})
 
-    if not summaries:
+    if not summaries and not failures:
         raise RuntimeError(
             f"Found {len(inputs)} JSONL files but none had the CHAIR schema; skipped={len(skipped)}"
         )
@@ -219,7 +225,9 @@ def main():
         "metric_schema": "official_chair_caption_and_mention_v1",
         "num_scored_runs": len(summaries),
         "num_non_chair_jsonl_skipped": len(skipped),
+        "num_failed_chair_runs": len(failures),
         "skipped": skipped,
+        "failures": failures,
         "runs": summaries,
     }
     if not args.dry_run:
@@ -240,6 +248,9 @@ def main():
         print(f"Wrote summary: {args.summary_json}")
         print(f"Wrote summary: {args.summary_csv}")
     print(f"Scored {len(summaries)} CHAIR runs; skipped {len(skipped)} non-CHAIR JSONL files.")
+    if failures:
+        print(f"Failed {len(failures)} CHAIR runs; inspect failures in {args.summary_json}.", file=sys.stderr)
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":
