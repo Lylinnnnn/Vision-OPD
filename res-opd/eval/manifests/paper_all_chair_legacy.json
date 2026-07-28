@@ -127,7 +127,7 @@
       "paper_refs": ["tab:lowres_controls"],
       "expected": {"CHAIRi": 0.2150, "CHAIRs": 0.0697, "ObjF1": 0.6971},
       "experiment_name_include": ["2b"],
-      "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"],
+      "experiment_name_exclude": ["res-opd", "resopd", "sft"],
       "result_path_regex": "sr0(?:p|[._-])25"
     },
     {
@@ -135,7 +135,7 @@
       "paper_refs": ["tab:lowres_controls"],
       "expected": {"CHAIRi": 0.2320, "CHAIRs": 0.0730, "ObjF1": 0.7210},
       "experiment_name_include": ["2b"],
-      "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"],
+      "experiment_name_exclude": ["res-opd", "resopd", "sft"],
       "result_path_regex": "sr0(?:p|[._-])5(?:0)?"
     },
     {
@@ -143,7 +143,7 @@
       "paper_refs": ["tab:lowres_controls"],
       "expected": {"CHAIRi": 0.2262, "CHAIRs": 0.0708, "ObjF1": 0.7289},
       "experiment_name_include": ["2b"],
-      "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"],
+      "experiment_name_exclude": ["res-opd", "resopd", "sft"],
       "result_path_regex": "sr0(?:p|[._-])75"
     },
     {
@@ -267,8 +267,9 @@
       "label": "2b/fixed4b/tr075/s156",
       "paper_refs": ["tab:fixed_teacher"],
       "expected": {"CHAIRi": 0.2595, "CHAIRs": 0.0821, "ObjF1": 0.7281},
-      "experiment_name_include": ["2b", "fixed4b"],
-      "result_path_regex": "tr0(?:p|[._-])75"
+      "experiment_name_include": ["2b", "fixed-rkl"],
+      "experiment_name_regex": "teacher[-_]?qwen3-?vl[-_]?4b[-_]?instruct",
+      "result_path_regex": "tr0(?:p|[._-])75.*global_step[_-]?156"
     },
     {
       "label": "2b/frozen_rkl/tr10/s50",
@@ -282,8 +283,9 @@
       "label": "2b/fixed4b/tr10/s50",
       "paper_refs": ["tab:fixed_teacher", "tab:appendix_fixed_teacher_tr10"],
       "expected": {"CHAIRi": 0.2486, "CHAIRs": 0.0545, "ObjF1": 0.7337},
-      "experiment_name_include": ["2b", "fixed4b"],
-      "result_path_regex": "tr1(?:p0|[._-]0)?"
+      "experiment_name_include": ["2b", "fixed-rkl"],
+      "experiment_name_regex": "teacher[-_]?qwen3-?vl[-_]?4b[-_]?instruct",
+      "result_path_regex": "tr1(?:p0|[._-]0)?.*global_step[_-]?50"
     },
     {
       "label": "4b/frozen_rkl/tr075/fixed_control_s100",
@@ -297,15 +299,17 @@
       "label": "4b/fixed8b/tr075/s150",
       "paper_refs": ["tab:fixed_teacher"],
       "expected": {"CHAIRi": 0.2800, "CHAIRs": 0.0521, "ObjF1": 0.7270},
-      "experiment_name_include": ["4b", "fixed8b"],
-      "result_path_regex": "tr0(?:p|[._-])75"
+      "experiment_name_include": ["4b", "fixed-rkl"],
+      "experiment_name_regex": "teacher[-_]?qwen3-?vl[-_]?8b[-_]?instruct",
+      "result_path_regex": "tr0(?:p|[._-])75.*global_step[_-]?150"
     },
     {
       "label": "4b/fixed8b/tr10/s50",
       "paper_refs": ["tab:fixed_teacher", "tab:appendix_fixed_teacher_tr10"],
       "expected": {"CHAIRi": 0.2759, "CHAIRs": 0.0771, "ObjF1": 0.7272},
-      "experiment_name_include": ["4b", "fixed8b"],
-      "result_path_regex": "tr1(?:p0|[._-]0)?"
+      "experiment_name_include": ["4b", "fixed-rkl"],
+      "experiment_name_regex": "teacher[-_]?qwen3-?vl[-_]?8b[-_]?instruct",
+      "result_path_regex": "tr1(?:p0|[._-]0)?.*global_step[_-]?50"
     },
 
     {
