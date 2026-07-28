@@ -1,0 +1,358 @@
+{
+  "description": "All unique generated-caption runs used by active CHAIR-bearing tables in experiments.tex, analysis.tex, and appendix.tex. Legacy metrics identify the exact existing JSONL only; all reported CHAIR values must come from official-definition rescoring.",
+  "metric_tolerance": 0.000051,
+  "rows": [
+    {
+      "label": "2b/base/original",
+      "paper_refs": ["tab:main_results", "tab:fixed_teacher", "tab:appendix_fixed_teacher_tr10"],
+      "expected": {"CHAIRi": 0.2293, "CHAIRs": 0.0878, "ObjF1": 0.7342},
+      "experiment_name_include": ["2b"],
+      "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"]
+    },
+    {
+      "label": "2b/frozen_rkl/tr075/main_s150",
+      "paper_refs": ["tab:main_results"],
+      "expected": {"CHAIRi": 0.2287, "CHAIRs": 0.0857, "ObjF1": 0.7210},
+      "experiment_name_include": ["2b", "frozen-rkl"],
+      "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft", "fixed"]
+    },
+    {
+      "label": "2b/lowres_sft/tr075/main_s50",
+      "paper_refs": ["tab:main_results"],
+      "expected": {"CHAIRi": 0.2519, "CHAIRs": 0.0592, "ObjF1": 0.7300},
+      "experiment_name_include": ["2b", "sft"]
+    },
+    {
+      "label": "2b/riskmask/tr075/p30/main_s50",
+      "paper_refs": ["tab:main_results", "tab:lowres_controls"],
+      "expected": {"CHAIRi": 0.2155, "CHAIRs": 0.0548, "ObjF1": 0.7309},
+      "experiment_name_include": ["2b", "riskmask", "p30"],
+      "experiment_name_exclude": ["entropy"]
+    },
+    {
+      "label": "2b/randommask/tr075/main_s100",
+      "paper_refs": ["tab:main_results"],
+      "expected": {"CHAIRi": 0.2259, "CHAIRs": 0.0748, "ObjF1": 0.7271},
+      "experiment_name_include": ["2b", "randommask"]
+    },
+    {
+      "label": "2b/entropymask/tr075/main_s100",
+      "paper_refs": ["tab:main_results"],
+      "expected": {"CHAIRi": 0.2254, "CHAIRs": 0.0585, "ObjF1": 0.7302},
+      "experiment_name_include": ["2b", "entropymask"]
+    },
+
+    {
+      "label": "4b/base/original",
+      "paper_refs": ["tab:main_results", "tab:fixed_teacher", "tab:appendix_tr05", "tab:appendix_fixed_teacher_tr10"],
+      "expected": {"CHAIRi": 0.2823, "CHAIRs": 0.0584, "ObjF1": 0.7257},
+      "experiment_name_include": ["4b"],
+      "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"]
+    },
+    {
+      "label": "4b/frozen_rkl/tr075/main_s50",
+      "paper_refs": ["tab:main_results"],
+      "expected": {"CHAIRi": 0.2818, "CHAIRs": 0.0677, "ObjF1": 0.7217},
+      "experiment_name_include": ["4b", "frozen-rkl"],
+      "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft", "fixed"]
+    },
+    {
+      "label": "4b/lowres_sft/tr075/main_s50",
+      "paper_refs": ["tab:main_results"],
+      "expected": {"CHAIRi": 0.2838, "CHAIRs": 0.0560, "ObjF1": 0.7235},
+      "experiment_name_include": ["4b", "sft"]
+    },
+    {
+      "label": "4b/riskmask/tr075/p30/main_s156",
+      "paper_refs": ["tab:main_results"],
+      "expected": {"CHAIRi": 0.2743, "CHAIRs": 0.0582, "ObjF1": 0.7323},
+      "experiment_name_include": ["4b", "riskmask", "p30"],
+      "experiment_name_exclude": ["entropy"]
+    },
+    {
+      "label": "4b/randommask/tr075/main_s100",
+      "paper_refs": ["tab:main_results"],
+      "expected": {"CHAIRi": 0.2753, "CHAIRs": 0.0840, "ObjF1": 0.7296},
+      "experiment_name_include": ["4b", "randommask"]
+    },
+    {
+      "label": "4b/entropymask/tr075/main_s100",
+      "paper_refs": ["tab:main_results"],
+      "expected": {"CHAIRi": 0.2776, "CHAIRs": 0.0723, "ObjF1": 0.7210},
+      "experiment_name_include": ["4b", "entropymask"]
+    },
+
+    {
+      "label": "8b/base/original",
+      "paper_refs": ["tab:main_results", "tab:teacher_evidence", "tab:analysis_object_decomp", "tab:appendix_tr10_8b", "tab:appendix_tr05"],
+      "expected": {"CHAIRi": 0.3025, "CHAIRs": 0.0597, "ObjF1": 0.7178},
+      "experiment_name_include": ["8b"],
+      "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"]
+    },
+    {
+      "label": "8b/frozen_rkl/tr075/main_s312",
+      "paper_refs": ["tab:main_results", "tab:analysis_object_decomp"],
+      "expected": {"CHAIRi": 0.2894, "CHAIRs": 0.0702, "ObjF1": 0.7258},
+      "experiment_name_include": ["8b", "frozen-rkl"],
+      "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft", "fixed"]
+    },
+    {
+      "label": "8b/lowres_sft/tr075/main_s250",
+      "paper_refs": ["tab:main_results"],
+      "expected": {"CHAIRi": 0.2899, "CHAIRs": 0.0510, "ObjF1": 0.7166},
+      "experiment_name_include": ["8b", "sft"]
+    },
+    {
+      "label": "8b/riskmask/tr075/p30/main_s100",
+      "paper_refs": ["tab:main_results", "tab:lowres_controls", "tab:top_rho", "tab:analysis_object_decomp"],
+      "expected": {"CHAIRi": 0.2873, "CHAIRs": 0.0555, "ObjF1": 0.7272},
+      "experiment_name_include": ["8b", "riskmask", "p30"],
+      "experiment_name_exclude": ["entropy"]
+    },
+    {
+      "label": "8b/randommask/tr075/main_s200",
+      "paper_refs": ["tab:main_results"],
+      "expected": {"CHAIRi": 0.2913, "CHAIRs": 0.0691, "ObjF1": 0.7207},
+      "experiment_name_include": ["8b", "randommask"]
+    },
+    {
+      "label": "8b/entropymask/tr075/main_s100",
+      "paper_refs": ["tab:main_results"],
+      "expected": {"CHAIRi": 0.2877, "CHAIRs": 0.0601, "ObjF1": 0.7236},
+      "experiment_name_include": ["8b", "entropymask"]
+    },
+
+    {
+      "label": "2b/native_base/sr025",
+      "paper_refs": ["tab:lowres_controls"],
+      "expected": {"CHAIRi": 0.2150, "CHAIRs": 0.0697, "ObjF1": 0.6971},
+      "experiment_name_include": ["2b"],
+      "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"],
+      "result_path_regex": "sr0(?:p|[._-])25"
+    },
+    {
+      "label": "2b/native_base/sr05",
+      "paper_refs": ["tab:lowres_controls"],
+      "expected": {"CHAIRi": 0.2320, "CHAIRs": 0.0730, "ObjF1": 0.7210},
+      "experiment_name_include": ["2b"],
+      "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"],
+      "result_path_regex": "sr0(?:p|[._-])5(?:0)?"
+    },
+    {
+      "label": "2b/native_base/sr075",
+      "paper_refs": ["tab:lowres_controls"],
+      "expected": {"CHAIRi": 0.2262, "CHAIRs": 0.0708, "ObjF1": 0.7289},
+      "experiment_name_include": ["2b"],
+      "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"],
+      "result_path_regex": "sr0(?:p|[._-])75"
+    },
+    {
+      "label": "2b/riskmask/tr025/p30/s50",
+      "paper_refs": ["tab:lowres_controls"],
+      "expected": {"CHAIRi": 0.2039, "CHAIRs": 0.0488, "ObjF1": 0.7042},
+      "experiment_name_include": ["2b", "riskmask", "p30"],
+      "experiment_name_exclude": ["entropy"],
+      "result_path_regex": "tr0(?:p|[._-])25"
+    },
+    {
+      "label": "2b/riskmask/tr05/p30/s50",
+      "paper_refs": ["tab:lowres_controls"],
+      "expected": {"CHAIRi": 0.2103, "CHAIRs": 0.1152, "ObjF1": 0.7231},
+      "experiment_name_include": ["2b", "riskmask", "p30"],
+      "experiment_name_exclude": ["entropy"],
+      "result_path_regex": "tr0(?:p|[._-])5(?:0)?"
+    },
+    {
+      "label": "8b/native_base/sr025",
+      "paper_refs": ["tab:lowres_controls"],
+      "expected": {"CHAIRi": 0.2804, "CHAIRs": 0.0522, "ObjF1": 0.7000},
+      "experiment_name_include": ["8b"],
+      "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"],
+      "result_path_regex": "sr0(?:p|[._-])25"
+    },
+    {
+      "label": "8b/native_base/sr05",
+      "paper_refs": ["tab:lowres_controls"],
+      "expected": {"CHAIRi": 0.2925, "CHAIRs": 0.0585, "ObjF1": 0.7140},
+      "experiment_name_include": ["8b"],
+      "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"],
+      "result_path_regex": "sr0(?:p|[._-])5(?:0)?"
+    },
+    {
+      "label": "8b/native_base/sr075",
+      "paper_refs": ["tab:lowres_controls"],
+      "expected": {"CHAIRi": 0.2948, "CHAIRs": 0.0690, "ObjF1": 0.7185},
+      "experiment_name_include": ["8b"],
+      "experiment_name_exclude": ["res-opd", "resopd", "sft", "global_step"],
+      "result_path_regex": "sr0(?:p|[._-])75"
+    },
+    {
+      "label": "8b/riskmask/tr025/p30/s200",
+      "paper_refs": ["tab:lowres_controls"],
+      "expected": {"CHAIRi": 0.2606, "CHAIRs": 0.0677, "ObjF1": 0.7148},
+      "experiment_name_include": ["8b", "riskmask", "p30"],
+      "experiment_name_exclude": ["entropy"],
+      "result_path_regex": "tr0(?:p|[._-])25"
+    },
+    {
+      "label": "8b/riskmask/tr05/p30/s50",
+      "paper_refs": ["tab:lowres_controls", "tab:teacher_evidence", "tab:appendix_tr05"],
+      "expected": {"CHAIRi": 0.2798, "CHAIRs": 0.0550, "ObjF1": 0.7249},
+      "experiment_name_include": ["8b", "riskmask", "p30"],
+      "experiment_name_exclude": ["entropy"],
+      "result_path_regex": "tr0(?:p|[._-])5(?:0)?"
+    },
+
+    {
+      "label": "8b/riskmask/tr025/p30/teacher_evidence_s50",
+      "paper_refs": ["tab:teacher_evidence"],
+      "expected": {"CHAIRi": 0.2681, "CHAIRs": 0.0481, "ObjF1": 0.7203},
+      "experiment_name_include": ["8b", "riskmask", "p30"],
+      "experiment_name_exclude": ["entropy"],
+      "result_path_regex": "tr0(?:p|[._-])25"
+    },
+    {
+      "label": "8b/riskmask/tr075/p30/teacher_evidence_s50",
+      "paper_refs": ["tab:teacher_evidence"],
+      "expected": {"CHAIRi": 0.2887, "CHAIRs": 0.0599, "ObjF1": 0.7270},
+      "experiment_name_include": ["8b", "riskmask", "p30"],
+      "experiment_name_exclude": ["entropy"],
+      "result_path_regex": "tr0(?:p|[._-])75"
+    },
+    {
+      "label": "8b/riskmask/tr10/p30/s50",
+      "paper_refs": ["tab:teacher_evidence", "tab:appendix_tr10_8b"],
+      "expected": {"CHAIRi": 0.2904, "CHAIRs": 0.0716, "ObjF1": 0.7243},
+      "experiment_name_include": ["8b", "riskmask", "p30"],
+      "experiment_name_exclude": ["entropy"],
+      "result_path_regex": "tr1(?:p0|[._-]0)?"
+    },
+
+    {
+      "label": "8b/frozen_rkl/tr075/toprho_s100",
+      "paper_refs": ["tab:top_rho"],
+      "expected": {"CHAIRi": 0.2974, "CHAIRs": 0.0528, "ObjF1": 0.7198},
+      "experiment_name_include": ["8b", "frozen-rkl"],
+      "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft", "fixed"],
+      "result_path_regex": "tr0(?:p|[._-])75"
+    },
+    {
+      "label": "8b/riskmask/tr075/p10/s100",
+      "paper_refs": ["tab:top_rho"],
+      "expected": {"CHAIRi": 0.2955, "CHAIRs": 0.0500, "ObjF1": 0.7190},
+      "experiment_name_include": ["8b", "riskmask", "p10"]
+    },
+    {
+      "label": "8b/riskmask/tr075/p20/s100",
+      "paper_refs": ["tab:top_rho"],
+      "expected": {"CHAIRi": 0.2882, "CHAIRs": 0.0523, "ObjF1": 0.7248},
+      "experiment_name_include": ["8b", "riskmask", "p20"]
+    },
+    {
+      "label": "8b/riskmask/tr075/p40/s100",
+      "paper_refs": ["tab:top_rho"],
+      "expected": {"CHAIRi": 0.2985, "CHAIRs": 0.0509, "ObjF1": 0.7166},
+      "experiment_name_include": ["8b", "riskmask", "p40"]
+    },
+
+    {
+      "label": "2b/frozen_rkl/tr075/fixed_control_s100",
+      "paper_refs": ["tab:fixed_teacher"],
+      "expected": {"CHAIRi": 0.2217, "CHAIRs": 0.0811, "ObjF1": 0.7328},
+      "experiment_name_include": ["2b", "frozen-rkl"],
+      "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft", "fixed"],
+      "result_path_regex": "tr0(?:p|[._-])75"
+    },
+    {
+      "label": "2b/fixed4b/tr075/s156",
+      "paper_refs": ["tab:fixed_teacher"],
+      "expected": {"CHAIRi": 0.2595, "CHAIRs": 0.0821, "ObjF1": 0.7281},
+      "experiment_name_include": ["2b", "fixed4b"],
+      "result_path_regex": "tr0(?:p|[._-])75"
+    },
+    {
+      "label": "2b/frozen_rkl/tr10/s50",
+      "paper_refs": ["tab:fixed_teacher", "tab:appendix_fixed_teacher_tr10"],
+      "expected": {"CHAIRi": 0.2327, "CHAIRs": 0.0818, "ObjF1": 0.7317},
+      "experiment_name_include": ["2b", "frozen-rkl"],
+      "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft", "fixed"],
+      "result_path_regex": "tr1(?:p0|[._-]0)?"
+    },
+    {
+      "label": "2b/fixed4b/tr10/s50",
+      "paper_refs": ["tab:fixed_teacher", "tab:appendix_fixed_teacher_tr10"],
+      "expected": {"CHAIRi": 0.2486, "CHAIRs": 0.0545, "ObjF1": 0.7337},
+      "experiment_name_include": ["2b", "fixed4b"],
+      "result_path_regex": "tr1(?:p0|[._-]0)?"
+    },
+    {
+      "label": "4b/frozen_rkl/tr075/fixed_control_s100",
+      "paper_refs": ["tab:fixed_teacher"],
+      "expected": {"CHAIRi": 0.2734, "CHAIRs": 0.0723, "ObjF1": 0.7276},
+      "experiment_name_include": ["4b", "frozen-rkl"],
+      "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft", "fixed"],
+      "result_path_regex": "tr0(?:p|[._-])75"
+    },
+    {
+      "label": "4b/fixed8b/tr075/s150",
+      "paper_refs": ["tab:fixed_teacher"],
+      "expected": {"CHAIRi": 0.2800, "CHAIRs": 0.0521, "ObjF1": 0.7270},
+      "experiment_name_include": ["4b", "fixed8b"],
+      "result_path_regex": "tr0(?:p|[._-])75"
+    },
+    {
+      "label": "4b/fixed8b/tr10/s50",
+      "paper_refs": ["tab:fixed_teacher", "tab:appendix_fixed_teacher_tr10"],
+      "expected": {"CHAIRi": 0.2759, "CHAIRs": 0.0771, "ObjF1": 0.7272},
+      "experiment_name_include": ["4b", "fixed8b"],
+      "result_path_regex": "tr1(?:p0|[._-]0)?"
+    },
+
+    {
+      "label": "8b/frozen_rkl/tr10/s50",
+      "paper_refs": ["tab:appendix_tr10_8b"],
+      "expected": {"CHAIRi": 0.2950, "CHAIRs": 0.0490, "ObjF1": 0.7189},
+      "experiment_name_include": ["8b", "frozen-rkl"],
+      "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft", "fixed"],
+      "result_path_regex": "tr1(?:p0|[._-]0)?"
+    },
+    {
+      "label": "4b/frozen_rkl/tr05/s50",
+      "paper_refs": ["tab:appendix_tr05"],
+      "expected": {"CHAIRi": 0.2784, "CHAIRs": 0.0497, "ObjF1": 0.7241},
+      "experiment_name_include": ["4b", "frozen-rkl"],
+      "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft", "fixed"],
+      "result_path_regex": "tr0(?:p|[._-])5(?:0)?"
+    },
+    {
+      "label": "4b/riskmask/tr05/p30/s50",
+      "paper_refs": ["tab:appendix_tr05"],
+      "expected": {"CHAIRi": 0.2656, "CHAIRs": 0.0756, "ObjF1": 0.7252},
+      "experiment_name_include": ["4b", "riskmask", "p30"],
+      "experiment_name_exclude": ["entropy"],
+      "result_path_regex": "tr0(?:p|[._-])5(?:0)?"
+    },
+    {
+      "label": "8b/frozen_rkl/tr05/s50",
+      "paper_refs": ["tab:appendix_tr05"],
+      "expected": {"CHAIRi": 0.2846, "CHAIRs": 0.0493, "ObjF1": 0.7246},
+      "experiment_name_include": ["8b", "frozen-rkl"],
+      "experiment_name_exclude": ["riskmask", "randommask", "entropymask", "sw", "sft", "fixed"],
+      "result_path_regex": "tr0(?:p|[._-])5(?:0)?"
+    },
+    {
+      "label": "8b/randommask/tr05/p30/s50",
+      "paper_refs": ["tab:appendix_tr05"],
+      "expected": {"CHAIRi": 0.2854, "CHAIRs": 0.0801, "ObjF1": 0.7224},
+      "experiment_name_include": ["8b", "randommask"],
+      "result_path_regex": "tr0(?:p|[._-])5(?:0)?"
+    },
+    {
+      "label": "8b/entropymask/tr05/p30/s50",
+      "paper_refs": ["tab:appendix_tr05"],
+      "expected": {"CHAIRi": 0.2813, "CHAIRs": 0.0887, "ObjF1": 0.7200},
+      "experiment_name_include": ["8b", "entropymask"],
+      "result_path_regex": "tr0(?:p|[._-])5(?:0)?"
+    }
+  ]
+}

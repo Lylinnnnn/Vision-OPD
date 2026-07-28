@@ -11,6 +11,7 @@ import argparse
 import csv
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -154,12 +155,25 @@ def resolve_selection_manifest(roots, manifest_path, output_path, dry_run=False)
         expected = spec.get("expected", {})
         include = [str(x).lower() for x in spec.get("experiment_name_include", [])]
         exclude = [str(x).lower() for x in spec.get("experiment_name_exclude", [])]
+        name_regex = spec.get("experiment_name_regex")
+        path_include = [str(x).lower() for x in spec.get("result_path_include", [])]
+        path_exclude = [str(x).lower() for x in spec.get("result_path_exclude", [])]
+        path_regex = spec.get("result_path_regex")
         matches = []
         for candidate in candidates:
             name = candidate["experiment_name"].lower()
+            result_path = candidate["result_dir"].lower()
             if any(token not in name for token in include):
                 continue
             if any(token in name for token in exclude):
+                continue
+            if name_regex and not re.search(name_regex, name, flags=re.IGNORECASE):
+                continue
+            if any(token not in result_path for token in path_include):
+                continue
+            if any(token in result_path for token in path_exclude):
+                continue
+            if path_regex and not re.search(path_regex, result_path, flags=re.IGNORECASE):
                 continue
             metrics = candidate["metrics"]
             if not all(
@@ -182,6 +196,8 @@ def resolve_selection_manifest(roots, manifest_path, output_path, dry_run=False)
             resolved_rows.append(
                 {
                     "label": label,
+                    "paper_refs": spec.get("paper_refs", []),
+                    "notes": spec.get("notes"),
                     "expected": expected,
                     "selected": selected,
                     "equivalent_aliases": aliases,
@@ -191,6 +207,8 @@ def resolve_selection_manifest(roots, manifest_path, output_path, dry_run=False)
             unresolved_rows.append(
                 {
                     "label": label,
+                    "paper_refs": spec.get("paper_refs", []),
+                    "notes": spec.get("notes"),
                     "expected": expected,
                     "reason": "no_match" if not matches else "multiple_distinct_caption_files",
                     "candidates": [item for values in by_hash.values() for item in values],
@@ -220,7 +238,7 @@ def resolve_selection_manifest(roots, manifest_path, output_path, dry_run=False)
     selected_paths = {
         Path(row["selected"]["eval_results"]).resolve() for row in resolved_rows
     }
-    return sorted(selected_paths)
+    return sorted(selected_paths), resolved_rows
 
 
 def read_jsonl(path):
@@ -343,8 +361,9 @@ def score(path, mscoco_objects, inverse_synonym_dict, double_word_dict):
 
 def main():
     args = parse_args()
+    selection_rows = []
     if args.selection_manifest:
-        inputs = resolve_selection_manifest(
+        inputs, selection_rows = resolve_selection_manifest(
             args.roots,
             args.selection_manifest,
             args.resolved_selection_json,
@@ -393,6 +412,34 @@ def main():
         "failures": failures,
         "runs": summaries,
     }
+    if selection_rows:
+        summary_by_source = {
+            str(Path(run["source_eval_results"]).resolve()): run for run in summaries
+        }
+        paper_rows = []
+        metric_keys = [
+            "CHAIRi", "CHAIRs", "ObjPrec", "ObjRecall", "ObjF1", "RepRate",
+            "total_captions", "hallucinated_captions", "total_object_mentions",
+            "total_hallucinated_mentions", "total_correct_mentions", "total_mentioned",
+            "total_hallucinated", "total_correct",
+        ]
+        for row in selection_rows:
+            selected_path = str(Path(row["selected"]["eval_results"]).resolve())
+            official_run = summary_by_source.get(selected_path)
+            paper_rows.append(
+                {
+                    "label": row["label"],
+                    "paper_refs": row.get("paper_refs", []),
+                    "notes": row.get("notes"),
+                    "expected_legacy": row["expected"],
+                    "selected_eval_results": selected_path,
+                    "official": (
+                        {key: official_run.get(key) for key in metric_keys}
+                        if official_run else None
+                    ),
+                }
+            )
+        payload["paper_rows"] = paper_rows
     if not args.dry_run:
         args.summary_json.parent.mkdir(parents=True, exist_ok=True)
         args.summary_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
