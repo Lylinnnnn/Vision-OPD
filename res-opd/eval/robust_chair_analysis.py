@@ -206,7 +206,11 @@ def caption_to_words(caption, mscoco_objects, inverse_synonym_dict, double_word_
         node_words = list of canonical COCO category names
     """
     # Standard preprocessing: tokenize and singularize
-    raw_words = caption.lower().split()
+    # ``str.split`` leaves punctuation attached (for example ``"dog,"``),
+    # which silently drops valid object mentions.  The official evaluator uses
+    # nltk.word_tokenize; this dependency-free tokenization has the same
+    # relevant behavior for COCO object words and compounds.
+    raw_words = re.findall(r"[a-z0-9]+(?:'[a-z]+)?", caption.lower())
     words = [try_singularize(w) for w in raw_words]
 
     # Replace double words
@@ -246,14 +250,30 @@ def repetition_rate(text):
 
 def compute_per_sample(records, mscoco_objects, inverse_synonym_dict,
                        double_word_dict, hit_max_threshold=750):
-    """Compute per-sample CHAIR arrays using official extraction logic.
+    """Compute per-caption CHAIR values and custom unique-object metrics.
+
+    Official CHAIR uses every generated object mention for CHAIRi and marks a
+    whole generated caption positive for CHAIRs if it contains at least one
+    hallucinated object.  ObjPrec/ObjRecall/ObjF1 remain the repository's
+    category-level metrics and therefore use unique canonical categories.
+
+    Ground-truth objects are the union of instance categories and object words
+    found in the reference captions, matching the official CHAIR protocol.
 
     Returns dict keyed by image_id.
     """
     per_sample = {}
     for record in records:
         image_id = record.get("image_id", record.get("sample_id"))
-        gt_categories = set(record.get("gt_objects", []))
+        gt_categories = {
+            inverse_synonym_dict.get(str(obj).lower(), str(obj).lower())
+            for obj in record.get("gt_objects", [])
+        }
+        for gt_caption in record.get("gt_captions", []) or []:
+            _, gt_node_words = caption_to_words(
+                gt_caption, mscoco_objects, inverse_synonym_dict, double_word_dict
+            )
+            gt_categories.update(gt_node_words)
         generated_text = record["generated_text"]
 
         # Extract objects using official method
@@ -261,7 +281,12 @@ def compute_per_sample(records, mscoco_objects, inverse_synonym_dict,
             generated_text, mscoco_objects, inverse_synonym_dict, double_word_dict
         )
 
-        # Deduplicate: CHAIR counts unique mentioned categories per sample
+        # Official CHAIRi counts all mentions, including repeated categories.
+        mention_hallucinated = sum(obj not in gt_categories for obj in node_words)
+        mention_correct = len(node_words) - mention_hallucinated
+        has_hallucination = int(mention_hallucinated > 0)
+
+        # The repository's object precision/recall/F1 use unique categories.
         mentioned_set = set(node_words)
         hallucinated = 0
         correct = 0
@@ -271,7 +296,8 @@ def compute_per_sample(records, mscoco_objects, inverse_synonym_dict,
             else:
                 hallucinated += 1
 
-        # Sentence-level analysis (CHAIRs)
+        # Retain the old clause/sentence statistic only as an explicitly named
+        # diagnostic.  It is not official CHAIRs.
         sentences = re.split(r"[.!?\n]+", generated_text)
         n_sent = 0
         n_halluc_sent = 0
@@ -289,6 +315,10 @@ def compute_per_sample(records, mscoco_objects, inverse_synonym_dict,
         token_len = record.get("generated_ids_len", 0)
 
         per_sample[image_id] = {
+            "chair_object_mentions": len(node_words),
+            "chair_hallucinated_mentions": mention_hallucinated,
+            "chair_correct_mentions": mention_correct,
+            "chair_has_hallucination": has_hallucination,
             "mentioned": len(mentioned_set),
             "hallucinated": hallucinated,
             "correct": correct,
@@ -312,6 +342,11 @@ def aggregate_from_arrays(sample_dicts, indices):
     total_gt = 0
     total_sent = 0
     total_halluc_sent = 0
+    total_object_mentions = 0
+    total_hallucinated_mentions = 0
+    total_correct_mentions = 0
+    total_captions = 0
+    hallucinated_captions = 0
     rep_rates = []
 
     for idx in indices:
@@ -322,10 +357,17 @@ def aggregate_from_arrays(sample_dicts, indices):
         total_gt += sample["gt_count"]
         total_sent += sample["n_sent"]
         total_halluc_sent += sample["n_halluc_sent"]
+        total_object_mentions += sample["chair_object_mentions"]
+        total_hallucinated_mentions += sample["chair_hallucinated_mentions"]
+        total_correct_mentions += sample["chair_correct_mentions"]
+        total_captions += 1
+        hallucinated_captions += sample["chair_has_hallucination"]
         rep_rates.append(sample["rep_rate"])
 
-    chair_i = total_hallucinated / max(total_mentioned, 1)
-    chair_s = total_halluc_sent / max(total_sent, 1)
+    chair_i = total_hallucinated_mentions / max(total_object_mentions, 1)
+    chair_s = hallucinated_captions / max(total_captions, 1)
+    unique_category_chair_i_legacy = total_hallucinated / max(total_mentioned, 1)
+    sentence_chair_s_proxy = total_halluc_sent / max(total_sent, 1)
     obj_prec = total_correct / max(total_mentioned, 1)
     obj_recall = total_correct / max(total_gt, 1)
     obj_f1 = (2 * obj_prec * obj_recall / (obj_prec + obj_recall)
@@ -339,6 +381,15 @@ def aggregate_from_arrays(sample_dicts, indices):
         "ObjRecall": obj_recall,
         "ObjF1": obj_f1,
         "RepRate": mean_rep_rate,
+        "CHAIRi_unique_category_legacy": unique_category_chair_i_legacy,
+        "CHAIRs_sentence_proxy_legacy": sentence_chair_s_proxy,
+        "metric_schema": "official_chair_caption_and_mention_v1",
+        "total_captions": total_captions,
+        "hallucinated_captions": hallucinated_captions,
+        "total_object_mentions": total_object_mentions,
+        "total_hallucinated_mentions": total_hallucinated_mentions,
+        "total_correct_mentions": total_correct_mentions,
+        # Backward-compatible unique-category totals used by ObjPrec/Recall/F1.
         "total_mentioned": total_mentioned,
         "total_hallucinated": total_hallucinated,
         "total_correct": total_correct,

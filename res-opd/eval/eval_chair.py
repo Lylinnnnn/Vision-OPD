@@ -624,6 +624,7 @@ def main():
             "image_id": r["image_id"],
             "generated_text": extract_final_response_text(r["generated_caption"]),
             "gt_objects": set(r["gt_objects"]),
+            "gt_captions": r.get("gt_captions", []),
         })
 
     sample_dicts = compute_per_sample(

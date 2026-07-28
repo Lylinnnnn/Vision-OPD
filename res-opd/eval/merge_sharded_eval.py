@@ -200,6 +200,7 @@ def merge_chair(args, shard_dirs):
             "image_id": row["image_id"],
             "generated_text": chair_final_text(row["generated_caption"]),
             "gt_objects": set(row.get("gt_objects", [])),
+            "gt_captions": row.get("gt_captions", []),
         }
         for row in scored_rows
     ]
