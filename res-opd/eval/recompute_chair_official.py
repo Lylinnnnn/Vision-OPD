@@ -33,24 +33,26 @@ def parse_args():
     )
     parser.add_argument(
         "roots",
-        nargs="+",
+        nargs="*",
         type=Path,
         help="Files or directories to scan recursively for eval_results.jsonl.",
     )
     parser.add_argument(
         "--metrics-name",
-        default="chair_metrics_official.json",
-        help="Per-run output filename (default preserves legacy chair_metrics.json).",
+        help=(
+            "Per-run output filename. Defaults to chair_metrics_official.json for "
+            "official GT or chair_metrics_instance_only_official.json for instance-only GT."
+        ),
     )
     parser.add_argument(
         "--summary-json",
         type=Path,
-        default=Path("res-opd/eval_results/chair_official_recompute_summary.json"),
+        default=None,
     )
     parser.add_argument(
         "--summary-csv",
         type=Path,
-        default=Path("res-opd/eval_results/chair_official_recompute_summary.csv"),
+        default=None,
     )
     parser.add_argument(
         "--selection-manifest",
@@ -58,6 +60,14 @@ def parse_args():
         help=(
             "Resolve paper rows against legacy chair_metrics.json files before scoring. "
             "No captions are rescored unless every row resolves unambiguously."
+        ),
+    )
+    parser.add_argument(
+        "--selection-summary",
+        type=Path,
+        help=(
+            "Reuse the exact selected_eval_results paths and labels from an earlier "
+            "paper CHAIR summary, avoiding experiment-name and checkpoint rematching."
         ),
     )
     parser.add_argument(
@@ -84,7 +94,38 @@ def parse_args():
         ),
     )
     parser.add_argument("--dry-run", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.selection_manifest and args.selection_summary:
+        parser.error("--selection-manifest and --selection-summary are mutually exclusive")
+    if not args.roots and not args.selection_summary:
+        parser.error("provide at least one root unless --selection-summary is used")
+
+    output_names = {
+        ("mentions", "instances_and_captions"): (
+            "chair_metrics_official.json",
+            "chair_official_recompute_summary",
+        ),
+        ("unique", "instances_and_captions"): (
+            "chair_metrics_official_dedup.json",
+            "chair_official_dedup_recompute_summary",
+        ),
+        ("unique", "instances_only"): (
+            "chair_metrics_instance_only_dedup.json",
+            "chair_instance_only_dedup_recompute_summary",
+        ),
+        ("mentions", "instances_only"): (
+            "chair_metrics_instance_only_official.json",
+            "chair_instance_only_official_recompute_summary",
+        ),
+    }
+    default_metrics_name, summary_stem = output_names[(args.chair_i_mode, args.gt_source)]
+    if args.metrics_name is None:
+        args.metrics_name = default_metrics_name
+    if args.summary_json is None:
+        args.summary_json = Path(f"res-opd/eval_results/{summary_stem}.json")
+    if args.summary_csv is None:
+        args.summary_csv = Path(f"res-opd/eval_results/{summary_stem}.csv")
+    return args
 
 
 def discover_inputs(roots):
@@ -264,6 +305,54 @@ def resolve_selection_manifest(roots, manifest_path, output_path, dry_run=False)
     return sorted(selected_paths), resolved_rows
 
 
+def load_selection_summary(summary_path):
+    """Load exact paper rows from a previously verified CHAIR summary."""
+    payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    paper_rows = payload.get("paper_rows")
+    if not isinstance(paper_rows, list) or not paper_rows:
+        raise ValueError(f"Selection summary has no paper_rows: {summary_path}")
+
+    selected_paths = set()
+    selection_rows = []
+    missing = []
+    for row in paper_rows:
+        selected = row.get("selected_eval_results")
+        if not selected:
+            raise ValueError(
+                f"Selection summary row {row.get('label')!r} has no selected_eval_results"
+            )
+        selected_path = Path(selected).expanduser().resolve()
+        if not selected_path.is_file():
+            missing.append(str(selected_path))
+            continue
+        selected_paths.add(selected_path)
+        selection_rows.append(
+            {
+                "label": row["label"],
+                "paper_refs": row.get("paper_refs", []),
+                "notes": row.get("notes"),
+                "expected": row.get("expected_legacy", {}),
+                "selected": {
+                    "eval_results": str(selected_path),
+                    "eval_results_sha256": file_sha256(selected_path),
+                },
+            }
+        )
+
+    if missing:
+        preview = "\n".join(f"  - {path}" for path in missing[:10])
+        raise FileNotFoundError(
+            f"Selection summary references {len(missing)} missing eval_results files:\n{preview}"
+        )
+    if len(selected_paths) != len(selection_rows):
+        raise ValueError(
+            f"Selection summary contains duplicate eval_results paths: "
+            f"rows={len(selection_rows)}, unique={len(selected_paths)}"
+        )
+    print(f"Loaded {len(selection_rows)} exact paper rows from {summary_path}")
+    return sorted(selected_paths), selection_rows
+
+
 def read_jsonl(path):
     rows = []
     with path.open(encoding="utf-8") as handle:
@@ -340,7 +429,7 @@ def score(
     missing_reference_captions = [
         rec["image_id"] for rec in records if not rec["gt_captions"]
     ]
-    if missing_reference_captions:
+    if gt_source == "instances_and_captions" and missing_reference_captions:
         preview = ", ".join(str(x) for x in missing_reference_captions[:10])
         raise RuntimeError(
             f"Official CHAIR requires reference captions, but {path} has "
@@ -391,8 +480,16 @@ def score(
             "duplicate_image_rows_ignored": duplicates,
             "final_answer_valid_rate": len(records) / len(rows) if rows else 0.0,
             "source_eval_results": str(path),
-            "ground_truth_protocol": "instance_categories_union_reference_caption_objects",
-            "chair_i_protocol": "all_generated_object_mentions",
+            "ground_truth_protocol": (
+                "instance_categories_only"
+                if gt_source == "instances_only"
+                else "instance_categories_union_reference_caption_objects"
+            ),
+            "chair_i_protocol": (
+                "unique_generated_object_categories_per_caption"
+                if chair_i_mode == "unique"
+                else "all_generated_object_mentions"
+            ),
             "chair_s_protocol": "captions_with_any_hallucinated_object",
             "previous_metrics_path": str(legacy_metrics_path) if legacy_metrics else None,
             "previous_CHAIRi": previous_chair_i,
@@ -413,7 +510,9 @@ def score(
 def main():
     args = parse_args()
     selection_rows = []
-    if args.selection_manifest:
+    if args.selection_summary:
+        inputs, selection_rows = load_selection_summary(args.selection_summary)
+    elif args.selection_manifest:
         inputs, selection_rows = resolve_selection_manifest(
             args.roots,
             args.selection_manifest,
