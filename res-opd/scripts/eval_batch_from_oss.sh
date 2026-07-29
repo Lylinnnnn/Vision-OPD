@@ -132,6 +132,8 @@ CHAIR_PARALLEL_WORKERS="${CHAIR_PARALLEL_WORKERS:-8}"
 CHAIR_MAX_SAMPLES="${CHAIR_MAX_SAMPLES:-0}"
 CHAIR_SAVE_LOGPROBS="${CHAIR_SAVE_LOGPROBS:-False}"
 CHAIR_TOP_LOGPROBS="${CHAIR_TOP_LOGPROBS:-5}"
+CHAIR_PROMPT="${CHAIR_PROMPT:-}"
+EVAL_OUTPUT_SUFFIX="${EVAL_OUTPUT_SUFFIX:-}"
 POPE_MAX_NEW_TOKENS_WAS_SET="${POPE_MAX_NEW_TOKENS+x}"
 POPE_MAX_NEW_TOKENS="${POPE_MAX_NEW_TOKENS:-$EVAL_MAX_TOKENS}"
 POPE_PARALLEL_WORKERS="${POPE_PARALLEL_WORKERS:-64}"
@@ -248,6 +250,8 @@ while [[ $# -gt 0 ]]; do
         --chair-max-samples) CHAIR_MAX_SAMPLES="$2"; shift 2 ;;
         --chair-save-logprobs) CHAIR_SAVE_LOGPROBS="$2"; shift 2 ;;
         --chair-top-logprobs) CHAIR_TOP_LOGPROBS="$2"; shift 2 ;;
+        --chair-prompt) CHAIR_PROMPT="$2"; shift 2 ;;
+        --eval-output-suffix) EVAL_OUTPUT_SUFFIX="$2"; shift 2 ;;
         --pope-max-new-tokens) POPE_MAX_NEW_TOKENS="$2"; POPE_MAX_NEW_TOKENS_WAS_SET=arg; shift 2 ;;
         --pope-parallel-workers) POPE_PARALLEL_WORKERS="$2"; shift 2 ;;
         --pope-max-samples) POPE_MAX_SAMPLES="$2"; shift 2 ;;
@@ -761,12 +765,24 @@ eval_results_exist() {
     local result_dir="$1"
     local ok=0
     if has_eval_task "$EVAL_MODE" "chair"; then
-        if ! ls "${result_dir}/"*/chair_metrics.json 2>/dev/null | grep -q .; then
-            ok=1
+        if [[ -n "$EVAL_OUTPUT_SUFFIX" ]]; then
+            if ! ls "${result_dir}/"*/"${EVAL_OUTPUT_SUFFIX}"/chair_metrics.json 2>/dev/null | grep -q .; then
+                ok=1
+            fi
+        else
+            if ! ls "${result_dir}/"*/chair_metrics.json 2>/dev/null | grep -q .; then
+                ok=1
+            fi
         fi
         if [[ "$EVAL_OPD_TRACE" == "True" || "$EVAL_OPD_TRACE" == "true" || "$EVAL_OPD_TRACE" == "1" ]]; then
-            if ! ls "${result_dir}/"*/opd_eval_trace_summary.json 2>/dev/null | grep -q .; then
-                ok=1
+            if [[ -n "$EVAL_OUTPUT_SUFFIX" ]]; then
+                if ! ls "${result_dir}/"*/"${EVAL_OUTPUT_SUFFIX}"/opd_eval_trace_summary.json 2>/dev/null | grep -q .; then
+                    ok=1
+                fi
+            else
+                if ! ls "${result_dir}/"*/opd_eval_trace_summary.json 2>/dev/null | grep -q .; then
+                    ok=1
+                fi
             fi
         fi
     fi
@@ -856,6 +872,8 @@ echo " Eval mode: ${EVAL_MODE}"
 echo " Eval backend: ${EVAL_BACKEND}"
 echo " Enable thinking: ${VISION_ENABLE_THINKING:-<auto/off>}"
 echo " Max tokens: chair=${CHAIR_MAX_NEW_TOKENS}, pope=${POPE_MAX_NEW_TOKENS}, vision=${VISION_MAX_TOKENS}, amber_gen=${AMBER_MAX_NEW_TOKENS_GENERATIVE}, amber_disc=${AMBER_MAX_NEW_TOKENS_DISCRIMINATIVE}"
+echo " CHAIR prompt: ${CHAIR_PROMPT:-<default detailed prompt>}"
+echo " Eval output suffix: ${EVAL_OUTPUT_SUFFIX:-<none>}"
 if [[ "$EVAL_BACKEND" == "sharded" ]]; then
     echo " Sharded eval: shards=${EVAL_SHARD_COUNT}, gpu_list=${GPU_LIST}, keep_shards=${SHARDED_EVAL_KEEP_SHARDS}"
 fi
@@ -985,6 +1003,8 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
             CHAIR_MAX_SAMPLES="$CHAIR_MAX_SAMPLES"
             CHAIR_SAVE_LOGPROBS="$CHAIR_SAVE_LOGPROBS"
             CHAIR_TOP_LOGPROBS="$CHAIR_TOP_LOGPROBS"
+            CHAIR_PROMPT="$CHAIR_PROMPT"
+            EVAL_OUTPUT_SUFFIX="$EVAL_OUTPUT_SUFFIX"
             POPE_MAX_NEW_TOKENS="$POPE_MAX_NEW_TOKENS"
             POPE_PARALLEL_WORKERS="$POPE_PARALLEL_WORKERS"
             POPE_MAX_SAMPLES="$POPE_MAX_SAMPLES"
@@ -1051,6 +1071,8 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         CHAIR_MAX_SAMPLES="$CHAIR_MAX_SAMPLES" \
         CHAIR_SAVE_LOGPROBS="$CHAIR_SAVE_LOGPROBS" \
         CHAIR_TOP_LOGPROBS="$CHAIR_TOP_LOGPROBS" \
+        CHAIR_PROMPT="$CHAIR_PROMPT" \
+        EVAL_OUTPUT_SUFFIX="$EVAL_OUTPUT_SUFFIX" \
         POPE_MAX_NEW_TOKENS="$POPE_MAX_NEW_TOKENS" \
         POPE_PARALLEL_WORKERS="$POPE_PARALLEL_WORKERS" \
         POPE_MAX_SAMPLES="$POPE_MAX_SAMPLES" \
