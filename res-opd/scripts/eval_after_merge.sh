@@ -55,6 +55,7 @@ STUDENT_PX="${2:-${STUDENT_PX:-}}"
 VERSION_TAG="${3:-latest}"
 RESULT_VERSION_TAG="${RESULT_VERSION_TAG:-}"
 EVAL_OUTPUT_DIR="${EVAL_OUTPUT_DIR:-}"
+EVAL_OUTPUT_SUFFIX="${EVAL_OUTPUT_SUFFIX:-}"
 EVAL_SHARD_COUNT="${EVAL_SHARD_COUNT:-1}"
 EVAL_SHARD_INDEX="${EVAL_SHARD_INDEX:-0}"
 EVAL_BACKEND="${EVAL_BACKEND:-single}"
@@ -139,6 +140,7 @@ CHAIR_PARALLEL_WORKERS="${CHAIR_PARALLEL_WORKERS:-8}"
 CHAIR_MAX_SAMPLES="${CHAIR_MAX_SAMPLES:-0}"
 CHAIR_SAVE_LOGPROBS="${CHAIR_SAVE_LOGPROBS:-False}"
 CHAIR_TOP_LOGPROBS="${CHAIR_TOP_LOGPROBS:-5}"
+CHAIR_PROMPT="${CHAIR_PROMPT:-}"
 EVAL_OPD_TRACE="${EVAL_OPD_TRACE:-False}"
 EVAL_OPD_TRACE_TOPK="${EVAL_OPD_TRACE_TOPK:-50}"
 EVAL_OPD_TRACE_ENTROPY="${EVAL_OPD_TRACE_ENTROPY:-True}"
@@ -729,6 +731,12 @@ else
 fi
 if [[ -n "$EVAL_OUTPUT_DIR" ]]; then
     OUTPUT_DIR="$EVAL_OUTPUT_DIR"
+elif [[ -n "$EVAL_OUTPUT_SUFFIX" ]]; then
+    if [[ ! "$EVAL_OUTPUT_SUFFIX" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+        echo "Error: EVAL_OUTPUT_SUFFIX must be a single safe path component. Got: ${EVAL_OUTPUT_SUFFIX}" >&2
+        exit 1
+    fi
+    OUTPUT_DIR="${OUTPUT_DIR}/${EVAL_OUTPUT_SUFFIX}"
 fi
 
 if has_eval_task "$EVAL_MODE" "chair" && [ ! -f "$TEST_JSON" ]; then
@@ -750,6 +758,7 @@ if has_eval_task "$EVAL_MODE" "chair"; then
     echo "CHAIR data:  $TEST_JSON"
     echo "CHAIR max tokens/workers: ${CHAIR_MAX_NEW_TOKENS}/${CHAIR_PARALLEL_WORKERS}"
     echo "CHAIR logprobs: ${CHAIR_SAVE_LOGPROBS} (top=${CHAIR_TOP_LOGPROBS})"
+    echo "CHAIR prompt: ${CHAIR_PROMPT:-<default detailed prompt>}"
     echo "OPD eval trace: ${EVAL_OPD_TRACE} (topk=${EVAL_OPD_TRACE_TOPK}, entropy=${EVAL_OPD_TRACE_ENTROPY})"
 fi
 if has_eval_task "$EVAL_MODE" "pope"; then
@@ -860,6 +869,9 @@ if has_eval_task "$EVAL_MODE" "chair"; then
         --parallel-workers "$CHAIR_PARALLEL_WORKERS"
         --max-samples "$CHAIR_MAX_SAMPLES"
     )
+    if [[ -n "$CHAIR_PROMPT" ]]; then
+        chair_extra_args+=(--prompt "$CHAIR_PROMPT")
+    fi
     if [[ "$CHAIR_SAVE_LOGPROBS" == "True" || "$CHAIR_SAVE_LOGPROBS" == "true" || "$CHAIR_SAVE_LOGPROBS" == "1" ]]; then
         chair_extra_args+=(--save-logprobs --top-logprobs "$CHAIR_TOP_LOGPROBS")
     fi

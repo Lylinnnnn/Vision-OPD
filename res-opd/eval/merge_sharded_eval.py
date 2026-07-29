@@ -162,6 +162,17 @@ def merge_chair(args, shard_dirs):
     )
     if not rows:
         raise RuntimeError("CHAIR merge found zero rows across all shards.")
+    prompts = {
+        str(row["eval_prompt"])
+        for row in rows
+        if row.get("eval_prompt") is not None
+    }
+    missing_prompt_rows = sum(row.get("eval_prompt") is None for row in rows)
+    if len(prompts) > 1 or (prompts and missing_prompt_rows):
+        raise RuntimeError(
+            "CHAIR merge found mixed prompt metadata: "
+            f"prompts={sorted(prompts)!r}, missing_rows={missing_prompt_rows}."
+        )
     final_path = args.final_output_dir / "eval_results.jsonl"
     write_jsonl(final_path, rows)
 
@@ -221,6 +232,7 @@ def merge_chair(args, shard_dirs):
             "strict_final_answer": strict_final_answer,
             "merged_from_shards": True,
             "shard_count": len(shard_dirs),
+            "eval_prompt": next(iter(prompts)) if prompts else None,
         }
     )
     with open(args.final_output_dir / "chair_metrics.json", "w", encoding="utf-8") as f:

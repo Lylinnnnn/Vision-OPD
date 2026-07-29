@@ -147,6 +147,11 @@ def parse_args():
     parser.add_argument("--model-name", default="Res-OPD", help="Model name for API mode")
     parser.add_argument("--test-json", required=True, help="Path to test.json from prepare_data.py")
     parser.add_argument("--output-dir", default="./eval_results", help="Output directory")
+    parser.add_argument(
+        "--prompt",
+        default=PROMPT_TEXT,
+        help="Caption prompt. The exact text is stored with every generation and in the metrics.",
+    )
     parser.add_argument("--student-px", type=int, default=0,
                         help="Legacy metadata only; original-ratio eval ignores this value")
     parser.add_argument("--target-px", type=int, default=448,
@@ -490,6 +495,25 @@ def main():
     # --- Checkpoint / resume ---
     eval_results_path = os.path.join(args.output_dir, "eval_results.jsonl")
     completed = load_existing_results(eval_results_path)
+    explicit_existing_prompts = {
+        str(record["eval_prompt"])
+        for record in completed.values()
+        if record.get("eval_prompt") is not None
+    }
+    missing_existing_prompt = sum(
+        record.get("eval_prompt") is None for record in completed.values()
+    )
+    if explicit_existing_prompts - {args.prompt}:
+        raise RuntimeError(
+            "Refusing to resume CHAIR generations produced with a different prompt: "
+            f"existing={sorted(explicit_existing_prompts)!r}, requested={args.prompt!r}. "
+            "Use a separate output directory or EVAL_OUTPUT_SUFFIX."
+        )
+    if args.prompt != PROMPT_TEXT and missing_existing_prompt:
+        raise RuntimeError(
+            "Refusing to mix a custom CHAIR prompt with legacy generations whose prompt "
+            "was not recorded. Use a separate output directory or EVAL_OUTPUT_SUFFIX."
+        )
     todo_samples = [s for s in test_samples if s["image_id"] not in completed]
 
     print(f"Evaluating {len(test_samples)} test samples "
@@ -527,7 +551,7 @@ def main():
                     return None
                 caption = generate_one_api(
                     thread_local, args.api_base, args.model_name,
-                    image_path, PROMPT_TEXT, args.max_new_tokens,
+                    image_path, args.prompt, args.max_new_tokens,
                     args.student_px, args.target_px, args.max_retries,
                     args.degradation_mode, args.student_ratio,
                     args.save_logprobs, args.top_logprobs,
@@ -543,6 +567,7 @@ def main():
                     "eval_student_px": args.student_px,
                     "eval_target_px": args.target_px,
                     "eval_student_ratio": args.student_ratio,
+                    "eval_prompt": args.prompt,
                 }
                 result.update(caption)
                 return result
@@ -573,7 +598,7 @@ def main():
                         print(f"  Warning: {image_path} not found, skipping.")
                         continue
                     generation = generate_via_model(
-                        model, processor, image_path, PROMPT_TEXT,
+                        model, processor, image_path, args.prompt,
                         args.max_new_tokens, device,
                         args.student_px, args.target_px,
                         args.degradation_mode, args.student_ratio,
@@ -590,6 +615,7 @@ def main():
                         "eval_student_px": args.student_px,
                         "eval_target_px": args.target_px,
                         "eval_student_ratio": args.student_ratio,
+                        "eval_prompt": args.prompt,
                     }
                     result.update(generation)
                     f_out.write(json.dumps(result) + "\n")
@@ -658,6 +684,7 @@ def main():
     metrics["target_px"] = args.target_px
     metrics["degradation_mode"] = args.degradation_mode
     metrics["student_ratio"] = args.student_ratio
+    metrics["eval_prompt"] = args.prompt
     metrics["shard_count"] = args.shard_count
     metrics["shard_index"] = args.shard_index
     with open(metrics_path, "w") as f:

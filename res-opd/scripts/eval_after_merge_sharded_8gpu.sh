@@ -49,6 +49,8 @@ TEACHER_RATIO="${TEACHER_RATIO:-}"
 TEACHER_PX="${TEACHER_PX:-}"
 TARGET_PX="${TARGET_PX:-448}"
 RESULT_VERSION_TAG="${RESULT_VERSION_TAG:-}"
+EVAL_OUTPUT_SUFFIX="${EVAL_OUTPUT_SUFFIX:-}"
+CHAIR_PROMPT="${CHAIR_PROMPT:-}"
 EVAL_OPD_TRACE="${EVAL_OPD_TRACE:-False}"
 VISION_BENCHMARK="${VISION_BENCHMARK:-mmstar}"
 VISION_BENCHMARK_DATA_DIR="${VISION_BENCHMARK_DATA_DIR:-${BENCHMARK_DATA_DIR:-$DEFAULT_BENCHMARK_DATA_DIR}}"
@@ -479,6 +481,13 @@ elif [[ "$DATASET_VERSION" == "full" ]]; then
 else
     FINAL_OUTPUT_DIR="${RES_OPD_ROOT}/eval_results/${RESULT_VERSION_TAG}/${EXPERIMENT_NAME}/${DATASET_TAG}"
 fi
+if [[ -z "${EVAL_OUTPUT_DIR:-}" && -n "$EVAL_OUTPUT_SUFFIX" ]]; then
+    if [[ ! "$EVAL_OUTPUT_SUFFIX" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+        echo "Error: EVAL_OUTPUT_SUFFIX must be a single safe path component. Got: ${EVAL_OUTPUT_SUFFIX}" >&2
+        exit 1
+    fi
+    FINAL_OUTPUT_DIR="${FINAL_OUTPUT_DIR}/${EVAL_OUTPUT_SUFFIX}"
+fi
 
 SHARD_ROOT="${SHARDED_EVAL_WORK_DIR:-${FINAL_OUTPUT_DIR}/.shards/${SHARDED_EVAL_RUN_ID}}"
 
@@ -512,6 +521,8 @@ echo "Eval mode:   $EVAL_MODE"
 echo "Vision:      ${EFFECTIVE_VISION_BENCHMARK:-<none>}"
 echo "Result tag:  $RESULT_VERSION_TAG"
 echo "Output:      $FINAL_OUTPUT_DIR"
+echo "Output suffix: ${EVAL_OUTPUT_SUFFIX:-<none>}"
+echo "CHAIR prompt: ${CHAIR_PROMPT:-<default detailed prompt>}"
 echo "Shard root:  $SHARD_ROOT"
 echo "Shard count: $EVAL_SHARD_COUNT"
 echo "GPU list:    $GPU_LIST"
@@ -542,6 +553,7 @@ for shard_idx in $(seq 0 $((EVAL_SHARD_COUNT - 1))); do
         printf 'export EVAL_MAX_TOKENS=%q\n' "$EVAL_MAX_TOKENS"
         printf 'export EVAL_THINKING_MAX_TOKENS=%q\n' "$EVAL_THINKING_MAX_TOKENS"
         printf 'export CHAIR_MAX_NEW_TOKENS=%q\n' "$CHAIR_MAX_NEW_TOKENS"
+        printf 'export CHAIR_PROMPT=%q\n' "$CHAIR_PROMPT"
         printf 'export POPE_MAX_NEW_TOKENS=%q\n' "$POPE_MAX_NEW_TOKENS"
         printf 'export VISION_MAX_TOKENS=%q\n' "$VISION_MAX_TOKENS"
         printf 'export AMBER_MAX_NEW_TOKENS_GENERATIVE=%q\n' "$AMBER_MAX_NEW_TOKENS_GENERATIVE"
