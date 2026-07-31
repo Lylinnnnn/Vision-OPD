@@ -31,6 +31,10 @@ from robust_chair_analysis import (  # noqa: E402
 
 DEFAULT_RESULTS_SUBDIR = "chair_describe_image_official"
 DEFAULT_EXPECTED_PROMPT = "Describe the image."
+TIER_A = "tier_a_official_chairs_clean_flip"
+TIER_B = "tier_b_partial_unique_hallucination_reduction"
+TIER_C = "tier_c_grounded_detail_improvement"
+TIER_PRIORITY = {TIER_A: 3, TIER_B: 2, TIER_C: 1}
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,10 +76,10 @@ def parse_args() -> argparse.Namespace:
         help="Maximum candidates in the diverse global shortlist.",
     )
     parser.add_argument(
-        "--strict-limit",
+        "--tier-limit",
         type=int,
         default=1000,
-        help="Maximum strict Pareto candidates written to JSONL.",
+        help="Maximum candidates written to each tier-specific JSONL.",
     )
     parser.add_argument(
         "--max-per-experiment",
@@ -247,6 +251,7 @@ def caption_stats(
         "object_recall": recall,
         "object_f1": f1,
         "chair_i": chair_i,
+        "chair_s": int(hallucinated_mentions > 0),
         "has_hallucination": bool(hallucinated_mentions),
         "object_mention_count": len(mentions),
         "hallucinated_mention_count": hallucinated_mentions,
@@ -278,6 +283,25 @@ def case_score(
     if model_stats["word_count"] / base_words < 0.55:
         score -= 8.0
     return score
+
+
+def tier_sort_key(case: dict[str, Any]) -> tuple[Any, ...]:
+    """Return a tier-aware ranking key.
+
+    Tier membership always dominates. Official CHAIRi and hallucinated mention
+    deltas are only tie-breakers within a tier.
+    """
+    removed_count = len(case["removed_hallucinated_objects"])
+    gained_count = len(case["gained_correct_objects"])
+    return (
+        TIER_PRIORITY.get(case["primary_tier"], 0),
+        removed_count if case["primary_tier"] != TIER_C else gained_count,
+        case["object_f1_delta"],
+        case["correct_object_delta"],
+        -case["hallucinated_mention_delta"],
+        -case["chair_i_delta"],
+        case["candidate_score"],
+    )
 
 
 def build_case(
@@ -320,6 +344,7 @@ def build_case(
     new_hall = model_hall - base_hall
     lost_correct = base_correct - model_correct
     gained_correct = model_correct - base_correct
+    object_f1_delta = model_stats["object_f1"] - base_stats["object_f1"]
 
     tags: list[str] = []
     if removed_hall and not new_hall:
@@ -329,10 +354,38 @@ def build_case(
     if removed_hall and not new_hall and not lost_correct:
         tags.append("strict_pareto_improvement")
     if (
-        model_stats["object_f1"] > base_stats["object_f1"]
+        object_f1_delta > 0
         and len(model_hall) <= len(base_hall)
     ):
         tags.append("balanced_f1_improvement")
+
+    # Assign one mutually exclusive primary tier. A per-caption official CHAIRs
+    # clean flip is strongest; partial category removal comes next; grounded
+    # detail gains are considered only when hallucinations do not increase.
+    primary_tier = None
+    if (
+        base_stats["chair_s"] == 1
+        and model_stats["chair_s"] == 0
+        and not lost_correct
+    ):
+        primary_tier = TIER_A
+    elif (
+        base_stats["chair_s"] == 1
+        and model_stats["chair_s"] == 1
+        and removed_hall
+        and not new_hall
+        and not lost_correct
+    ):
+        primary_tier = TIER_B
+    elif (
+        gained_correct
+        and not new_hall
+        and not lost_correct
+        and object_f1_delta > 0
+    ):
+        primary_tier = TIER_C
+    if primary_tier:
+        tags.append(primary_tier)
 
     image_path = (
         model_row.get("image_path")
@@ -365,7 +418,10 @@ def build_case(
         "new_hallucinated_objects": sorted(new_hall),
         "lost_correct_objects": sorted(lost_correct),
         "gained_correct_objects": sorted(gained_correct),
-        "object_f1_delta": model_stats["object_f1"] - base_stats["object_f1"],
+        "base_chair_s": base_stats["chair_s"],
+        "model_chair_s": model_stats["chair_s"],
+        "chair_s_transition": f"{base_stats['chair_s']}->{model_stats['chair_s']}",
+        "object_f1_delta": object_f1_delta,
         "chair_i_delta": model_stats["chair_i"] - base_stats["chair_i"],
         "correct_object_delta": len(model_correct) - len(base_correct),
         "hallucinated_object_delta": len(model_hall) - len(base_hall),
@@ -374,6 +430,7 @@ def build_case(
             - base_stats["hallucinated_mention_count"]
         ),
         "candidate_tags": tags,
+        "primary_tier": primary_tier,
         "candidate_score": score,
     }
 
@@ -454,7 +511,10 @@ def write_shortlist_markdown(
         "",
         f"- Unique evaluated experiments: {total_experiments}",
         f"- Diverse candidates: {len(candidates)}",
-        "- Ranking uses official CHAIR object parsing and same-size Base comparisons.",
+        "- Tier A: official per-caption CHAIRs 1->0 with no correct-object loss.",
+        "- Tier B: partial unique hallucination removal with no new hallucination or correct-object loss.",
+        "- Tier C: grounded-object gain, positive ObjF1 delta, and no new hallucination or correct-object loss.",
+        "- Official CHAIRi and hallucinated-mention changes only break ties within a tier.",
         "- Every candidate must still be checked against the image; COCO annotations are incomplete.",
         "",
     ]
@@ -476,6 +536,8 @@ def write_shortlist_markdown(
             [
                 f"## {index}. {case['experiment_label']} / image {case['image_id']}",
                 "",
+                f"- Primary tier: `{case['primary_tier']}`",
+                f"- Official CHAIRs transition: `{case['chair_s_transition']}`",
                 f"- Score: `{case['candidate_score']:.3f}`",
                 f"- Tags: `{', '.join(case['candidate_tags'])}`",
                 f"- Image: `{case['image_path']}`",
@@ -559,28 +621,12 @@ def main() -> None:
             )
             for image_id in common_ids
         ]
-        experiment_cases.sort(
-            key=lambda case: (
-                case["candidate_score"],
-                case["object_f1_delta"],
-                -case["hallucinated_mention_delta"],
-            ),
-            reverse=True,
-        )
+        experiment_cases.sort(key=tier_sort_key, reverse=True)
         all_cases.extend(experiment_cases)
 
-        strict_count = sum(
-            "strict_pareto_improvement" in case["candidate_tags"]
-            for case in experiment_cases
-        )
-        reduced_count = sum(
-            "hallucination_reduced" in case["candidate_tags"]
-            for case in experiment_cases
-        )
-        balanced_count = sum(
-            "balanced_f1_improvement" in case["candidate_tags"]
-            for case in experiment_cases
-        )
+        tier_a_count = sum(case["primary_tier"] == TIER_A for case in experiment_cases)
+        tier_b_count = sum(case["primary_tier"] == TIER_B for case in experiment_cases)
+        tier_c_count = sum(case["primary_tier"] == TIER_C for case in experiment_cases)
         experiment_summaries.append(
             {
                 "label": experiment["label"],
@@ -589,9 +635,9 @@ def main() -> None:
                 "results_path": str(experiment["results_path"]),
                 "base_label": base_entry["label"],
                 "aligned_samples": len(common_ids),
-                "strict_pareto_improvement_count": strict_count,
-                "hallucination_reduced_count": reduced_count,
-                "balanced_f1_improvement_count": balanced_count,
+                "tier_a_official_chairs_clean_flip_count": tier_a_count,
+                "tier_b_partial_unique_hallucination_reduction_count": tier_b_count,
+                "tier_c_grounded_detail_improvement_count": tier_c_count,
                 "mean_object_f1_delta": sum(
                     case["object_f1_delta"] for case in experiment_cases
                 )
@@ -603,44 +649,37 @@ def main() -> None:
             }
         )
 
-    all_cases.sort(
-        key=lambda case: (
-            case["candidate_score"],
-            case["object_f1_delta"],
-            -case["hallucinated_mention_delta"],
-        ),
-        reverse=True,
-    )
-    strict_cases = [
-        case for case in all_cases if "strict_pareto_improvement" in case["candidate_tags"]
-    ]
-    balanced_cases = [
-        case
-        for case in all_cases
-        if case["candidate_tags"]
-        and (
-            "hallucination_reduced" in case["candidate_tags"]
-            or "grounded_coverage_improved" in case["candidate_tags"]
-            or "balanced_f1_improvement" in case["candidate_tags"]
-        )
-    ]
+    all_cases.sort(key=tier_sort_key, reverse=True)
+    tier_a_cases = [case for case in all_cases if case["primary_tier"] == TIER_A]
+    tier_b_cases = [case for case in all_cases if case["primary_tier"] == TIER_B]
+    tier_c_cases = [case for case in all_cases if case["primary_tier"] == TIER_C]
+    tiered_cases = tier_a_cases + tier_b_cases + tier_c_cases
 
     top_by_experiment: list[dict[str, Any]] = []
     grouped: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
-    for case in balanced_cases:
+    for case in tiered_cases:
         grouped[case["experiment_label"]].append(case)
     for label in sorted(grouped):
+        grouped[label].sort(key=tier_sort_key, reverse=True)
         top_by_experiment.extend(grouped[label][: args.top_per_experiment])
 
     diverse = select_diverse(
-        strict_cases + [case for case in balanced_cases if case not in strict_cases],
+        tiered_cases,
         args.global_limit,
         args.max_per_experiment,
     )
 
     write_jsonl(
-        output_dir / "strict_good_candidates.jsonl",
-        strict_cases[: args.strict_limit],
+        output_dir / "tier_a_official_chairs_clean_flip.jsonl",
+        tier_a_cases[: args.tier_limit],
+    )
+    write_jsonl(
+        output_dir / "tier_b_partial_unique_hallucination_reduction.jsonl",
+        tier_b_cases[: args.tier_limit],
+    )
+    write_jsonl(
+        output_dir / "tier_c_grounded_detail_improvement.jsonl",
+        tier_c_cases[: args.tier_limit],
     )
     write_jsonl(output_dir / "top_cases_by_experiment.jsonl", top_by_experiment)
     write_jsonl(output_dir / "global_diverse_shortlist.jsonl", diverse)
@@ -654,14 +693,36 @@ def main() -> None:
             "compared_experiments": len(compared_experiments),
             "missing_results": missing,
             "all_case_pairs": len(all_cases),
-            "strict_good_candidates": len(strict_cases),
-            "balanced_candidates": len(balanced_cases),
+            "selection_policy": {
+                "tier_a": (
+                    "official per-caption CHAIRs 1->0 and no lost correct category"
+                ),
+                "tier_b": (
+                    "CHAIRs remains 1, at least one unique hallucinated category "
+                    "removed, no new hallucinated category, and no lost correct category"
+                ),
+                "tier_c": (
+                    "at least one grounded category gained, positive ObjF1 delta, "
+                    "no new hallucinated category, and no lost correct category"
+                ),
+                "within_tier_tiebreakers": [
+                    "removed hallucinated categories (Tier A/B) or gained correct categories (Tier C)",
+                    "ObjF1 delta",
+                    "correct-object delta",
+                    "official hallucinated-mention delta",
+                    "official CHAIRi delta",
+                ],
+            },
+            "tier_a_candidates": len(tier_a_cases),
+            "tier_b_candidates": len(tier_b_cases),
+            "tier_c_candidates": len(tier_c_cases),
             "diverse_shortlist": len(diverse),
             "experiment_summaries": sorted(
                 experiment_summaries,
                 key=lambda row: (
-                    row["strict_pareto_improvement_count"],
-                    row["balanced_f1_improvement_count"],
+                    row["tier_a_official_chairs_clean_flip_count"],
+                    row["tier_b_partial_unique_hallucination_reduction_count"],
+                    row["tier_c_grounded_detail_improvement_count"],
                 ),
                 reverse=True,
             ),
@@ -676,7 +737,9 @@ def main() -> None:
 
     print(f"Compared experiments: {len(compared_experiments)}")
     print(f"All aligned case pairs: {len(all_cases)}")
-    print(f"Strict good candidates: {len(strict_cases)}")
+    print(f"Tier A candidates: {len(tier_a_cases)}")
+    print(f"Tier B candidates: {len(tier_b_cases)}")
+    print(f"Tier C candidates: {len(tier_c_cases)}")
     print(f"Diverse shortlist: {len(diverse)}")
     print(f"Output directory: {output_dir}")
 
