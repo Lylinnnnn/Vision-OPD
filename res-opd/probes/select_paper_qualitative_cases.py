@@ -32,8 +32,8 @@ from robust_chair_analysis import (  # noqa: E402
 DEFAULT_RESULTS_SUBDIR = "chair_describe_image_official"
 DEFAULT_EXPECTED_PROMPT = "Describe the image."
 TIER_A = "tier_a_official_chairs_clean_flip"
-TIER_B = "tier_b_partial_unique_hallucination_reduction"
-TIER_C = "tier_c_grounded_detail_improvement"
+TIER_B = "tier_b_official_chairi_mention_reduction"
+TIER_C = "tier_c_official_chairi_ratio_improvement"
 TIER_PRIORITY = {TIER_A: 3, TIER_B: 2, TIER_C: 1}
 
 
@@ -94,11 +94,34 @@ def parse_args() -> argparse.Namespace:
         help="Fail when an experiment and its base have fewer aligned samples.",
     )
     parser.add_argument(
+        "--min-correct-mention-retention",
+        type=float,
+        default=0.80,
+        help=(
+            "Quality guard: retain at least this fraction of Base correct object "
+            "mentions (default: 0.80)."
+        ),
+    )
+    parser.add_argument(
+        "--min-word-retention",
+        type=float,
+        default=0.60,
+        help=(
+            "Quality guard: retain at least this fraction of Base caption words "
+            "(default: 0.60)."
+        ),
+    )
+    parser.add_argument(
         "--allow-missing",
         action="store_true",
         help="Warn and skip missing result files instead of failing.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    for name in ("min_correct_mention_retention", "min_word_retention"):
+        value = getattr(args, name)
+        if not 0.0 <= value <= 1.0:
+            parser.error(f"--{name.replace('_', '-')} must be between 0 and 1")
+    return args
 
 
 def load_json(path: Path) -> Any:
@@ -240,6 +263,7 @@ def caption_stats(
         else 0.0
     )
     hallucinated_mentions = sum(not item["grounded"] for item in mentions)
+    correct_mentions = len(mentions) - hallucinated_mentions
     chair_i = hallucinated_mentions / len(mentions) if mentions else 0.0
     return {
         "word_count": len(re.findall(r"[A-Za-z0-9]+", caption)),
@@ -254,53 +278,41 @@ def caption_stats(
         "chair_s": int(hallucinated_mentions > 0),
         "has_hallucination": bool(hallucinated_mentions),
         "object_mention_count": len(mentions),
+        "correct_mention_count": correct_mentions,
         "hallucinated_mention_count": hallucinated_mentions,
     }
 
 
-def case_score(
-    removed_hallucinations: set[str],
-    new_hallucinations: set[str],
-    lost_correct: set[str],
-    gained_correct: set[str],
+def official_case_score(
     base_stats: dict[str, Any],
     model_stats: dict[str, Any],
 ) -> float:
-    score = 12.0 * len(removed_hallucinations)
-    score -= 15.0 * len(new_hallucinations)
-    score -= 7.0 * len(lost_correct)
-    score += 5.0 * len(gained_correct)
-    score += 10.0 * (model_stats["object_f1"] - base_stats["object_f1"])
-    score += 4.0 * (
+    """Diagnostic score composed only of official CHAIR quantities."""
+    chair_i_reduction = base_stats["chair_i"] - model_stats["chair_i"]
+    hallucinated_mentions_removed = (
         base_stats["hallucinated_mention_count"]
         - model_stats["hallucinated_mention_count"]
     )
-    if base_stats["has_hallucination"] and not model_stats["has_hallucination"]:
-        score += 6.0
-
-    # Avoid ranking a nearly empty caption as a strong qualitative success.
-    base_words = max(base_stats["word_count"], 1)
-    if model_stats["word_count"] / base_words < 0.55:
-        score -= 8.0
-    return score
+    clean_flip = int(base_stats["chair_s"] == 1 and model_stats["chair_s"] == 0)
+    return (
+        100.0 * chair_i_reduction
+        + 5.0 * hallucinated_mentions_removed
+        + 10.0 * clean_flip
+    )
 
 
 def tier_sort_key(case: dict[str, Any]) -> tuple[Any, ...]:
     """Return a tier-aware ranking key.
 
-    Tier membership always dominates. Official CHAIRi and hallucinated mention
-    deltas are only tie-breakers within a tier.
+    Tier membership always dominates. Ranking inside a tier uses only official
+    CHAIRi and hallucinated-mention quantities.
     """
-    removed_count = len(case["removed_hallucinated_objects"])
-    gained_count = len(case["gained_correct_objects"])
     return (
         TIER_PRIORITY.get(case["primary_tier"], 0),
-        removed_count if case["primary_tier"] != TIER_C else gained_count,
-        case["object_f1_delta"],
-        case["correct_object_delta"],
-        -case["hallucinated_mention_delta"],
         -case["chair_i_delta"],
-        case["candidate_score"],
+        -case["hallucinated_mention_delta"],
+        case["base"]["chair_i"],
+        case["official_candidate_score"],
     )
 
 
@@ -313,6 +325,8 @@ def build_case(
     mscoco_objects: list[str],
     inverse_synonym_dict: dict[str, str],
     double_word_dict: dict[str, str],
+    min_correct_mention_retention: float,
+    min_word_retention: float,
 ) -> dict[str, Any]:
     gt_objects = canonical_gt_objects(
         base_row, mscoco_objects, inverse_synonym_dict, double_word_dict
@@ -345,43 +359,56 @@ def build_case(
     lost_correct = base_correct - model_correct
     gained_correct = model_correct - base_correct
     object_f1_delta = model_stats["object_f1"] - base_stats["object_f1"]
+    chair_i_delta = model_stats["chair_i"] - base_stats["chair_i"]
+    hallucinated_mention_delta = (
+        model_stats["hallucinated_mention_count"]
+        - base_stats["hallucinated_mention_count"]
+    )
+    correct_mention_delta = (
+        model_stats["correct_mention_count"] - base_stats["correct_mention_count"]
+    )
+    correct_mention_retention = (
+        model_stats["correct_mention_count"] / base_stats["correct_mention_count"]
+        if base_stats["correct_mention_count"] > 0
+        else 1.0
+    )
+    word_retention = (
+        model_stats["word_count"] / base_stats["word_count"]
+        if base_stats["word_count"] > 0
+        else 1.0
+    )
+    quality_guards_passed = (
+        correct_mention_retention >= min_correct_mention_retention
+        and word_retention >= min_word_retention
+    )
 
     tags: list[str] = []
-    if removed_hall and not new_hall:
-        tags.append("hallucination_reduced")
-    if gained_correct and len(model_hall) <= len(base_hall):
-        tags.append("grounded_coverage_improved")
-    if removed_hall and not new_hall and not lost_correct:
-        tags.append("strict_pareto_improvement")
-    if (
-        object_f1_delta > 0
-        and len(model_hall) <= len(base_hall)
-    ):
-        tags.append("balanced_f1_improvement")
+    if chair_i_delta < 0:
+        tags.append("official_chair_i_improved")
+    if hallucinated_mention_delta < 0:
+        tags.append("official_hallucinated_mentions_reduced")
+    if quality_guards_passed:
+        tags.append("quality_guards_passed")
 
-    # Assign one mutually exclusive primary tier. A per-caption official CHAIRs
-    # clean flip is strongest; partial category removal comes next; grounded
-    # detail gains are considered only when hallucinations do not increase.
+    # Assign one mutually exclusive tier from official CHAIR quantities only.
+    # Correct-mention and word retention are admission guards, not rank signals.
     primary_tier = None
-    if (
+    if quality_guards_passed and (
         base_stats["chair_s"] == 1
         and model_stats["chair_s"] == 0
-        and not lost_correct
     ):
         primary_tier = TIER_A
-    elif (
+    elif quality_guards_passed and (
         base_stats["chair_s"] == 1
         and model_stats["chair_s"] == 1
-        and removed_hall
-        and not new_hall
-        and not lost_correct
+        and chair_i_delta < 0
+        and hallucinated_mention_delta < 0
     ):
         primary_tier = TIER_B
-    elif (
-        gained_correct
-        and not new_hall
-        and not lost_correct
-        and object_f1_delta > 0
+    elif quality_guards_passed and (
+        model_stats["chair_s"] <= base_stats["chair_s"]
+        and chair_i_delta < 0
+        and hallucinated_mention_delta == 0
     ):
         primary_tier = TIER_C
     if primary_tier:
@@ -392,9 +419,7 @@ def build_case(
         or base_row.get("image_path")
         or (model_row.get("images") or base_row.get("images") or [""])[0]
     )
-    score = case_score(
-        removed_hall, new_hall, lost_correct, gained_correct, base_stats, model_stats
-    )
+    score = official_case_score(base_stats, model_stats)
     return {
         "experiment_label": experiment["label"],
         "experiment_aliases": experiment.get("aliases", [experiment["label"]]),
@@ -422,16 +447,21 @@ def build_case(
         "model_chair_s": model_stats["chair_s"],
         "chair_s_transition": f"{base_stats['chair_s']}->{model_stats['chair_s']}",
         "object_f1_delta": object_f1_delta,
-        "chair_i_delta": model_stats["chair_i"] - base_stats["chair_i"],
+        "chair_i_delta": chair_i_delta,
         "correct_object_delta": len(model_correct) - len(base_correct),
         "hallucinated_object_delta": len(model_hall) - len(base_hall),
-        "hallucinated_mention_delta": (
-            model_stats["hallucinated_mention_count"]
-            - base_stats["hallucinated_mention_count"]
-        ),
+        "correct_mention_delta": correct_mention_delta,
+        "hallucinated_mention_delta": hallucinated_mention_delta,
+        "correct_mention_retention": correct_mention_retention,
+        "word_retention": word_retention,
+        "quality_guards": {
+            "passed": quality_guards_passed,
+            "min_correct_mention_retention": min_correct_mention_retention,
+            "min_word_retention": min_word_retention,
+        },
         "candidate_tags": tags,
         "primary_tier": primary_tier,
-        "candidate_score": score,
+        "official_candidate_score": score,
     }
 
 
@@ -511,10 +541,13 @@ def write_shortlist_markdown(
         "",
         f"- Unique evaluated experiments: {total_experiments}",
         f"- Diverse candidates: {len(candidates)}",
-        "- Tier A: official per-caption CHAIRs 1->0 with no correct-object loss.",
-        "- Tier B: partial unique hallucination removal with no new hallucination or correct-object loss.",
-        "- Tier C: grounded-object gain, positive ObjF1 delta, and no new hallucination or correct-object loss.",
-        "- Official CHAIRi and hallucinated-mention changes only break ties within a tier.",
+        "- Tier A: official per-caption CHAIRs 1->0.",
+        "- Tier B: CHAIRs remains 1, while official CHAIRi and "
+        "hallucinated mentions both decrease.",
+        "- Tier C: CHAIRs does not worsen and official CHAIRi decreases "
+        "with unchanged hallucinated mentions.",
+        "- Correct-mention and caption-length retention are admission guards only.",
+        "- Ranking inside each tier uses official CHAIRi and hallucinated mentions only.",
         "- Every candidate must still be checked against the image; COCO annotations are incomplete.",
         "",
     ]
@@ -538,7 +571,15 @@ def write_shortlist_markdown(
                 "",
                 f"- Primary tier: `{case['primary_tier']}`",
                 f"- Official CHAIRs transition: `{case['chair_s_transition']}`",
-                f"- Score: `{case['candidate_score']:.3f}`",
+                f"- Official CHAIRi: `{case['base']['chair_i']:.4f} -> "
+                f"{case['model']['chair_i']:.4f}` "
+                f"(`{case['chair_i_delta']:+.4f}`)",
+                f"- Hallucinated mentions: "
+                f"`{case['base']['hallucinated_mention_count']} -> "
+                f"{case['model']['hallucinated_mention_count']}`",
+                f"- Correct-mention retention: `{case['correct_mention_retention']:.3f}`",
+                f"- Word retention: `{case['word_retention']:.3f}`",
+                f"- Official score: `{case['official_candidate_score']:.3f}`",
                 f"- Tags: `{', '.join(case['candidate_tags'])}`",
                 f"- Image: `{case['image_path']}`",
                 f"- Removed hallucinations: `{case['removed_hallucinated_objects']}`",
@@ -618,6 +659,8 @@ def main() -> None:
                 mscoco_objects,
                 inverse_synonym_dict,
                 double_word_dict,
+                args.min_correct_mention_retention,
+                args.min_word_retention,
             )
             for image_id in common_ids
         ]
@@ -636,10 +679,10 @@ def main() -> None:
                 "base_label": base_entry["label"],
                 "aligned_samples": len(common_ids),
                 "tier_a_official_chairs_clean_flip_count": tier_a_count,
-                "tier_b_partial_unique_hallucination_reduction_count": tier_b_count,
-                "tier_c_grounded_detail_improvement_count": tier_c_count,
-                "mean_object_f1_delta": sum(
-                    case["object_f1_delta"] for case in experiment_cases
+                "tier_b_official_chairi_mention_reduction_count": tier_b_count,
+                "tier_c_official_chairi_ratio_improvement_count": tier_c_count,
+                "mean_official_chairi_delta": sum(
+                    case["chair_i_delta"] for case in experiment_cases
                 )
                 / len(experiment_cases),
                 "mean_hallucinated_mention_delta": sum(
@@ -674,11 +717,11 @@ def main() -> None:
         tier_a_cases[: args.tier_limit],
     )
     write_jsonl(
-        output_dir / "tier_b_partial_unique_hallucination_reduction.jsonl",
+        output_dir / "tier_b_official_chairi_mention_reduction.jsonl",
         tier_b_cases[: args.tier_limit],
     )
     write_jsonl(
-        output_dir / "tier_c_grounded_detail_improvement.jsonl",
+        output_dir / "tier_c_official_chairi_ratio_improvement.jsonl",
         tier_c_cases[: args.tier_limit],
     )
     write_jsonl(output_dir / "top_cases_by_experiment.jsonl", top_by_experiment)
@@ -689,29 +732,35 @@ def main() -> None:
             "preflight_json": str(preflight_path),
             "results_subdir": args.results_subdir,
             "expected_prompt": args.expected_prompt,
+            "quality_guards": {
+                "min_correct_mention_retention": args.min_correct_mention_retention,
+                "min_word_retention": args.min_word_retention,
+            },
             "unique_result_entries": len(entries),
             "compared_experiments": len(compared_experiments),
             "missing_results": missing,
             "all_case_pairs": len(all_cases),
             "selection_policy": {
                 "tier_a": (
-                    "official per-caption CHAIRs 1->0 and no lost correct category"
+                    "official per-caption CHAIRs 1->0"
                 ),
                 "tier_b": (
-                    "CHAIRs remains 1, at least one unique hallucinated category "
-                    "removed, no new hallucinated category, and no lost correct category"
+                    "CHAIRs remains 1, official per-caption CHAIRi decreases, "
+                    "and official hallucinated-mention count decreases"
                 ),
                 "tier_c": (
-                    "at least one grounded category gained, positive ObjF1 delta, "
-                    "no new hallucinated category, and no lost correct category"
+                    "CHAIRs does not worsen, official per-caption CHAIRi decreases, "
+                    "and official hallucinated-mention count is unchanged"
                 ),
                 "within_tier_tiebreakers": [
-                    "removed hallucinated categories (Tier A/B) or gained correct categories (Tier C)",
-                    "ObjF1 delta",
-                    "correct-object delta",
-                    "official hallucinated-mention delta",
                     "official CHAIRi delta",
+                    "official hallucinated-mention delta",
+                    "Base official CHAIRi",
                 ],
+                "note": (
+                    "Unique categories and ObjF1 are serialized for human "
+                    "interpretation but do not determine tier or rank."
+                ),
             },
             "tier_a_candidates": len(tier_a_cases),
             "tier_b_candidates": len(tier_b_cases),
@@ -721,8 +770,8 @@ def main() -> None:
                 experiment_summaries,
                 key=lambda row: (
                     row["tier_a_official_chairs_clean_flip_count"],
-                    row["tier_b_partial_unique_hallucination_reduction_count"],
-                    row["tier_c_grounded_detail_improvement_count"],
+                    row["tier_b_official_chairi_mention_reduction_count"],
+                    row["tier_c_official_chairi_ratio_improvement_count"],
                 ),
                 reverse=True,
             ),
