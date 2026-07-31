@@ -193,6 +193,9 @@ def write_outputs(
     missing: list[str] = []
     archive_path = args.output_dir / "review_images.tar.gz"
     with tarfile.open(archive_path, "w:gz") as archive:
+        archive.add(manifest_path, arcname="_metadata/review_manifest.jsonl")
+        archive.add(ids_path, arcname="_metadata/image_ids.txt")
+        archive.add(summary_path, arcname="_metadata/review_manifest.md")
         for row in selected:
             image_path = Path(str(row.get("image_path", "")))
             if not image_path.is_file():
