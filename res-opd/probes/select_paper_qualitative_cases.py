@@ -2,9 +2,11 @@
 """Rank qualitative CHAIR cases across paper experiments.
 
 Each experiment is compared with the original-image base model of the same
-model size.  Object extraction follows the repository's official CHAIR parser.
-The script is intentionally a first-stage miner: candidates still require
-visual inspection because COCO annotations can be incomplete.
+model size and prompt variant. Both legacy result files and prompt-isolated
+``Describe the image.`` files are discovered when present. Object extraction
+follows the repository's official CHAIR parser. The script is intentionally a
+first-stage miner: candidates still require visual inspection because COCO
+annotations can be incomplete.
 """
 
 from __future__ import annotations
@@ -61,7 +63,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--expected-prompt",
         default=DEFAULT_EXPECTED_PROMPT,
-        help="Require every compared row to use this exact evaluation prompt.",
+        help=(
+            "Require Describe-the-image result rows to use this exact prompt. "
+            "Legacy results may omit prompt metadata."
+        ),
     )
     parser.add_argument(
         "--top-per-experiment",
@@ -91,7 +96,7 @@ def parse_args() -> argparse.Namespace:
         "--min-common-samples",
         type=int,
         default=900,
-        help="Fail when an experiment and its base have fewer aligned samples.",
+        help="Skip comparisons with fewer aligned samples than this value.",
     )
     parser.add_argument(
         "--min-correct-mention-retention",
@@ -112,9 +117,12 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--allow-missing",
+        "--require-all-prompt-variants",
         action="store_true",
-        help="Warn and skip missing result files instead of failing.",
+        help=(
+            "Fail if either legacy or Describe-the-image results are missing. "
+            "By default missing prompt variants are reported and skipped."
+        ),
     )
     args = parser.parse_args()
     for name in ("min_correct_mention_retention", "min_word_retention"):
@@ -150,7 +158,10 @@ def normalize_image_id(value: Any) -> str:
     return text
 
 
-def read_eval_results(path: Path, expected_prompt: str) -> dict[str, dict[str, Any]]:
+def read_eval_results(
+    path: Path,
+    expected_prompt: str,
+) -> tuple[dict[str, dict[str, Any]], str]:
     records: dict[str, dict[str, Any]] = {}
     bad_rows: list[str] = []
     prompts: set[str] = set()
@@ -188,13 +199,16 @@ def read_eval_results(path: Path, expected_prompt: str) -> dict[str, dict[str, A
     if bad_rows:
         preview = "; ".join(bad_rows[:5])
         raise ValueError(f"{path}: {len(bad_rows)} invalid rows ({preview})")
+    if len(prompts) > 1:
+        raise ValueError(f"{path}: mixed evaluation prompts found: {sorted(prompts)!r}")
     if expected_prompt and prompts != {expected_prompt}:
         raise ValueError(
             f"{path}: prompt mismatch; expected {expected_prompt!r}, found {sorted(prompts)!r}"
         )
     if not records:
         raise ValueError(f"{path}: no valid records")
-    return records
+    prompt_text = next(iter(prompts)) if prompts else ""
+    return records, prompt_text
 
 
 def model_size_from_label(label: str) -> str:
@@ -209,11 +223,21 @@ def slugify(value: str) -> str:
     return value.strip("_") or "experiment"
 
 
-def describe_results_path(entry: dict[str, Any], results_subdir: str) -> Path:
+def result_variant_paths(
+    entry: dict[str, Any],
+    results_subdir: str,
+) -> list[tuple[str, Path]]:
     selected = Path(entry["selected_eval_results"])
     if selected.parent.name == results_subdir:
-        return selected
-    return selected.parent / results_subdir / "eval_results.jsonl"
+        legacy = selected.parent.parent / "eval_results.jsonl"
+        describe = selected
+    else:
+        legacy = selected
+        describe = selected.parent / results_subdir / "eval_results.jsonl"
+    return [
+        ("legacy", legacy),
+        ("describe_image_official", describe),
+    ]
 
 
 def canonical_gt_objects(
@@ -422,10 +446,14 @@ def build_case(
     score = official_case_score(base_stats, model_stats)
     return {
         "experiment_label": experiment["label"],
+        "experiment_key": experiment["experiment_key"],
         "experiment_aliases": experiment.get("aliases", [experiment["label"]]),
         "model_size": experiment["model_size"],
+        "prompt_variant": experiment["prompt_variant"],
+        "observed_prompt": experiment.get("observed_prompt", ""),
         "experiment_results": str(experiment["results_path"]),
         "base_label": base_entry["label"],
+        "base_observed_prompt": base_entry.get("observed_prompt", ""),
         "base_results": str(base_entry["results_path"]),
         "image_id": image_id,
         "image_path": image_path,
@@ -468,35 +496,46 @@ def build_case(
 def prepare_entries(
     preflight: dict[str, Any],
     results_subdir: str,
-    allow_missing: bool,
+    require_all_prompt_variants: bool,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     missing: list[dict[str, Any]] = []
-    deduped: dict[tuple[str, str], dict[str, Any]] = {}
+    deduped: dict[tuple[str, str, str], dict[str, Any]] = {}
 
     for raw_entry in preflight.get("entries", []):
         label = raw_entry.get("label", "")
         model_size = model_size_from_label(label)
-        results_path = describe_results_path(raw_entry, results_subdir)
-        if not results_path.is_file():
-            missing.append({"label": label, "expected_path": str(results_path)})
-            continue
-        key = (model_size, str(results_path.resolve()))
-        if key not in deduped:
-            deduped[key] = {
-                **raw_entry,
-                "model_size": model_size,
-                "results_path": results_path,
-                "aliases": [label],
-            }
-        elif label not in deduped[key]["aliases"]:
-            deduped[key]["aliases"].append(label)
+        for prompt_variant, results_path in result_variant_paths(
+            raw_entry, results_subdir
+        ):
+            if not results_path.is_file():
+                missing.append(
+                    {
+                        "label": label,
+                        "prompt_variant": prompt_variant,
+                        "expected_path": str(results_path),
+                    }
+                )
+                continue
+            key = (model_size, prompt_variant, str(results_path.resolve()))
+            if key not in deduped:
+                deduped[key] = {
+                    **raw_entry,
+                    "model_size": model_size,
+                    "prompt_variant": prompt_variant,
+                    "results_path": results_path,
+                    "aliases": [label],
+                }
+            elif label not in deduped[key]["aliases"]:
+                deduped[key]["aliases"].append(label)
 
-    if missing and not allow_missing:
+    if missing and require_all_prompt_variants:
         lines = "\n".join(
-            f"  - {item['label']}: {item['expected_path']}" for item in missing
+            f"  - {item['label']} [{item['prompt_variant']}]: "
+            f"{item['expected_path']}"
+            for item in missing
         )
         raise FileNotFoundError(
-            f"{len(missing)} prompt-isolated result files are missing:\n{lines}"
+            f"{len(missing)} prompt-variant result files are missing:\n{lines}"
         )
     return list(deduped.values()), missing
 
@@ -510,7 +549,7 @@ def select_diverse(
     used_images: set[str] = set()
     experiment_counts: defaultdict[str, int] = defaultdict(int)
     for case in candidates:
-        label = case["experiment_label"]
+        label = case["experiment_key"]
         if case["image_id"] in used_images:
             continue
         if experiment_counts[label] >= max_per_experiment:
@@ -539,7 +578,7 @@ def write_shortlist_markdown(
     lines = [
         "# Qualitative CHAIR candidate shortlist",
         "",
-        f"- Unique evaluated experiments: {total_experiments}",
+        f"- Completed experiment/prompt comparisons: {total_experiments}",
         f"- Diverse candidates: {len(candidates)}",
         "- Tier A: official per-caption CHAIRs 1->0.",
         "- Tier B: CHAIRs remains 1, while official CHAIRi and "
@@ -557,7 +596,8 @@ def write_shortlist_markdown(
                 f"## Missing results ({len(missing)})",
                 "",
                 *[
-                    f"- `{item['label']}`: `{item['expected_path']}`"
+                    f"- `{item['label']}` [{item['prompt_variant']}]: "
+                    f"`{item['expected_path']}`"
                     for item in missing
                 ],
                 "",
@@ -569,6 +609,7 @@ def write_shortlist_markdown(
             [
                 f"## {index}. {case['experiment_label']} / image {case['image_id']}",
                 "",
+                f"- Prompt variant: `{case['prompt_variant']}`",
                 f"- Primary tier: `{case['primary_tier']}`",
                 f"- Official CHAIRs transition: `{case['chair_s_transition']}`",
                 f"- Official CHAIRi: `{case['base']['chair_i']:.4f} -> "
@@ -603,32 +644,39 @@ def main() -> None:
 
     preflight = load_json(preflight_path)
     entries, missing = prepare_entries(
-        preflight, args.results_subdir, args.allow_missing
+        preflight, args.results_subdir, args.require_all_prompt_variants
     )
-    base_entries: dict[str, dict[str, Any]] = {}
+    base_entries: dict[tuple[str, str], dict[str, Any]] = {}
     for entry in entries:
         if entry["label"].lower() == f"{entry['model_size']}/base/original":
-            base_entries[entry["model_size"]] = entry
-
-    required_sizes = sorted({entry["model_size"] for entry in entries})
-    absent_bases = [size for size in required_sizes if size not in base_entries]
-    if absent_bases:
-        raise ValueError(f"Missing original-image base entries for: {absent_bases}")
+            key = (entry["model_size"], entry["prompt_variant"])
+            base_entries[key] = entry
 
     mscoco_objects, inverse_synonym_dict = parse_official_synonyms()
     double_word_dict = build_double_word_dict()
-    records_cache: dict[str, dict[str, dict[str, Any]]] = {}
+    records_cache: dict[
+        str, tuple[dict[str, dict[str, Any]], str]
+    ] = {}
 
     def records_for(entry: dict[str, Any]) -> dict[str, dict[str, Any]]:
         key = str(entry["results_path"])
         if key not in records_cache:
-            records_cache[key] = read_eval_results(
-                entry["results_path"], args.expected_prompt
+            expected_prompt = (
+                args.expected_prompt
+                if entry["prompt_variant"] == "describe_image_official"
+                else ""
             )
-        return records_cache[key]
+            records_cache[key] = read_eval_results(
+                entry["results_path"], expected_prompt
+            )
+        records, observed_prompt = records_cache[key]
+        entry["observed_prompt"] = observed_prompt
+        return records
 
     all_cases: list[dict[str, Any]] = []
     experiment_summaries: list[dict[str, Any]] = []
+    skipped_comparisons: list[dict[str, Any]] = []
+    prompt_metadata_warnings: list[dict[str, Any]] = []
     compared_experiments = [
         entry
         for entry in entries
@@ -636,18 +684,67 @@ def main() -> None:
     ]
 
     for experiment in compared_experiments:
-        base_entry = base_entries[experiment["model_size"]]
+        comparison_key = (experiment["model_size"], experiment["prompt_variant"])
+        base_entry = base_entries.get(comparison_key)
+        if base_entry is None:
+            skipped_comparisons.append(
+                {
+                    "label": experiment["label"],
+                    "prompt_variant": experiment["prompt_variant"],
+                    "reason": "same-size base result for this prompt variant is missing",
+                }
+            )
+            continue
+
         model_records = records_for(experiment)
         base_records = records_for(base_entry)
+        model_prompt = experiment.get("observed_prompt", "")
+        base_prompt = base_entry.get("observed_prompt", "")
+        if model_prompt and base_prompt and model_prompt != base_prompt:
+            skipped_comparisons.append(
+                {
+                    "label": experiment["label"],
+                    "prompt_variant": experiment["prompt_variant"],
+                    "reason": "recorded prompt text differs from same-size base",
+                    "model_prompt": model_prompt,
+                    "base_prompt": base_prompt,
+                }
+            )
+            continue
+        if experiment["prompt_variant"] == "legacy" and (
+            not model_prompt or not base_prompt
+        ):
+            prompt_metadata_warnings.append(
+                {
+                    "label": experiment["label"],
+                    "prompt_variant": "legacy",
+                    "warning": (
+                        "prompt text is absent from at least one legacy result; "
+                        "comparison relies on the shared legacy result location"
+                    ),
+                }
+            )
+
         common_ids = sorted(
             set(model_records) & set(base_records),
             key=lambda value: (not value.isdigit(), int(value) if value.isdigit() else value),
         )
         if len(common_ids) < args.min_common_samples:
-            raise ValueError(
-                f"{experiment['label']}: only {len(common_ids)} samples overlap "
-                f"with {base_entry['label']}"
+            skipped_comparisons.append(
+                {
+                    "label": experiment["label"],
+                    "prompt_variant": experiment["prompt_variant"],
+                    "reason": (
+                        f"only {len(common_ids)} samples overlap with "
+                        f"{base_entry['label']}"
+                    ),
+                }
             )
+            continue
+
+        experiment["experiment_key"] = (
+            f"{experiment['label']}@{experiment['prompt_variant']}"
+        )
 
         experiment_cases = [
             build_case(
@@ -673,8 +770,11 @@ def main() -> None:
         experiment_summaries.append(
             {
                 "label": experiment["label"],
+                "experiment_key": experiment["experiment_key"],
                 "aliases": experiment["aliases"],
                 "model_size": experiment["model_size"],
+                "prompt_variant": experiment["prompt_variant"],
+                "observed_prompt": experiment.get("observed_prompt", ""),
                 "results_path": str(experiment["results_path"]),
                 "base_label": base_entry["label"],
                 "aligned_samples": len(common_ids),
@@ -701,7 +801,7 @@ def main() -> None:
     top_by_experiment: list[dict[str, Any]] = []
     grouped: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
     for case in tiered_cases:
-        grouped[case["experiment_label"]].append(case)
+        grouped[case["experiment_key"]].append(case)
     for label in sorted(grouped):
         grouped[label].sort(key=tier_sort_key, reverse=True)
         top_by_experiment.extend(grouped[label][: args.top_per_experiment])
@@ -731,14 +831,17 @@ def main() -> None:
         {
             "preflight_json": str(preflight_path),
             "results_subdir": args.results_subdir,
-            "expected_prompt": args.expected_prompt,
+            "describe_image_expected_prompt": args.expected_prompt,
             "quality_guards": {
                 "min_correct_mention_retention": args.min_correct_mention_retention,
                 "min_word_retention": args.min_word_retention,
             },
-            "unique_result_entries": len(entries),
-            "compared_experiments": len(compared_experiments),
-            "missing_results": missing,
+            "unique_result_variants_found": len(entries),
+            "candidate_result_variants": len(compared_experiments),
+            "completed_comparisons": len(experiment_summaries),
+            "missing_prompt_variants": missing,
+            "skipped_comparisons": skipped_comparisons,
+            "legacy_prompt_metadata_warnings": prompt_metadata_warnings,
             "all_case_pairs": len(all_cases),
             "selection_policy": {
                 "tier_a": (
@@ -781,10 +884,13 @@ def main() -> None:
         output_dir / "global_diverse_shortlist.md",
         diverse,
         missing,
-        len(compared_experiments),
+        len(experiment_summaries),
     )
 
-    print(f"Compared experiments: {len(compared_experiments)}")
+    print(f"Found result variants: {len(entries)}")
+    print(f"Completed comparisons: {len(experiment_summaries)}")
+    print(f"Missing prompt variants skipped: {len(missing)}")
+    print(f"Other comparisons skipped: {len(skipped_comparisons)}")
     print(f"All aligned case pairs: {len(all_cases)}")
     print(f"Tier A candidates: {len(tier_a_cases)}")
     print(f"Tier B candidates: {len(tier_b_cases)}")
