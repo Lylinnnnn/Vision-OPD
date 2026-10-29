@@ -38,7 +38,7 @@ class Report:
         print(f"[{status}] {benchmark}: {message}" + (f" [{path}]" if path else ""))
 
     def failed(self):
-        return any(row["status"] == "FAIL" for row in self.rows)
+        return any(row["status"] != "PASS" for row in self.rows)
 
 
 def first_dir(candidates):
