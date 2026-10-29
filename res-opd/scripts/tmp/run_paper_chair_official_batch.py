@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -109,6 +110,53 @@ def local_checkpoint_dir(entry, root):
     if entry["source_type"] != "oss_checkpoint":
         return None
     return root / "res-opd" / "checkpoints" / entry["primary"] / entry["step"]
+
+
+@contextlib.contextmanager
+def entry_lock(entry, root, suffix):
+    lock_root = root / "res-opd" / "eval_results" / ".paper_chair_locks"
+    lock_root.mkdir(parents=True, exist_ok=True)
+    lock_dir = lock_root / f"{suffix}.{entry['index']:02d}.lock"
+    try:
+        lock_dir.mkdir()
+    except FileExistsError as error:
+        owner_path = lock_dir / "owner.json"
+        try:
+            owner = owner_path.read_text(encoding="utf-8")
+        except OSError:
+            owner = "<owner metadata unavailable>"
+        raise RuntimeError(
+            f"Entry {entry['index']:02d} is already running on the shared filesystem; "
+            f"lock={lock_dir}, owner={owner}"
+        ) from error
+
+    owner_path = lock_dir / "owner.json"
+    owner_path.write_text(
+        json.dumps(
+            {
+                "host": os.uname().nodename,
+                "pid": os.getpid(),
+                "index": entry["index"],
+                "label": entry["label"],
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            },
+            ensure_ascii=True,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    try:
+        yield
+    finally:
+        try:
+            owner_path.unlink()
+        except FileNotFoundError:
+            pass
+        try:
+            lock_dir.rmdir()
+        except FileNotFoundError:
+            pass
 
 
 def output_complete(path, expected_count):
@@ -315,39 +363,48 @@ def main():
             print("Complete official output exists; skipping.", flush=True)
             skipped += 1
             continue
-        command = ["bash", str(launcher), str(entry["index"]), str(args.base_port)]
-        env = os.environ.copy()
-        env["CHAIR_RERUN_PROMPT"] = args.prompt
-        env["CHAIR_RERUN_OUTPUT_SUFFIX"] = args.output_suffix
-        env["GPU_LIST"] = args.gpu_list
-        env["EVAL_SHARD_COUNT"] = str(args.eval_shard_count)
-        env["CHAIR_MAX_SAMPLES"] = str(args.max_samples)
-        if args.model_root:
-            env["MODEL_ROOT"] = args.model_root
-        print(" ".join(shlex.quote(value) for value in command), flush=True)
         if args.dry_run:
+            command = ["bash", str(launcher), str(entry["index"]), str(args.base_port)]
+            print(" ".join(shlex.quote(value) for value in command), flush=True)
             continue
-        result = subprocess.run(command, env=env, check=False)
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"Evaluation failed for {entry['index']:02d} {entry['label']}: "
-                f"exit={result.returncode}"
+        with entry_lock(entry, root, args.output_suffix):
+            if output_complete(target, args.max_samples) and not args.force:
+                print("Output completed while waiting for the shared lock; skipping.", flush=True)
+                skipped += 1
+                continue
+            command = ["bash", str(launcher), str(entry["index"]), str(args.base_port)]
+            env = os.environ.copy()
+            env["CHAIR_RERUN_PROMPT"] = args.prompt
+            env["CHAIR_RERUN_OUTPUT_SUFFIX"] = args.output_suffix
+            env["GPU_LIST"] = args.gpu_list
+            env["EVAL_SHARD_COUNT"] = str(args.eval_shard_count)
+            env["CHAIR_MAX_SAMPLES"] = str(args.max_samples)
+            if args.model_root:
+                env["MODEL_ROOT"] = args.model_root
+            print(" ".join(shlex.quote(value) for value in command), flush=True)
+            result = subprocess.run(command, env=env, check=False)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Evaluation failed for {entry['index']:02d} {entry['label']}: "
+                    f"exit={result.returncode}"
+                )
+            if not output_complete(target, args.max_samples):
+                raise RuntimeError(
+                    f"Evaluation succeeded but official output is incomplete: {target}"
+                )
+            checkpoint_dir = local_checkpoint_dir(entry, root)
+            if checkpoint_dir is not None and checkpoint_dir.exists():
+                raise RuntimeError(
+                    "Evaluation finished but the downloaded checkpoint was not removed; "
+                    f"refusing to start the next task: {checkpoint_dir}"
+                )
+            wait_for_clean_transition(args, gpu_ids, allowed_gpu_pids)
+            completed += 1
+            print(
+                f"Verified {args.max_samples} generations, official CHAIR metrics, "
+                "released ports, no residual GPU process, and local checkpoint cleanup.",
+                flush=True,
             )
-        if not output_complete(target, args.max_samples):
-            raise RuntimeError(f"Evaluation succeeded but official output is incomplete: {target}")
-        checkpoint_dir = local_checkpoint_dir(entry, root)
-        if checkpoint_dir is not None and checkpoint_dir.exists():
-            raise RuntimeError(
-                "Evaluation finished but the downloaded checkpoint was not removed; "
-                f"refusing to start the next task: {checkpoint_dir}"
-            )
-        wait_for_clean_transition(args, gpu_ids, allowed_gpu_pids)
-        completed += 1
-        print(
-            f"Verified {args.max_samples} generations, official CHAIR metrics, "
-            "released ports, and no residual GPU process.",
-            flush=True,
-        )
 
     print(
         f"\nFinished selected={len(selected)} completed={completed} skipped={skipped} "
