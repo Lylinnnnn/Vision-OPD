@@ -734,6 +734,21 @@ cleanup_checkpoint() {
     fi
 }
 
+ACTIVE_DOWNLOADED_CKPT_DIR=""
+ACTIVE_DOWNLOADED_OSS_PATH=""
+
+cleanup_active_download_on_exit() {
+    local status=$?
+    trap - EXIT
+    if [[ "$OSS_CHECKPOINT_ACCESS_MODE" == "download" && -n "$ACTIVE_DOWNLOADED_CKPT_DIR" && -d "$ACTIVE_DOWNLOADED_CKPT_DIR" ]]; then
+        echo "[exit cleanup] Removing staged checkpoint after exit=${status}: ${ACTIVE_DOWNLOADED_CKPT_DIR}" >&2
+        cleanup_checkpoint "$ACTIVE_DOWNLOADED_CKPT_DIR" "$ACTIVE_DOWNLOADED_OSS_PATH" || true
+    fi
+    exit "$status"
+}
+
+trap cleanup_active_download_on_exit EXIT
+
 list_oss_steps() {
     local oss_exp_path="${1%/}"
     local output
@@ -1057,6 +1072,8 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         else
             checkpoint_model_dir="$local_ckpt_dir"
             echo "[1/4] Downloading from OSS ..."
+            ACTIVE_DOWNLOADED_CKPT_DIR="$local_ckpt_dir"
+            ACTIVE_DOWNLOADED_OSS_PATH="$oss_path"
             download_checkpoint "$oss_path" "$checkpoint_model_dir"
             echo "  ✅ Download complete"
         fi
@@ -1251,6 +1268,10 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
     if [[ "$OSS_CHECKPOINT_ACCESS_MODE" == "download" ]]; then
         echo "[3/4] Cleaning up local checkpoint (after OSS verification) ..."
         cleanup_checkpoint "$local_ckpt_dir" "$oss_path"
+        if [[ ! -d "$local_ckpt_dir" ]]; then
+            ACTIVE_DOWNLOADED_CKPT_DIR=""
+            ACTIVE_DOWNLOADED_OSS_PATH=""
+        fi
         echo "  ✅ Local checkpoint cleaned up"
     else
         echo "[3/4] No local checkpoint cleanup needed (mounted OSS path was used)"
