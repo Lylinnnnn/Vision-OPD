@@ -28,12 +28,12 @@ if [[ ! -f "$MANIFEST" ]]; then
     exit 1
 fi
 
-line="$(awk -F'|' -v index="$ENTRY_INDEX" '$1 == index {print; exit}' "$MANIFEST")"
+line="$(awk -F'|' -v entry_id="$ENTRY_INDEX" '$1 == entry_id {print; exit}' "$MANIFEST")"
 if [[ -z "$line" ]]; then
     echo "Error: entry ${ENTRY_INDEX} not found in ${MANIFEST}" >&2
     exit 1
 fi
-IFS='|' read -r index label source_type primary oss_name step student_ratio <<< "$line"
+IFS='|' read -r entry_id label source_type primary oss_name step student_ratio <<< "$line"
 if [[ "$source_type" == "local_base" && -n "$MODEL_ROOT" ]]; then
     primary="${MODEL_ROOT%/}/$(basename "$primary")"
 fi
@@ -55,7 +55,7 @@ common_env=(
 )
 
 echo "============================================================"
-echo "Paper CHAIR Describe rerun ${index}/45"
+echo "Paper CHAIR Describe rerun ${entry_id}/45"
 echo "Label:         ${label}"
 echo "Source type:   ${source_type}"
 echo "Student ratio: ${student_ratio}"
@@ -75,7 +75,7 @@ if [[ "$source_type" == "local_base" ]]; then
         "$primary" 0 latest chair
 elif [[ "$source_type" == "oss_checkpoint" ]]; then
     if [[ -z "$oss_name" || -z "$step" ]]; then
-        echo "Error: OSS entry ${index} is missing oss_name or step" >&2
+        echo "Error: OSS entry ${entry_id} is missing oss_name or step" >&2
         exit 1
     fi
     env "${common_env[@]}" \
@@ -95,6 +95,6 @@ elif [[ "$source_type" == "oss_checkpoint" ]]; then
         --chair-max-new-tokens 8192 \
         --sharded-eval-keep-shards False
 else
-    echo "Error: unsupported source type for entry ${index}: ${source_type}" >&2
+    echo "Error: unsupported source type for entry ${entry_id}: ${source_type}" >&2
     exit 1
 fi
