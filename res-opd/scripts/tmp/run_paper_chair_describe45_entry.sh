@@ -7,7 +7,7 @@ RES_OPD_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
 MANIFEST="${PAPER_CHAIR_DESCRIBE_MANIFEST:-${RES_OPD_ROOT}/eval/manifests/paper_chair_describe45_sources.txt}"
 
-ENTRY_INDEX="${1:?Usage: $0 <entry_index:1-45> [vllm_base_port]}"
+ENTRY_INDEX="${1:?Usage: $0 <entry_index> [vllm_base_port]}"
 VLLM_BASE_PORT="${2:-${VLLM_BASE_PORT:-8600}}"
 CHAIR_RERUN_PROMPT="${CHAIR_RERUN_PROMPT:-Describe the image.}"
 CHAIR_RERUN_OUTPUT_SUFFIX="${CHAIR_RERUN_OUTPUT_SUFFIX:-chair_describe_image_official}"
@@ -17,8 +17,8 @@ RERUN_SHARD_COUNT="${EVAL_SHARD_COUNT:-8}"
 OSS_CHECKPOINT_ACCESS_MODE="${OSS_CHECKPOINT_ACCESS_MODE:-mounted}"
 OSS_MOUNT_ROOT="${OSS_MOUNT_ROOT:-/data/oss_bucket_0}"
 
-if ! [[ "$ENTRY_INDEX" =~ ^[0-9]+$ ]] || (( ENTRY_INDEX < 1 || ENTRY_INDEX > 45 )); then
-    echo "Error: entry_index must be an integer in [1, 45], got ${ENTRY_INDEX}" >&2
+if ! [[ "$ENTRY_INDEX" =~ ^[0-9]+$ ]] || (( ENTRY_INDEX < 1 )); then
+    echo "Error: entry_index must be a positive integer, got ${ENTRY_INDEX}" >&2
     exit 1
 fi
 if ! [[ "$VLLM_BASE_PORT" =~ ^[0-9]+$ ]]; then
@@ -36,6 +36,7 @@ if [[ -z "$line" ]]; then
     exit 1
 fi
 IFS='|' read -r entry_id label source_type primary oss_name step student_ratio <<< "$line"
+entry_count="$(awk -F'|' '!/^#/ && NF {count += 1} END {print count + 0}' "$MANIFEST")"
 if [[ "$source_type" == "local_base" && -n "$MODEL_ROOT" ]]; then
     primary="${MODEL_ROOT%/}/$(basename "$primary")"
 fi
@@ -60,7 +61,7 @@ common_env=(
 )
 
 echo "============================================================"
-echo "Paper CHAIR Describe rerun ${entry_id}/45"
+echo "Paper CHAIR Describe rerun ${entry_id} (${entry_count} manifest entries)"
 echo "Label:         ${label}"
 echo "Source type:   ${source_type}"
 echo "Student ratio: ${student_ratio}"

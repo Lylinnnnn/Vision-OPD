@@ -2,6 +2,7 @@
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -89,8 +90,13 @@ def load_manifest(path):
                 "student_ratio": student_ratio,
             }
         )
-    if len(entries) != 45 or [row["index"] for row in entries] != list(range(1, 46)):
-        raise ValueError("The paper manifest must contain exactly the ordered indices 1-45")
+    if not entries:
+        raise ValueError("The CHAIR source manifest is empty")
+    indices = [row["index"] for row in entries]
+    if any(index < 1 for index in indices) or indices != sorted(indices):
+        raise ValueError("Manifest indices must be positive and ordered")
+    if len(indices) != len(set(indices)):
+        raise ValueError("The CHAIR source manifest contains duplicate indices")
     labels = [row["label"] for row in entries]
     if len(labels) != len(set(labels)):
         raise ValueError("The paper manifest contains duplicate labels")
@@ -125,7 +131,12 @@ def local_checkpoint_dir(entry, root):
 def entry_lock(entry, root, suffix):
     lock_root = root / "res-opd" / "eval_results" / ".paper_chair_locks"
     lock_root.mkdir(parents=True, exist_ok=True)
-    lock_dir = lock_root / f"{suffix}.{entry['index']:02d}.lock"
+    identity = "|".join(
+        str(entry[key])
+        for key in ("label", "source_type", "primary", "oss_name", "step", "student_ratio")
+    )
+    digest = hashlib.sha1(identity.encode("utf-8")).hexdigest()[:12]
+    lock_dir = lock_root / f"{suffix}.{entry['index']:02d}.{digest}.lock"
     try:
         lock_dir.mkdir()
     except FileExistsError as error:
@@ -360,7 +371,8 @@ def main():
         raise ValueError("No manifest entries matched this partition")
 
     print(
-        f"Resolved {len(selected)}/45 entries; job={args.job_index}/{args.num_jobs}; "
+        f"Resolved {len(selected)}/{len(entries)} entries; "
+        f"job={args.job_index}/{args.num_jobs}; "
         f"suffix={args.output_suffix}; checkpoint_access={args.oss_checkpoint_access}",
         flush=True,
     )
@@ -406,6 +418,7 @@ def main():
             env = os.environ.copy()
             env["CHAIR_RERUN_PROMPT"] = args.prompt
             env["CHAIR_RERUN_OUTPUT_SUFFIX"] = args.output_suffix
+            env["PAPER_CHAIR_DESCRIBE_MANIFEST"] = str(manifest)
             env["GPU_LIST"] = args.gpu_list
             env["EVAL_SHARD_COUNT"] = str(args.eval_shard_count)
             env["CHAIR_MAX_SAMPLES"] = str(args.max_samples)
