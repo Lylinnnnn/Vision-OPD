@@ -34,6 +34,15 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--fallback-best-available-step",
+        action="store_true",
+        help=(
+            "When the requested checkpoint output is absent, scan other official "
+            "outputs from the same experiment and select the lowest-CHAIRi step, "
+            "breaking ties by higher ObjF1, lower CHAIRs, then earlier step."
+        ),
+    )
+    parser.add_argument(
         "--eval-root",
         default="res-opd/eval_results/instruct/full",
     )
@@ -136,6 +145,34 @@ def entry_output_dir(entry, eval_root, suffix):
         experiment = f"{entry['primary']}_{entry['step']}"
     dataset = f"train5000_test1000_original_sr{ratio_tag(entry['student_ratio'])}"
     return eval_root / experiment / dataset / suffix
+
+
+def fallback_step_outputs(entry, eval_root, suffixes):
+    if entry["source_type"] != "oss_checkpoint":
+        return []
+    dataset = f"train5000_test1000_original_sr{ratio_tag(entry['student_ratio'])}"
+    pattern = re.compile(rf"^{re.escape(entry['primary'])}_global_step_(\d+)$")
+    candidates = []
+    for experiment_dir in eval_root.glob(f"{entry['primary']}_global_step_*"):
+        match = pattern.fullmatch(experiment_dir.name)
+        if not match:
+            continue
+        for suffix_rank, suffix in enumerate(suffixes):
+            output_dir = experiment_dir / dataset / suffix
+            metrics_path = output_dir / "chair_metrics.json"
+            results_path = output_dir / "eval_results.jsonl"
+            if metrics_path.is_file() and results_path.is_file():
+                candidates.append(
+                    {
+                        "step": int(match.group(1)),
+                        "suffix_rank": suffix_rank,
+                        "output_dir": output_dir,
+                        "metrics_path": metrics_path,
+                        "results_path": results_path,
+                    }
+                )
+                break
+    return candidates
 
 
 def model_scale(label):
@@ -273,6 +310,10 @@ def summarize_entry(entry, eval_root, suffixes, args, tokenizer_cache):
     output_dir = None
     metrics_path = None
     results_path = None
+    metrics = None
+    rows = None
+    resolved_step = entry["step"]
+    step_selection = "requested"
     for suffix in suffixes:
         candidate = entry_output_dir(entry, eval_root, suffix)
         attempted.append(candidate)
@@ -283,13 +324,53 @@ def summarize_entry(entry, eval_root, suffixes, args, tokenizer_cache):
             metrics_path = candidate_metrics
             results_path = candidate_results
             break
+    if output_dir is None and args.fallback_best_available_step:
+        valid_candidates = []
+        invalid_candidates = []
+        for candidate in fallback_step_outputs(entry, eval_root, suffixes):
+            try:
+                candidate_metrics = json.loads(
+                    candidate["metrics_path"].read_text(encoding="utf-8")
+                )
+                candidate_rows = load_jsonl(candidate["results_path"])
+                validate_metrics(
+                    candidate_metrics,
+                    candidate_rows,
+                    args,
+                    candidate["metrics_path"],
+                )
+            except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+                invalid_candidates.append(f"{candidate['output_dir']}: {error}")
+                continue
+            candidate["metrics"] = candidate_metrics
+            candidate["rows"] = candidate_rows
+            candidate["rank"] = (
+                finite_float(candidate_metrics["CHAIRi"], "CHAIRi"),
+                -finite_float(candidate_metrics["ObjF1"], "ObjF1"),
+                finite_float(candidate_metrics["CHAIRs"], "CHAIRs"),
+                candidate["step"],
+                candidate["suffix_rank"],
+            )
+            valid_candidates.append(candidate)
+        if valid_candidates:
+            selected = min(valid_candidates, key=lambda candidate: candidate["rank"])
+            output_dir = selected["output_dir"]
+            metrics_path = selected["metrics_path"]
+            results_path = selected["results_path"]
+            metrics = selected["metrics"]
+            rows = selected["rows"]
+            resolved_step = f"global_step_{selected['step']}"
+            step_selection = "fallback_best_available"
+        elif invalid_candidates:
+            attempted.extend(invalid_candidates)
     if output_dir is None:
         attempted_text = "\n  ".join(str(path) for path in attempted)
         raise FileNotFoundError(f"Missing complete CHAIR output; tried:\n  {attempted_text}")
 
-    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
-    rows = load_jsonl(results_path)
-    validate_metrics(metrics, rows, args, metrics_path)
+    if metrics is None or rows is None:
+        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+        rows = load_jsonl(results_path)
+        validate_metrics(metrics, rows, args, metrics_path)
 
     scale = model_scale(entry["label"])
     tokenizer = None
@@ -325,7 +406,9 @@ def summarize_entry(entry, eval_root, suffixes, args, tokenizer_cache):
         "index": entry["index"],
         "label": entry["label"],
         "method": method_name(entry["label"]),
-        "checkpoint_step": checkpoint_step(entry["step"]),
+        "checkpoint_step": checkpoint_step(resolved_step),
+        "requested_checkpoint_step": checkpoint_step(entry["step"]),
+        "step_selection": step_selection,
         "scale": scale,
         "output_dir": str(output_dir),
         "n": n,
@@ -560,6 +643,7 @@ def main():
         rows.append(row)
         print(
             f"[{entry['index']:02d}] {entry['label']}: "
+            f"step={row['checkpoint_step']} selection={row['step_selection']} "
             f"tokens={row['response_tokens_mean']:.2f} "
             f"correct={row['official_correct_mentions']} "
             f"hall={row['official_hallucinated_mentions']}",
@@ -574,6 +658,7 @@ def main():
         "indices": sorted(requested),
         "output_suffix": args.output_suffix,
         "fallback_output_suffixes": args.fallback_output_suffix,
+        "fallback_best_available_step": args.fallback_best_available_step,
         "expected_prompt": args.expected_prompt,
         "expected_samples": args.expected_samples,
         "length_mode": args.length_mode,
