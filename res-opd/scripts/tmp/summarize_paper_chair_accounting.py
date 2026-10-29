@@ -43,6 +43,15 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--best-available-step",
+        action="store_true",
+        help=(
+            "For every OSS experiment, scan all available official outputs and "
+            "select the lowest-CHAIRi step, breaking ties by higher ObjF1, lower "
+            "CHAIRs, then earlier step."
+        ),
+    )
+    parser.add_argument(
         "--eval-root",
         default="res-opd/eval_results/instruct/full",
     )
@@ -324,7 +333,10 @@ def summarize_entry(entry, eval_root, suffixes, args, tokenizer_cache):
             metrics_path = candidate_metrics
             results_path = candidate_results
             break
-    if output_dir is None and args.fallback_best_available_step:
+    scan_best_step = args.best_available_step or (
+        output_dir is None and args.fallback_best_available_step
+    )
+    if scan_best_step:
         valid_candidates = []
         invalid_candidates = []
         for candidate in fallback_step_outputs(entry, eval_root, suffixes):
@@ -360,7 +372,9 @@ def summarize_entry(entry, eval_root, suffixes, args, tokenizer_cache):
             metrics = selected["metrics"]
             rows = selected["rows"]
             resolved_step = f"global_step_{selected['step']}"
-            step_selection = "fallback_best_available"
+            step_selection = (
+                "best_available" if args.best_available_step else "fallback_best_available"
+            )
         elif invalid_candidates:
             attempted.extend(invalid_candidates)
     if output_dir is None:
@@ -659,6 +673,7 @@ def main():
         "output_suffix": args.output_suffix,
         "fallback_output_suffixes": args.fallback_output_suffix,
         "fallback_best_available_step": args.fallback_best_available_step,
+        "best_available_step": args.best_available_step,
         "expected_prompt": args.expected_prompt,
         "expected_samples": args.expected_samples,
         "length_mode": args.length_mode,
