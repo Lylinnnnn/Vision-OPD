@@ -154,7 +154,7 @@ def load_existing(path: Path) -> dict[str, dict]:
     return records
 
 
-def load_eval_image(path: str, degradation_mode: str, student_px: int, target_px: int, student_ratio: float):
+def load_eval_image(path: str, degradation_mode: str, student_ratio: float):
     image = Image.open(path).convert("RGB")
     if degradation_mode != "original":
         raise ValueError(f"Only degradation_mode=original is supported, got {degradation_mode!r}")
@@ -173,12 +173,10 @@ def load_eval_image(path: str, degradation_mode: str, student_px: int, target_px
 def image_to_data_uri(
     path: str,
     degradation_mode: str = "original",
-    student_px: int = 0,
-    target_px: int = 448,
     student_ratio: float = 1.0,
 ) -> str:
     p = Path(path)
-    image = load_eval_image(str(p), degradation_mode, student_px, target_px, student_ratio)
+    image = load_eval_image(str(p), degradation_mode, student_ratio)
     buf = io.BytesIO()
     image.save(buf, format="JPEG")
     payload = buf.getvalue()
@@ -274,8 +272,6 @@ def main():
         help="Comma-separated MME categories.",
     )
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--student-px", type=int, default=0, help="Legacy metadata only; original-ratio eval ignores this value")
-    parser.add_argument("--target-px", type=int, default=448, help="Legacy metadata only; original-ratio eval ignores this value")
     parser.add_argument("--degradation-mode", choices=["original"], default="original")
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--max-new-tokens", type=int, default=16)
@@ -338,8 +334,6 @@ def main():
                             "url": image_to_data_uri(
                                 image_path,
                                 degradation_mode=args.degradation_mode,
-                                student_px=args.student_px,
-                                target_px=args.target_px,
                                 student_ratio=args.student_ratio,
                             )
                         },
@@ -366,8 +360,6 @@ def main():
                     time.sleep(float(attempt))
 
         record = dict(sample)
-        record["student_px"] = args.student_px
-        record["target_px"] = args.target_px
         record["degradation_mode"] = args.degradation_mode
         record["student_ratio"] = args.student_ratio
         record["model_answer"] = answer
@@ -404,8 +396,6 @@ def main():
             "benchmark": "mme",
             "source_path": str(source_path),
             "extractor": "first_sentence_yes_no",
-            "student_px": args.student_px,
-            "target_px": args.target_px,
             "degradation_mode": args.degradation_mode,
             "student_ratio": args.student_ratio,
         }

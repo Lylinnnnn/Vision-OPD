@@ -13,13 +13,13 @@
 # Usage:
 #   bash scripts/eval_batch_from_oss.sh --experiment-names <exp1> [exp2] ... \
 #       [--step global_step_92] [--student-ratio 1.0] [--degradation-mode original] \
-#       [--student-ratio 1.0] [--version-tag v5] [--eval-mode chair,pope] \
+#       [--version-tag v5] [--eval-mode chair,pope] \
 #       [--vision-benchmark mmstar,cv-bench] [--vision-benchmark-data-dir /home/liuyanlin.lyl/notebook/data] \
 #       [--chair-save-logprobs true] [--chair-top-logprobs 5]
 #
 #   bash scripts/eval_batch_from_oss.sh --oss-names <name1> [name2] ... \
 #       [--step global_step_92] [--student-ratio 1.0] [--degradation-mode original] \
-#       [--student-ratio 1.0] [--version-tag v5] [--eval-mode chair,pope] \
+#       [--version-tag v5] [--eval-mode chair,pope] \
 #       [--vision-benchmark mmstar,cv-bench] [--vision-benchmark-data-dir /home/liuyanlin.lyl/notebook/data] \
 #       [--chair-save-logprobs true] [--chair-top-logprobs 5]
 #
@@ -50,7 +50,7 @@
 #   # Evaluate specific legacy OSS experiments at step 92
 #   bash scripts/eval_batch_from_oss.sh \
 #       --oss-names ResOPD_s448_t0_a0.5_ema-e2 ResOPD_s448_t448_a0.5_ema-e2 \
-#       --step global_step_92 --student-px 448 --version-tag v5
+#       --step global_step_92 --version-tag v5
 #
 #   # Evaluate all ema experiments at default step
 #   bash scripts/eval_batch_from_oss.sh \
@@ -93,9 +93,6 @@ HF_FILES=(
 
 # Defaults
 STEP="${STEP:-}"
-STUDENT_PX="${STUDENT_PX:-}"
-TEACHER_PX="${TEACHER_PX:-}"
-TARGET_PX="${TARGET_PX:-448}"
 DEGRADATION_MODE="${DEGRADATION_MODE:-}"
 STUDENT_RATIO="${STUDENT_RATIO:-}"
 TEACHER_RATIO="${TEACHER_RATIO:-}"
@@ -222,9 +219,6 @@ while [[ $# -gt 0 ]]; do
             done
             ;;
         --step)       STEP="$2"; shift 2 ;;
-        --student-px) STUDENT_PX="$2"; shift 2 ;;
-        --teacher-px) TEACHER_PX="$2"; shift 2 ;;
-        --target-px) TARGET_PX="$2"; shift 2 ;;
         --degradation-mode) DEGRADATION_MODE="$2"; shift 2 ;;
         --student-ratio) STUDENT_RATIO="$2"; shift 2 ;;
         --teacher-ratio) TEACHER_RATIO="$2"; shift 2 ;;
@@ -821,25 +815,15 @@ infer_effective_model_profile() {
 infer_eval_spec() {
     local exp_name="$1"
     local inferred_mode="original"
-    local inferred_student_px="0"
-    local inferred_teacher_px="$TARGET_PX"
     local inferred_student_ratio="1.0"
     local inferred_teacher_ratio="1.0"
 
     if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr([0-9.]+) ]]; then
-        inferred_student_px="0"
         inferred_student_ratio="${BASH_REMATCH[1]}"
         inferred_teacher_ratio="${BASH_REMATCH[2]}"
-    elif [[ "$exp_name" =~ -s([0-9]+)-t([0-9]+) ]]; then
-        inferred_student_px="${BASH_REMATCH[1]}"
-        inferred_teacher_px="${BASH_REMATCH[2]}"
-        inferred_student_ratio="1.0"
-    elif [[ "$exp_name" =~ -s([0-9]+)(-|_) ]]; then
-        inferred_student_px="${BASH_REMATCH[1]}"
-        inferred_student_ratio="1.0"
     fi
 
-    echo "${DEGRADATION_MODE:-$inferred_mode}|${STUDENT_PX:-$inferred_student_px}|${TEACHER_PX:-$inferred_teacher_px}|${TARGET_PX}|${STUDENT_RATIO:-$inferred_student_ratio}|${TEACHER_RATIO:-$inferred_teacher_ratio}"
+    echo "${DEGRADATION_MODE:-$inferred_mode}|${STUDENT_RATIO:-$inferred_student_ratio}|${TEACHER_RATIO:-$inferred_teacher_ratio}"
 }
 
 eval_results_exist() {
@@ -958,7 +942,6 @@ else
     echo " Step: all OSS global_step_* checkpoints, serial per experiment"
 fi
 echo " Student spec: auto from experiment name unless overridden"
-echo " Target PX: ${TARGET_PX}"
 echo " Version tag: ${VERSION_TAG}"
 echo " Result tag override: ${RESULT_VERSION_TAG:-<auto by model profile>}"
 echo " Eval mode: ${EVAL_MODE}"
@@ -1021,7 +1004,7 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
     fi
     result_version_tag="$(resolve_result_version_tag "$local_exp_name")"
     effective_model_profile="$(infer_effective_model_profile "$local_exp_name")"
-    IFS='|' read -r effective_degradation_mode effective_student_px effective_teacher_px effective_target_px effective_student_ratio effective_teacher_ratio < <(
+    IFS='|' read -r effective_degradation_mode effective_student_ratio effective_teacher_ratio < <(
         infer_eval_spec "$local_exp_name"
     )
 
@@ -1038,8 +1021,8 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
     echo " Model profile: ${effective_model_profile}"
     echo " Result tag: ${result_version_tag}"
     echo " Steps:      ${steps_to_eval[*]}"
-    echo " Student: mode=${effective_degradation_mode} px=${effective_student_px} target=${effective_target_px} ratio=${effective_student_ratio}"
-    echo " Teacher: px=${effective_teacher_px} ratio=${effective_teacher_ratio}"
+    echo " Student: mode=${effective_degradation_mode} ratio=${effective_student_ratio}"
+    echo " Teacher ratio: ${effective_teacher_ratio}"
     echo "=========================================="
 
     for step in "${steps_to_eval[@]}"; do
@@ -1102,8 +1085,6 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
             DEGRADATION_MODE="$effective_degradation_mode"
             STUDENT_RATIO="$effective_student_ratio"
             TEACHER_RATIO="$effective_teacher_ratio"
-            TEACHER_PX="$effective_teacher_px"
-            TARGET_PX="$effective_target_px"
             CHAIR_MAX_NEW_TOKENS="$CHAIR_MAX_NEW_TOKENS"
             CHAIR_PARALLEL_WORKERS="$CHAIR_PARALLEL_WORKERS"
             CHAIR_MAX_SAMPLES="$CHAIR_MAX_SAMPLES"
@@ -1153,7 +1134,7 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         [[ -n "${JUDGE_API_KEY:-}" ]] && sharded_env+=(JUDGE_API_KEY="$JUDGE_API_KEY")
         [[ -n "${JUDGE_MODEL:-}" ]] && sharded_env+=(JUDGE_MODEL="$JUDGE_MODEL")
         [[ -n "${JUDGE_MODEL_PATH:-}" ]] && sharded_env+=(JUDGE_MODEL_PATH="$JUDGE_MODEL_PATH")
-        env "${sharded_env[@]}" bash "$SHARDED_EVAL_SCRIPT" "$checkpoint_model_dir" "$effective_student_px" "$VERSION_TAG" "$EVAL_MODE"
+        env "${sharded_env[@]}" bash "$SHARDED_EVAL_SCRIPT" "$checkpoint_model_dir" "$VERSION_TAG" "$EVAL_MODE"
     else
     coco_tasks=()
     has_eval_task "$EVAL_MODE" "chair" && coco_tasks+=(chair)
@@ -1172,8 +1153,6 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         DEGRADATION_MODE="$effective_degradation_mode" \
         STUDENT_RATIO="$effective_student_ratio" \
         TEACHER_RATIO="$effective_teacher_ratio" \
-        TEACHER_PX="$effective_teacher_px" \
-        TARGET_PX="$effective_target_px" \
         CHAIR_MAX_NEW_TOKENS="$CHAIR_MAX_NEW_TOKENS" \
         CHAIR_PARALLEL_WORKERS="$CHAIR_PARALLEL_WORKERS" \
         CHAIR_MAX_SAMPLES="$CHAIR_MAX_SAMPLES" \
@@ -1193,7 +1172,7 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         EVAL_OPD_TRACE_CASE_ANALYSIS="$EVAL_OPD_TRACE_CASE_ANALYSIS" \
         EVAL_OPD_TRACE_MAX_SAMPLES="$EVAL_OPD_TRACE_MAX_SAMPLES" \
         RESULT_VERSION_TAG="$result_version_tag" \
-            bash "$EVAL_SCRIPT" "$checkpoint_model_dir" "$effective_student_px" "$VERSION_TAG" "$coco_mode"
+            bash "$EVAL_SCRIPT" "$checkpoint_model_dir" "$VERSION_TAG" "$coco_mode"
     fi
     if has_vision_eval_task "$EVAL_MODE"; then
         echo "  Running Vision-OPD auxiliary eval (${EFFECTIVE_VISION_BENCHMARK}) ..."
@@ -1209,8 +1188,6 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
             DEGRADATION_MODE="$effective_degradation_mode"
             STUDENT_RATIO="$effective_student_ratio"
             TEACHER_RATIO="$effective_teacher_ratio"
-            TEACHER_PX="$effective_teacher_px"
-            TARGET_PX="$effective_target_px"
             VISION_BENCHMARK="$EFFECTIVE_VISION_BENCHMARK"
             VISION_BENCHMARK_DATA_DIR="$VISION_BENCHMARK_DATA_DIR"
             VISION_BENCHMARK_AUTO_DOWNLOAD="$VISION_BENCHMARK_AUTO_DOWNLOAD"
@@ -1230,7 +1207,7 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         [[ -n "${JUDGE_API_KEY:-}" ]] && vision_env+=(JUDGE_API_KEY="$JUDGE_API_KEY")
         [[ -n "${JUDGE_MODEL:-}" ]] && vision_env+=(JUDGE_MODEL="$JUDGE_MODEL")
         [[ -n "${JUDGE_MODEL_PATH:-}" ]] && vision_env+=(JUDGE_MODEL_PATH="$JUDGE_MODEL_PATH")
-        env "${vision_env[@]}" bash "$EVAL_SCRIPT" "$checkpoint_model_dir" "$effective_student_px" "$VERSION_TAG" "vision"
+        env "${vision_env[@]}" bash "$EVAL_SCRIPT" "$checkpoint_model_dir" "$VERSION_TAG" "vision"
     fi
     if has_eval_task "$EVAL_MODE" "amber"; then
         echo "  Running AMBER ..."
@@ -1243,7 +1220,6 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
             EVAL_THINKING_MAX_TOKENS="$EVAL_THINKING_MAX_TOKENS"
             DEGRADATION_MODE="$effective_degradation_mode"
             STUDENT_RATIO="$effective_student_ratio"
-            TARGET_PX="$effective_target_px"
             AMBER_ROOT="$AMBER_ROOT"
             AMBER_IMAGE_ROOT="$AMBER_IMAGE_ROOT"
             AMBER_EVAL_TYPE="$AMBER_EVAL_TYPE"
@@ -1260,12 +1236,10 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
             RESULT_VERSION_TAG="$result_version_tag"
         )
         [[ -n "$VISION_ENABLE_THINKING" ]] && eval_env+=(VISION_ENABLE_THINKING="$VISION_ENABLE_THINKING")
-        env "${eval_env[@]}" bash "$EVAL_SCRIPT" "$checkpoint_model_dir" "$effective_student_px" "$VERSION_TAG" "amber"
+        env "${eval_env[@]}" bash "$EVAL_SCRIPT" "$checkpoint_model_dir" "$VERSION_TAG" "amber"
     fi
     if has_eval_task "$EVAL_MODE" "mme"; then
         echo "  Running classic MME perception ..."
-        STUDENT_PX="$effective_student_px" \
-        TARGET_PX="$effective_target_px" \
         DEGRADATION_MODE="$effective_degradation_mode" \
         STUDENT_RATIO="$effective_student_ratio" \
             bash "$MME_SCRIPT" "$checkpoint_model_dir" "$VERSION_TAG"

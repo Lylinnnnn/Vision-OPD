@@ -347,8 +347,6 @@ def degrade_image_by_ratio(image_path: str, ratio: float) -> Image.Image:
 
 def image_to_data_uri(
     image_path: str,
-    student_px: int,
-    target_px: int,
     degradation_mode: str,
     student_ratio: float,
 ) -> str:
@@ -478,8 +476,6 @@ def run_single_benchmark(args, benchmark: str) -> dict:
         query = build_query(item, args.prompt_suffix, args.use_prepared_query)
         image_uri = image_to_data_uri(
             image_path,
-            args.student_px,
-            args.target_px,
             args.degradation_mode,
             args.student_ratio,
         )
@@ -524,8 +520,6 @@ def run_single_benchmark(args, benchmark: str) -> dict:
             record["final_answer_text"] = final_answer
         record["pred_answer"] = official_pope_extract(answer)
         record["correct"] = record["pred_answer"] == str(record.get("response", "")).strip().lower()
-        record["student_px"] = args.student_px
-        record["target_px"] = args.target_px
         record["degradation_mode"] = args.degradation_mode
         record["student_ratio"] = args.student_ratio
         return record
@@ -561,8 +555,6 @@ def run_single_benchmark(args, benchmark: str) -> dict:
         {
             "benchmark": benchmark,
             "pope_source": args.pope_source,
-            "student_px": args.student_px,
-            "target_px": args.target_px,
             "degradation_mode": args.degradation_mode,
             "student_ratio": args.student_ratio,
             "questions_per_label": args.questions_per_label,
@@ -608,8 +600,6 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--vision-opd-root", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--output-dir", type=Path, default=Path("./eval_results"))
-    parser.add_argument("--student-px", type=int, default=0, help="Legacy metadata only; original-ratio eval ignores this value")
-    parser.add_argument("--target-px", type=int, default=448, help="Legacy metadata only; original-ratio eval ignores this value")
     parser.add_argument("--degradation-mode", choices=["original"], default="original")
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--max-new-tokens", type=int, default=16)

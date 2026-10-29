@@ -21,7 +21,6 @@ set -eo pipefail
 #   - DEGRADATION_MODE:    original
 #   - STUDENT_RATIO:       student original-ratio degradation
 #   - TEACHER_RATIO:       teacher original-ratio degradation
-#   - STUDENT_PX/TEACHER_PX/TARGET_PX: legacy metadata/CLI compatibility only
 #   - TEACHER_MODE:        ema / frozen / fixed / coevolving
 #   - ALPHA:               loss interpolation (0.5=JSD, 1.0=RKL, 0.0=FKL)
 #   - ROLLOUT_N:           number of rollouts per sample (1=pure KD, 8=GRPO+KD)
@@ -116,9 +115,6 @@ else
 fi
 
 # --- Original-ratio params (online degradation) ---
-STUDENT_PX="${STUDENT_PX:-0}"         # legacy metadata only
-TARGET_PX="${TARGET_PX:-448}"         # legacy metadata only
-TEACHER_PX="${TEACHER_PX:-448}"       # legacy metadata only
 DEGRADATION_MODE="${DEGRADATION_MODE:-original}"
 STUDENT_RATIO="${STUDENT_RATIO:-1.0}"           # 1.0 = original, 0.75/0.5/0.25 = down/up sample
 TEACHER_RATIO="${TEACHER_RATIO:-1.0}"           # 0 = gray/blank, 1.0 = original
@@ -943,7 +939,6 @@ echo "============================================================"
 echo "Model:            $MODEL_PATH"
 echo "Model size prof.: $MODEL_SIZE_PROFILE"
 echo "Degradation mode: $DEGRADATION_MODE"
-echo "Legacy px args:   student=$STUDENT_PX teacher=$TEACHER_PX target=$TARGET_PX (metadata only)"
 echo "Student ratio:    $STUDENT_RATIO (original mode)"
 echo "Teacher ratio:    $TEACHER_RATIO (original mode)"
 echo "Teacher mode:     $TEACHER_MODE (src=$TEACHER_MODEL_SOURCE, reg=$TEACHER_REGULARIZATION, rate=$TEACHER_UPDATE_RATE)"
@@ -1023,9 +1018,6 @@ set +e
     data.dataloader_num_workers=$DATA_DATALOADER_NUM_WORKERS \
     data.custom_cls.path="$CUSTOM_DATASET_PATH" \
     data.custom_cls.name=ResOPDDataset \
-    data.student_px=$STUDENT_PX \
-    data.teacher_px=$TEACHER_PX \
-    data.target_px=$TARGET_PX \
     data.degradation_mode="$DEGRADATION_MODE" \
     data.student_ratio=$STUDENT_RATIO \
     data.teacher_ratio=$TEACHER_RATIO \

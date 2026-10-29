@@ -248,7 +248,6 @@ env \
         --oss-names "$OSS_NAME" \
         --local-names "$EXPERIMENT_NAME" \
         --step "$STEP" \
-        --student-px 0 \
         --degradation-mode original \
         --student-ratio 1.0 \
         --version-tag "$RESULT_VERSION_TAG" \

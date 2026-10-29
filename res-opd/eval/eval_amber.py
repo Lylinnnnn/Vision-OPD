@@ -35,7 +35,7 @@ def load_json(path: Path):
         return json.load(f)
 
 
-def load_eval_image(path: Path, degradation_mode: str, student_px: int, target_px: int, student_ratio: float):
+def load_eval_image(path: Path, degradation_mode: str, student_ratio: float):
     image = Image.open(path).convert("RGB")
     if degradation_mode != "original":
         raise ValueError(f"Only degradation_mode=original is supported, got {degradation_mode!r}")
@@ -54,11 +54,9 @@ def load_eval_image(path: Path, degradation_mode: str, student_px: int, target_p
 def image_to_data_uri(
     path: Path,
     degradation_mode: str = "original",
-    student_px: int = 0,
-    target_px: int = 448,
     student_ratio: float = 1.0,
 ) -> str:
-    image = load_eval_image(path, degradation_mode, student_px, target_px, student_ratio)
+    image = load_eval_image(path, degradation_mode, student_ratio)
     buf = io.BytesIO()
     image.save(buf, format="JPEG")
     payload = buf.getvalue()
@@ -222,8 +220,6 @@ def run_official_eval(args, response_path: Path, out_dir: Path) -> None:
         "official_returncode": proc.returncode,
         "official_log": str(official_log),
         "response_path": str(response_path),
-        "student_px": args.student_px,
-        "target_px": args.target_px,
         "degradation_mode": args.degradation_mode,
         "student_ratio": args.student_ratio,
         "metrics": parse_official_stdout(proc.stdout),
@@ -242,8 +238,6 @@ def main():
     parser.add_argument("--amber-root", type=Path, required=True)
     parser.add_argument("--image-root", type=Path, default=None)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--student-px", type=int, default=0, help="Legacy metadata only; original-ratio eval ignores this value")
-    parser.add_argument("--target-px", type=int, default=448, help="Legacy metadata only; original-ratio eval ignores this value")
     parser.add_argument("--degradation-mode", choices=["original"], default="original")
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--evaluation-type", choices=sorted(QUERY_MAP), default="a")
@@ -318,8 +312,6 @@ def main():
                             "url": image_to_data_uri(
                                 image_path,
                                 degradation_mode=args.degradation_mode,
-                                student_px=args.student_px,
-                                target_px=args.target_px,
                                 student_ratio=args.student_ratio,
                             )
                         },
@@ -357,8 +349,6 @@ def main():
         raw_record.update(
             {
                 "image_path": str(image_path),
-                "student_px": args.student_px,
-                "target_px": args.target_px,
                 "degradation_mode": args.degradation_mode,
                 "student_ratio": args.student_ratio,
                 "model_answer": answer,

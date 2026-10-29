@@ -12,10 +12,14 @@ RES_OPD_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
 source "${SCRIPT_DIR}/path_utils.sh"
 
-MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [student_px] [version_tag] [eval_mode]}"
-STUDENT_PX="${2:-${STUDENT_PX:-}}"
-VERSION_TAG="${3:-latest}"
-EVAL_MODE="${4:-${EVAL_MODE:-chair}}"
+MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [version_tag] [eval_mode]}"
+if [[ "${2:-}" =~ ^[0-9]+$ ]]; then
+    VERSION_TAG="${3:-latest}"
+    EVAL_MODE="${4:-${EVAL_MODE:-chair}}"
+else
+    VERSION_TAG="${2:-latest}"
+    EVAL_MODE="${3:-${EVAL_MODE:-chair}}"
+fi
 
 PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
 res_opd_validate_python_bin "$PYTHON_BIN"
@@ -46,8 +50,6 @@ DATASET_VERSION="${DATASET_VERSION:-full}"
 DEGRADATION_MODE="${DEGRADATION_MODE:-}"
 STUDENT_RATIO="${STUDENT_RATIO:-}"
 TEACHER_RATIO="${TEACHER_RATIO:-}"
-TEACHER_PX="${TEACHER_PX:-}"
-TARGET_PX="${TARGET_PX:-448}"
 RESULT_VERSION_TAG="${RESULT_VERSION_TAG:-}"
 EXPERIMENT_NAME_OVERRIDE="${EXPERIMENT_NAME_OVERRIDE:-}"
 EVAL_OUTPUT_SUFFIX="${EVAL_OUTPUT_SUFFIX:-}"
@@ -314,33 +316,22 @@ resolve_result_version_tag() {
 infer_eval_spec() {
     local exp_name="$1"
     local inferred_mode="original"
-    local inferred_student_px="0"
-    local inferred_teacher_px="$TARGET_PX"
     local inferred_student_ratio="1.0"
     local inferred_teacher_ratio="1.0"
 
     case "$(infer_model_profile)" in
         qwen3vl_2b_thinking|qwen3vl_8b_thinking|generic_thinking)
             inferred_mode="original"
-            inferred_student_px="0"
             inferred_student_ratio="1.0"
             ;;
     esac
 
     if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr([0-9.]+) ]]; then
-        inferred_student_px="0"
         inferred_student_ratio="${BASH_REMATCH[1]}"
         inferred_teacher_ratio="${BASH_REMATCH[2]}"
-    elif [[ "$exp_name" =~ -s([0-9]+)-t([0-9]+) ]]; then
-        inferred_student_px="${BASH_REMATCH[1]}"
-        inferred_teacher_px="${BASH_REMATCH[2]}"
-    elif [[ "$exp_name" =~ -s([0-9]+)(-|_) ]]; then
-        inferred_student_px="${BASH_REMATCH[1]}"
     fi
 
     DEGRADATION_MODE="${DEGRADATION_MODE:-$inferred_mode}"
-    STUDENT_PX="${STUDENT_PX:-$inferred_student_px}"
-    TEACHER_PX="${TEACHER_PX:-$inferred_teacher_px}"
     STUDENT_RATIO="${STUDENT_RATIO:-$inferred_student_ratio}"
     TEACHER_RATIO="${TEACHER_RATIO:-$inferred_teacher_ratio}"
 }
@@ -605,7 +596,7 @@ for shard_idx in $(seq 0 $((EVAL_SHARD_COUNT - 1))); do
         fi
         printf 'cd %q\n' "$VISION_OPD_ROOT"
         printf 'echo "[shard %s/%s] gpu=%s port=%s" > %q\n' "$shard_idx" "$EVAL_SHARD_COUNT" "$gpu" "$((VLLM_BASE_PORT + shard_idx * 10))" "$log_file"
-        printf 'bash %q %q %q %q %q >> %q 2>&1\n' "$EVAL_SCRIPT" "$MODEL_PATH" "$STUDENT_PX" "$VERSION_TAG" "$EVAL_MODE" "$log_file"
+        printf 'bash %q %q %q %q >> %q 2>&1\n' "$EVAL_SCRIPT" "$MODEL_PATH" "$VERSION_TAG" "$EVAL_MODE" "$log_file"
         echo 'status=$?'
         printf 'echo "$status" > %q\n' "$exit_file"
         echo 'exit "$status"'

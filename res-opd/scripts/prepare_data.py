@@ -20,7 +20,7 @@ Outputs:
 
 Usage:
     python scripts/prepare_data.py --data-dir ./data
-    python scripts/prepare_data.py --data-dir ./data --target-px 448 --train-count 1500
+    python scripts/prepare_data.py --data-dir ./data --train-count 1500
 """
 
 import argparse
@@ -73,8 +73,6 @@ SPLIT_SEED = 42
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare COCO data for Res-OPD training.")
     parser.add_argument("--data-dir", default="./data", help="Output directory for processed data")
-    parser.add_argument("--target-px", type=int, default=448,
-                        help="Legacy metadata retained for old configs; ResOPDDataset ignores it at runtime")
     parser.add_argument("--train-count", type=int, default=1500, help="Number of training samples")
     parser.add_argument("--eval-count", type=int, default=30, help="Number of eval samples (reserved)")
     parser.add_argument("--test-count", type=int, default=300, help="Number of test samples (reserved)")
@@ -137,7 +135,6 @@ def main():
         "train_ids": train_ids,
         "eval_ids": eval_ids,
         "test_ids": test_ids,
-        "target_px": args.target_px,
     }
     with open(os.path.join(data_dir, "split_info.json"), "w") as f:
         json.dump(split_info, f, indent=2)

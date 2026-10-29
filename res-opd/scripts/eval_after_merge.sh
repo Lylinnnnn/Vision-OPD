@@ -17,7 +17,7 @@ set -euo pipefail
 #   3. Shut down vLLM server
 #
 # Usage:
-#   bash scripts/eval_after_merge.sh <merged_checkpoint_path> [legacy_student_px] [version_tag] [eval_mode]
+#   bash scripts/eval_after_merge.sh <merged_checkpoint_path> [version_tag] [eval_mode]
 #
 # eval_mode:
 #   chair              Run CHAIR only (default; preserves the original behavior)
@@ -39,7 +39,7 @@ set -euo pipefail
 #   # Default version tag "latest"
 #   # Custom version tag
 #   bash scripts/eval_after_merge.sh \
-#       ./checkpoints/Res-OPD-.../global_step_92/ 0 v5
+#       ./checkpoints/Res-OPD-.../global_step_92/ v5
 #   # → eval_results/v5/Res-OPD-..._global_step_92/train1500_test300/
 # =============================================================================
 
@@ -50,9 +50,14 @@ source "${SCRIPT_DIR}/path_utils.sh"
 
 export PYTHONPATH="$VISION_OPD_ROOT:${PYTHONPATH:-}"
 
-MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [legacy_student_px] [version_tag]}"
-STUDENT_PX="${2:-${STUDENT_PX:-}}"
-VERSION_TAG="${3:-latest}"
+MODEL_PATH="${1:?Usage: $0 <merged_checkpoint_path> [version_tag] [eval_mode]}"
+if [[ "${2:-}" =~ ^[0-9]+$ ]]; then
+    VERSION_TAG="${3:-latest}"
+    EVAL_MODE="${4:-${EVAL_MODE:-chair}}"
+else
+    VERSION_TAG="${2:-latest}"
+    EVAL_MODE="${3:-${EVAL_MODE:-chair}}"
+fi
 RESULT_VERSION_TAG="${RESULT_VERSION_TAG:-}"
 EVAL_OUTPUT_DIR="${EVAL_OUTPUT_DIR:-}"
 EVAL_OUTPUT_SUFFIX="${EVAL_OUTPUT_SUFFIX:-}"
@@ -63,10 +68,9 @@ EVAL_SHARDED="${EVAL_SHARDED:-False}"
 # Support both legacy (test.json) and full-scale (test_1000.json) datasets.
 # Set DATASET_VERSION=full to use the full-scale dataset; default is full.
 DATASET_VERSION="${DATASET_VERSION:-full}"
-EVAL_MODE="${4:-${EVAL_MODE:-chair}}"
 if [[ "${EVAL_SHARDED_CHILD:-0}" != "1" ]]; then
     if [[ "$EVAL_BACKEND" == "sharded" || "$EVAL_SHARDED" == "True" || "$EVAL_SHARDED" == "true" || "$EVAL_SHARDED" == "1" ]]; then
-        exec "${RES_OPD_ROOT}/scripts/eval_after_merge_sharded_8gpu.sh" "$MODEL_PATH" "$STUDENT_PX" "$VERSION_TAG" "$EVAL_MODE"
+        exec "${RES_OPD_ROOT}/scripts/eval_after_merge_sharded_8gpu.sh" "$MODEL_PATH" "$VERSION_TAG" "$EVAL_MODE"
     fi
 fi
 OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
@@ -78,8 +82,6 @@ DEGRADATION_MODE_WAS_SET="${DEGRADATION_MODE+x}"
 DEGRADATION_MODE="${DEGRADATION_MODE:-}"
 STUDENT_RATIO_WAS_SET="${STUDENT_RATIO+x}"
 STUDENT_RATIO="${STUDENT_RATIO:-}"
-TARGET_PX_WAS_SET="${TARGET_PX+x}"
-TARGET_PX="${TARGET_PX:-448}"
 PORT="${VLLM_PORT:-8000}"
 VLLM_PORT_CLEANUP="${VLLM_PORT_CLEANUP:-True}"
 VLLM_PORT_CLEANUP_WAIT="${VLLM_PORT_CLEANUP_WAIT:-20}"
@@ -312,7 +314,6 @@ apply_model_profile_defaults() {
             [[ -z "$CLEANUP_LOCAL_CKPT_WAS_SET" ]] && CLEANUP_LOCAL_CKPT="False"
             [[ -z "$DEGRADATION_MODE_WAS_SET" ]] && DEGRADATION_MODE="original"
             [[ -z "$STUDENT_RATIO_WAS_SET" ]] && STUDENT_RATIO="1.0"
-            [[ -z "$TARGET_PX_WAS_SET" ]] && TARGET_PX="448"
             [[ -z "$VLLM_CUSTOM_OPS_WAS_SET" ]] && VLLM_CUSTOM_OPS="none"
             [[ -z "$VLLM_TENSOR_PARALLEL_SIZE_WAS_SET" ]] && VLLM_TENSOR_PARALLEL_SIZE="1"
             [[ -z "$VLLM_MAX_MODEL_LEN_WAS_SET" ]] && VLLM_MAX_MODEL_LEN="${THINKING_2B_VLLM_MAX_MODEL_LEN:-32768}"
@@ -334,7 +335,6 @@ apply_model_profile_defaults() {
             [[ -z "$CLEANUP_LOCAL_CKPT_WAS_SET" ]] && CLEANUP_LOCAL_CKPT="False"
             [[ -z "$DEGRADATION_MODE_WAS_SET" ]] && DEGRADATION_MODE="original"
             [[ -z "$STUDENT_RATIO_WAS_SET" ]] && STUDENT_RATIO="1.0"
-            [[ -z "$TARGET_PX_WAS_SET" ]] && TARGET_PX="448"
             [[ -z "$VLLM_CUSTOM_OPS_WAS_SET" ]] && VLLM_CUSTOM_OPS="none"
             [[ -z "$VLLM_TENSOR_PARALLEL_SIZE_WAS_SET" ]] && VLLM_TENSOR_PARALLEL_SIZE="8"
             [[ -z "$VLLM_MAX_MODEL_LEN_WAS_SET" ]] && VLLM_MAX_MODEL_LEN="${THINKING_8B_VLLM_MAX_MODEL_LEN:-16384}"
@@ -356,7 +356,6 @@ apply_model_profile_defaults() {
             [[ -z "$CLEANUP_LOCAL_CKPT_WAS_SET" ]] && CLEANUP_LOCAL_CKPT="False"
             [[ -z "$DEGRADATION_MODE_WAS_SET" ]] && DEGRADATION_MODE="original"
             [[ -z "$STUDENT_RATIO_WAS_SET" ]] && STUDENT_RATIO="1.0"
-            [[ -z "$TARGET_PX_WAS_SET" ]] && TARGET_PX="448"
             [[ -z "$VLLM_CUSTOM_OPS_WAS_SET" ]] && VLLM_CUSTOM_OPS="none"
             [[ -z "$VLLM_TENSOR_PARALLEL_SIZE_WAS_SET" ]] && VLLM_TENSOR_PARALLEL_SIZE="8"
             [[ -z "$VLLM_MAX_MODEL_LEN_WAS_SET" ]] && VLLM_MAX_MODEL_LEN="${THINKING_VLLM_MAX_MODEL_LEN:-16384}"
@@ -687,23 +686,13 @@ fi
 infer_eval_spec() {
     local exp_name="$1"
     local inferred_mode="original"
-    local inferred_student_px="0"
-    local inferred_teacher_px="$TARGET_PX"
     local inferred_student_ratio="1.0"
     local inferred_teacher_ratio="1.0"
     if [[ "$exp_name" =~ -orig-sr([0-9.]+)-tr([0-9.]+) ]]; then
-        inferred_student_px="0"
         inferred_student_ratio="${BASH_REMATCH[1]}"
         inferred_teacher_ratio="${BASH_REMATCH[2]}"
-    elif [[ "$exp_name" =~ -s([0-9]+)-t([0-9]+) ]]; then
-        inferred_student_px="${BASH_REMATCH[1]}"
-        inferred_teacher_px="${BASH_REMATCH[2]}"
-    elif [[ "$exp_name" =~ -s([0-9]+)(-|_) ]]; then
-        inferred_student_px="${BASH_REMATCH[1]}"
     fi
     DEGRADATION_MODE="${DEGRADATION_MODE:-$inferred_mode}"
-    STUDENT_PX="${STUDENT_PX:-$inferred_student_px}"
-    TEACHER_PX="${TEACHER_PX:-$inferred_teacher_px}"
     STUDENT_RATIO="${STUDENT_RATIO:-$inferred_student_ratio}"
     TEACHER_RATIO="${TEACHER_RATIO:-$inferred_teacher_ratio}"
 }
@@ -767,7 +756,6 @@ echo " Res-OPD Evaluation"
 echo "============================================================"
 echo "Model:       $MODEL_PATH"
 echo "Deg mode:    $DEGRADATION_MODE"
-echo "Legacy px:   student=$STUDENT_PX teacher=$TEACHER_PX target=$TARGET_PX (metadata only)"
 echo "Student ratio: $STUDENT_RATIO (original mode)"
 echo "Teacher ratio: $TEACHER_RATIO (original mode)"
 echo "Eval mode:   $EVAL_MODE"
@@ -903,8 +891,6 @@ if has_eval_task "$EVAL_MODE" "chair"; then
         --model-name "$MODEL_NAME" \
         --test-json "$TEST_JSON" \
         --output-dir "$OUTPUT_DIR" \
-        --student-px "$STUDENT_PX" \
-        --target-px "$TARGET_PX" \
         --degradation-mode "$DEGRADATION_MODE" \
         --student-ratio "$STUDENT_RATIO" \
         --shard-count "$EVAL_SHARD_COUNT" \
@@ -935,8 +921,6 @@ if has_eval_task "$EVAL_MODE" "pope"; then
         --seed "$POPE_SEED" \
         --vision-opd-root "$VISION_OPD_ROOT" \
         --output-dir "$OUTPUT_DIR" \
-        --student-px "$STUDENT_PX" \
-        --target-px "$TARGET_PX" \
         --degradation-mode "$DEGRADATION_MODE" \
         --student-ratio "$STUDENT_RATIO" \
         --max-new-tokens "$POPE_MAX_NEW_TOKENS" \
@@ -1013,8 +997,6 @@ if has_eval_task "$EVAL_MODE" "amber"; then
         --model-name "$MODEL_NAME" \
         --amber-root "$AMBER_ROOT" \
         --output-dir "$OUTPUT_DIR" \
-        --student-px "$STUDENT_PX" \
-        --target-px "$TARGET_PX" \
         --degradation-mode "$DEGRADATION_MODE" \
         --student-ratio "$STUDENT_RATIO" \
         --evaluation-type "$AMBER_EVAL_TYPE" \
@@ -1052,9 +1034,6 @@ if has_eval_task "$EVAL_MODE" "chair" && [[ "$EVAL_OPD_TRACE" == "True" || "$EVA
         --test-json "$TEST_JSON"
         --output-jsonl "$OPD_TRACE_JSONL"
         --degradation-mode "$DEGRADATION_MODE"
-        --student-px "$STUDENT_PX"
-        --teacher-px "$TEACHER_PX"
-        --target-px "$TARGET_PX"
         --student-ratio "$STUDENT_RATIO"
         --teacher-ratio "$TEACHER_RATIO"
         --topk "$EVAL_OPD_TRACE_TOPK"

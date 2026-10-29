@@ -77,7 +77,7 @@ if [[ "$source_type" == "local_base" ]]; then
     env "${common_env[@]}" \
         CLEANUP_LOCAL_CKPT=False \
         bash "${RES_OPD_ROOT}/scripts/eval_after_merge_sharded_8gpu.sh" \
-        "$primary" 0 latest chair
+        "$primary" latest chair
 elif [[ "$source_type" == "oss_checkpoint" ]]; then
     if [[ -z "$oss_name" || -z "$step" ]]; then
         echo "Error: OSS entry ${entry_id} is missing oss_name or step" >&2

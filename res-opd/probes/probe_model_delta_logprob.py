@@ -147,7 +147,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--teacher-ratio", type=float, default=0.75)
     parser.add_argument("--degradation-mode", choices=["original"], default="original")
-    parser.add_argument("--target-px", type=int, default=448)
     parser.add_argument("--output-jsonl", default=None)
     parser.add_argument("--summary-json", default=None)
     parser.add_argument("--summary-md", default=None)
@@ -563,7 +562,6 @@ def build_trace_record(args: argparse.Namespace, record: dict[str, Any], caption
         "degradation_mode": args.degradation_mode,
         "student_ratio": args.student_ratio,
         "teacher_ratio": args.teacher_ratio,
-        "target_px": args.target_px,
         "metadata": metadata,
         "response_text": caption,
         "response_token_ids": scored["response_token_ids"],
@@ -610,18 +608,12 @@ def run_scoring(args: argparse.Namespace, output_jsonl: str) -> None:
                     original_image = load_view_image(
                         image_path,
                         args.degradation_mode,
-                        0,
-                        args.target_px,
                         args.student_ratio,
-                        blank_when_px_zero=False,
                     )
                     teacher_image = load_view_image(
                         image_path,
                         args.degradation_mode,
-                        0,
-                        args.target_px,
                         args.teacher_ratio,
-                        blank_when_px_zero=False,
                     )
                 except Exception as exc:
                     print(f"WARNING: failed loading image_id={record.get('image_id')}: {exc}", file=sys.stderr)
@@ -1303,7 +1295,6 @@ def main() -> None:
             "student_ratio": args.student_ratio,
             "teacher_ratio": args.teacher_ratio,
             "degradation_mode": args.degradation_mode,
-            "target_px": args.target_px,
             "top_p": args.top_p,
             "topk": args.topk,
             "kl_chunk_size": args.kl_chunk_size,

@@ -214,9 +214,6 @@ def parse_args():
     parser.add_argument("--degradation-mode", choices=["original"], default="original")
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--teacher-ratio", type=float, default=1.0)
-    parser.add_argument("--student-px", type=int, default=0, help="Legacy metadata only; original-ratio scoring ignores this value.")
-    parser.add_argument("--teacher-px", type=int, default=0, help="Legacy metadata only; original-ratio scoring ignores this value.")
-    parser.add_argument("--target-px", type=int, default=448, help="Legacy metadata only; original-ratio scoring ignores this value.")
     parser.add_argument(
         "--print-server-paths",
         action="store_true",
@@ -1014,9 +1011,6 @@ def build_trace_record(args, record, caption, scored):
         "degradation_mode": args.degradation_mode,
         "student_ratio": args.student_ratio,
         "teacher_ratio": args.teacher_ratio,
-        "student_px": args.student_px,
-        "teacher_px": args.teacher_px,
-        "target_px": args.target_px,
         "metadata": metadata,
         "response_text": caption,
         "response_token_ids": scored["response_token_ids"],
@@ -1131,18 +1125,12 @@ def run_scoring(args, output_jsonl):
                     student_image = load_view_image(
                         image_path,
                         args.degradation_mode,
-                        args.student_px,
-                        args.target_px,
                         args.student_ratio,
-                        blank_when_px_zero=False,
                     )
                     teacher_image = load_view_image(
                         image_path,
                         args.degradation_mode,
-                        args.teacher_px,
-                        args.target_px,
                         args.teacher_ratio,
-                        blank_when_px_zero=True,
                     )
                 except Exception as exc:
                     print(
@@ -1525,9 +1513,6 @@ def main():
             "degradation_mode": args.degradation_mode,
             "student_ratio": args.student_ratio,
             "teacher_ratio": args.teacher_ratio,
-            "student_px": args.student_px,
-            "teacher_px": args.teacher_px,
-            "target_px": args.target_px,
             "topk": args.topk,
             "kl_chunk_size": args.kl_chunk_size,
             "num_shards": args.num_shards,

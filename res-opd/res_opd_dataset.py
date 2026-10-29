@@ -15,8 +15,6 @@ Configuration (passed via data config in yaml or CLI):
     data.degradation_mode: original
     data.student_ratio:    1.0    (1.0 = original; <1.0 = down/up sample)
     data.teacher_ratio:    1.0    (0 = gray/blank; <1.0 = down/up sample)
-    data.student_px / teacher_px / target_px may still exist in old configs
-    for compatibility, but are not used for image degradation.
 """
 
 import re
@@ -51,9 +49,6 @@ class ResOPDDataset(RLHFDataset):
     ):
         super().__init__(data_files, tokenizer, config, processor, max_samples)
 
-        self.student_px = config.get("student_px", 0)
-        self.teacher_px = config.get("teacher_px", 0)
-        self.target_px = config.get("target_px", 448)
         self.degradation_mode = config.get("degradation_mode", "original")
         self.student_ratio = float(config.get("student_ratio", 1.0))
         self.teacher_ratio = float(config.get("teacher_ratio", 1.0))
@@ -67,8 +62,7 @@ class ResOPDDataset(RLHFDataset):
         print(
             "[ResOPDDataset] degradation_mode=original, "
             f"student_ratio={self.student_ratio}, "
-            f"teacher_ratio={self.teacher_ratio}; "
-            f"legacy_px=student:{self.student_px},teacher:{self.teacher_px},target:{self.target_px}"
+            f"teacher_ratio={self.teacher_ratio}"
         )
         print(
             "  Student degradation: original-size ratio "

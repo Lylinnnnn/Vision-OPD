@@ -79,8 +79,6 @@ def parse_args():
     parser.add_argument("--top-logprobs", type=int, default=20)
     parser.add_argument("--degradation-mode", choices=["original"], default="original")
     parser.add_argument("--student-ratio", type=float, default=1.0)
-    parser.add_argument("--student-px", type=int, default=0)
-    parser.add_argument("--target-px", type=int, default=448)
 
     parser.add_argument("--base-answers", default=None)
     parser.add_argument("--other-answers", default=None)

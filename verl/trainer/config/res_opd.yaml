@@ -103,11 +103,6 @@ data:
     path: null            # set via CLI: res-opd/res_opd_dataset.py
     name: ResOPDDataset
   # Original-ratio params consumed by ResOPDDataset.
-  # *_px fields are kept only for legacy CLI/OSS compatibility and are ignored
-  # by original-ratio degradation.
-  student_px: 0
-  teacher_px: 448
-  target_px: 448
   degradation_mode: original
   student_ratio: 1.0
   teacher_ratio: 1.0

@@ -84,9 +84,6 @@ def parse_args():
     parser.add_argument("--prompt", default=PROMPT_TEXT)
     parser.add_argument("--caption-field", default="auto")
     parser.add_argument("--degradation-mode", choices=["original"], default="original")
-    parser.add_argument("--student-px", type=int, default=0, help="Legacy metadata only; original-ratio scoring ignores this value.")
-    parser.add_argument("--teacher-px", type=int, default=0, help="Legacy metadata only; original-ratio scoring ignores this value.")
-    parser.add_argument("--target-px", type=int, default=448, help="Legacy metadata only; original-ratio scoring ignores this value.")
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--teacher-ratio", type=float, default=0.75)
     parser.add_argument("--topk", type=int, default=50)
@@ -917,18 +914,12 @@ def main():
                 student_image = load_view_image(
                     image_path,
                     args.degradation_mode,
-                    args.student_px,
-                    args.target_px,
                     args.student_ratio,
-                    blank_when_px_zero=False,
                 )
                 teacher_image = load_view_image(
                     image_path,
                     args.degradation_mode,
-                    args.teacher_px,
-                    args.target_px,
                     args.teacher_ratio,
-                    blank_when_px_zero=True,
                 )
                 student = score_view(
                     model, processor, device, student_image, args.prompt, caption,
@@ -1034,9 +1025,6 @@ def main():
                     "degradation_mode": args.degradation_mode,
                     "student_ratio": args.student_ratio,
                     "teacher_ratio": args.teacher_ratio,
-                    "student_px": args.student_px,
-                    "teacher_px": args.teacher_px,
-                    "target_px": args.target_px,
                     "caption": caption,
                     "decoded_caption": decoded_caption,
                     "gt_objects": sorted(gt_objects),

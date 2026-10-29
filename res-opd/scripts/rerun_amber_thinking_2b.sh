@@ -24,7 +24,6 @@ COMMON_ARGS=(
     --version-tag thinking
     --dataset-version full
     --student-ratio 1.0
-    --target-px 448
     --degradation-mode original
 )
 
@@ -33,7 +32,7 @@ echo "" | tee -a "$LOG_FILE"
 echo "[1/5] Baseline: Qwen3-VL-2B-Thinking" | tee -a "$LOG_FILE"
 BASELINE_MODEL="${BASELINE_MODEL:-$(res_opd_default_model_root)/Qwen3-VL-2B-Thinking}"
 if [[ -d "$BASELINE_MODEL" ]]; then
-    bash "$SHARDED_EVAL_SCRIPT" "$BASELINE_MODEL" 0 "" amber \
+    bash "$SHARDED_EVAL_SCRIPT" "$BASELINE_MODEL" thinking amber \
         2>&1 | tee -a "$LOG_FILE" || echo "  ⚠️ Baseline failed" | tee -a "$LOG_FILE"
 else
     echo "  ⚠️ Baseline model not found at $BASELINE_MODEL, skipping" | tee -a "$LOG_FILE"

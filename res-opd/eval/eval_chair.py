@@ -179,10 +179,6 @@ def parse_args():
         default=PROMPT_TEXT,
         help="Caption prompt. The exact text is stored with every generation and in the metrics.",
     )
-    parser.add_argument("--student-px", type=int, default=0,
-                        help="Legacy metadata only; original-ratio eval ignores this value")
-    parser.add_argument("--target-px", type=int, default=448,
-                        help="Legacy metadata only; original-ratio eval ignores this value")
     parser.add_argument("--degradation-mode", choices=["original"], default="original",
                         help="Only original-ratio degradation is supported")
     parser.add_argument("--student-ratio", type=float, default=1.0,
@@ -224,7 +220,7 @@ def make_ratio_degraded_image(image_path, ratio):
     return small.resize((width, height), Image.LANCZOS)
 
 
-def load_eval_image(image_path, degradation_mode, student_px, target_px, student_ratio):
+def load_eval_image(image_path, degradation_mode, student_ratio):
     if degradation_mode != "original":
         raise ValueError(f"Only degradation_mode=original is supported, got {degradation_mode!r}")
     return make_ratio_degraded_image(image_path, student_ratio)
@@ -344,7 +340,7 @@ def serialize_api_logprobs(choice):
 
 
 def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
-                     max_new_tokens, student_px, target_px, max_retries,
+                     max_new_tokens, max_retries,
                      degradation_mode="original", student_ratio=1.0,
                      save_logprobs=False, top_logprobs=5,
                      enable_thinking=None, final_answer_only=False):
@@ -361,8 +357,6 @@ def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
     image = load_eval_image(
         image_path,
         degradation_mode,
-        student_px,
-        target_px,
         student_ratio,
     )
     buf = io.BytesIO()
@@ -407,7 +401,7 @@ def generate_one_api(thread_local, api_base, model_name, image_path, prompt,
 
 
 def generate_via_model(model, processor, image_path, prompt, max_new_tokens,
-                       device, student_px=0, target_px=448,
+                       device,
                        degradation_mode="original", student_ratio=1.0,
                        save_logprobs=False, top_logprobs=5,
                        enable_thinking=None, final_answer_only=False):
@@ -418,8 +412,6 @@ def generate_via_model(model, processor, image_path, prompt, max_new_tokens,
     img = load_eval_image(
         image_path,
         degradation_mode,
-        student_px,
-        target_px,
         student_ratio,
     )
 
@@ -499,8 +491,7 @@ def main():
 
     print(
         f"degradation_mode=original: student_ratio={args.student_ratio} "
-        "(down/up sample at original width/height); "
-        f"legacy_px=student:{args.student_px},target:{args.target_px}"
+        "(down/up sample at original width/height)"
     )
 
     # Load test data
@@ -580,7 +571,7 @@ def main():
                 caption = generate_one_api(
                     thread_local, args.api_base, args.model_name,
                     image_path, args.prompt, args.max_new_tokens,
-                    args.student_px, args.target_px, args.max_retries,
+                    args.max_retries,
                     args.degradation_mode, args.student_ratio,
                     args.save_logprobs, args.top_logprobs,
                     args.enable_thinking, args.final_answer_only,
@@ -592,8 +583,6 @@ def main():
                     "gt_captions": sample.get("captions", []),
                     "gt_objects": sample.get("objects", []),
                     "eval_degradation_mode": args.degradation_mode,
-                    "eval_student_px": args.student_px,
-                    "eval_target_px": args.target_px,
                     "eval_student_ratio": args.student_ratio,
                     "eval_prompt": args.prompt,
                 }
@@ -628,7 +617,6 @@ def main():
                     generation = generate_via_model(
                         model, processor, image_path, args.prompt,
                         args.max_new_tokens, device,
-                        args.student_px, args.target_px,
                         args.degradation_mode, args.student_ratio,
                         args.save_logprobs, args.top_logprobs,
                         args.enable_thinking, args.final_answer_only,
@@ -640,8 +628,6 @@ def main():
                         "gt_captions": sample.get("captions", []),
                         "gt_objects": sample.get("objects", []),
                         "eval_degradation_mode": args.degradation_mode,
-                        "eval_student_px": args.student_px,
-                        "eval_target_px": args.target_px,
                         "eval_student_ratio": args.student_ratio,
                         "eval_prompt": args.prompt,
                     }
@@ -708,8 +694,6 @@ def main():
     metrics["final_answer_valid_rate"] = (
         len(eval_records) / len(results_list) if results_list else 0.0
     )
-    metrics["student_px"] = args.student_px
-    metrics["target_px"] = args.target_px
     metrics["degradation_mode"] = args.degradation_mode
     metrics["student_ratio"] = args.student_ratio
     metrics["eval_prompt"] = args.prompt

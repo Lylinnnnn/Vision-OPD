@@ -73,9 +73,6 @@ def parse_args():
     )
     parser.add_argument("--student-ratio", type=float, default=1.0)
     parser.add_argument("--degradation-mode", choices=["original"], default="original")
-    parser.add_argument("--student-px", type=int, default=0, help="Legacy metadata only; original-ratio scoring ignores this value")
-    parser.add_argument("--teacher-px", type=int, default=0, help="Legacy metadata only; original-ratio scoring ignores this value")
-    parser.add_argument("--target-px", type=int, default=448, help="Legacy metadata only; original-ratio scoring ignores this value")
     parser.add_argument("--case-analysis", help="Optional all_cases_sorted.json for case grouping/GT fallback")
     parser.add_argument("--test-json", help="Optional test.json for image path/GT fallback")
     parser.add_argument("--image-root", default=scorer.DEFAULT_COCO_VAL_ROOT)
@@ -179,9 +176,6 @@ def make_record_args(args, teacher_ratio):
         trace_scope=args.trace_scope,
         model_path=args.model_path,
         degradation_mode=args.degradation_mode,
-        student_px=args.student_px,
-        teacher_px=args.teacher_px,
-        target_px=args.target_px,
         student_ratio=args.student_ratio,
         teacher_ratio=teacher_ratio,
     )
@@ -250,10 +244,7 @@ def run_scoring(args, states):
                 student_image = scorer.load_view_image(
                     image_path,
                     args.degradation_mode,
-                    args.student_px,
-                    args.target_px,
                     args.student_ratio,
-                    blank_when_px_zero=False,
                 )
                 student = scorer.score_view(
                     model,
@@ -281,10 +272,7 @@ def run_scoring(args, states):
                     teacher_image = scorer.load_view_image(
                         image_path,
                         args.degradation_mode,
-                        args.teacher_px,
-                        args.target_px,
                         ratio,
-                        blank_when_px_zero=True,
                     )
                     teacher = scorer.score_view(
                         model,
