@@ -28,7 +28,7 @@ adapter or an isolated environment before it can be marked runnable.
 
 | Method | Upstream source | Current status | Qwen3VL support upstream |
 | --- | --- | --- | --- |
-| VCD | `third_party/baselines/VCD` | adapter required | No |
+| VCD | `third_party/baselines/VCD` | Qwen3VL CHAIR adapter | No |
 | OPERA | `third_party/baselines/OPERA` | source only | No |
 | HALC | `third_party/baselines/HALC` | source only | No |
 
@@ -47,3 +47,14 @@ accounting, and official CHAIR metric implementation identical across methods.
 Baseline outputs must use a dedicated result suffix such as
 `chair_external_vcd_official`. They must not write into an existing base-model,
 training, or paper-result directory.
+
+The Qwen3VL VCD adapter can be launched with:
+
+```bash
+bash res-opd/baselines/run_vcd_chair_sharded_8gpu.sh /path/to/Qwen3VL-2B-Instruct
+```
+
+It uses one Hugging Face process per GPU because VCD requires original/noisy
+visual logits at every decoding step and cannot be represented by the current
+vLLM server interface. Its defaults match the upstream Qwen VCD example:
+`alpha=1`, `beta=0.1`, `noise_step=500`, and seeded sampling at temperature 1.

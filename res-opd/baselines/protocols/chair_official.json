@@ -6,7 +6,6 @@
   "prompt": "Describe the image.",
   "degradation_mode": "original",
   "student_ratio": 1.0,
-  "temperature": 0.0,
   "max_new_tokens": 8192,
   "scorer": "res-opd/eval/eval_chair.py",
   "result_file": "eval_results.jsonl",
@@ -24,6 +23,7 @@
   "output_policy": {
     "reuse_existing_result_directory": false,
     "score_with_external_repository": false,
-    "method_specific_decoding_parameters_must_be_recorded": true
+    "method_specific_decoding_parameters_must_be_recorded": true,
+    "method_specific_decoding_is_allowed": true
   }
 }
