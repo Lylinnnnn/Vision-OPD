@@ -14,6 +14,8 @@ CHAIR_RERUN_OUTPUT_SUFFIX="${CHAIR_RERUN_OUTPUT_SUFFIX:-chair_describe_image_off
 MODEL_ROOT="${MODEL_ROOT:-}"
 RERUN_GPU_LIST="${GPU_LIST:-0,1,2,3,4,5,6,7}"
 RERUN_SHARD_COUNT="${EVAL_SHARD_COUNT:-8}"
+OSS_CHECKPOINT_ACCESS_MODE="${OSS_CHECKPOINT_ACCESS_MODE:-mounted}"
+OSS_MOUNT_ROOT="${OSS_MOUNT_ROOT:-/data/oss_bucket_0}"
 
 if ! [[ "$ENTRY_INDEX" =~ ^[0-9]+$ ]] || (( ENTRY_INDEX < 1 || ENTRY_INDEX > 45 )); then
     echo "Error: entry_index must be an integer in [1, 45], got ${ENTRY_INDEX}" >&2
@@ -41,6 +43,7 @@ fi
 common_env=(
     DATASET_VERSION=full
     RESULT_VERSION_TAG=instruct
+    MODEL_PROFILE=qwen3vl_instruct
     DEGRADATION_MODE=original
     STUDENT_RATIO="$student_ratio"
     CHAIR_PROMPT="$CHAIR_RERUN_PROMPT"
@@ -52,6 +55,8 @@ common_env=(
     VLLM_PORT_CLEANUP=True
     SHARDED_EVAL_FORCE_TP1=True
     SHARDED_EVAL_KEEP_SHARDS=False
+    OSS_CHECKPOINT_ACCESS_MODE="$OSS_CHECKPOINT_ACCESS_MODE"
+    OSS_MOUNT_ROOT="$OSS_MOUNT_ROOT"
 )
 
 echo "============================================================"
@@ -60,6 +65,7 @@ echo "Label:         ${label}"
 echo "Source type:   ${source_type}"
 echo "Student ratio: ${student_ratio}"
 echo "Base port:     ${VLLM_BASE_PORT}"
+echo "Checkpoint:    ${OSS_CHECKPOINT_ACCESS_MODE} (${OSS_MOUNT_ROOT})"
 echo "============================================================"
 
 cd "$VISION_OPD_ROOT"
@@ -69,7 +75,6 @@ if [[ "$source_type" == "local_base" ]]; then
         exit 1
     fi
     env "${common_env[@]}" \
-        MODEL_PROFILE=qwen3vl_instruct \
         CLEANUP_LOCAL_CKPT=False \
         bash "${RES_OPD_ROOT}/scripts/eval_after_merge_sharded_8gpu.sh" \
         "$primary" 0 latest chair

@@ -7,8 +7,8 @@
 
 # =============================================================================
 # Batch Evaluation from OSS (Parameterized)
-# Downloads merged checkpoints from OSS, runs eval, deletes model files,
-# keeps only eval results.
+# Loads merged checkpoints from the OSS mount by default, runs eval, and keeps
+# only eval results. Set --oss-checkpoint-access download for legacy copying.
 #
 # Usage:
 #   bash scripts/eval_batch_from_oss.sh --experiment-names <exp1> [exp2] ... \
@@ -65,7 +65,9 @@ VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
 source "${SCRIPT_DIR}/path_utils.sh"
 cd "$VISION_OPD_ROOT"
 
-OSS_BASE="oss://industry-algo/yanlin/ckpt/OPD/v4"
+OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
+OSS_CHECKPOINT_ACCESS_MODE="${OSS_CHECKPOINT_ACCESS_MODE:-mounted}"
+OSS_MOUNT_ROOT="${OSS_MOUNT_ROOT:-/data/oss_bucket_0}"
 CKPT_BASE="${RES_OPD_ROOT}/checkpoints"
 EVAL_SCRIPT="${RES_OPD_ROOT}/scripts/eval_after_merge.sh"
 SHARDED_EVAL_SCRIPT="${RES_OPD_ROOT}/scripts/eval_after_merge_sharded_8gpu.sh"
@@ -112,6 +114,7 @@ PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
 res_opd_validate_python_bin "$PYTHON_BIN"
 MODEL_PATH="${MODEL_PATH:-${DEFAULT_MODEL_ROOT}/Qwen3VL-2B-Instruct}"
 MODEL_NAME="${MODEL_NAME:-}"
+MODEL_PROFILE="${MODEL_PROFILE:-}"
 TOTAL_EPOCHS="${TOTAL_EPOCHS:-}"
 TEACHER_MODE="${TEACHER_MODE:-}"
 ALPHA="${ALPHA:-}"
@@ -239,6 +242,8 @@ while [[ $# -gt 0 ]]; do
         --opd-token-mask-pct) OPD_TOKEN_MASK_PCT="$2"; shift 2 ;;
         --version-tag) VERSION_TAG="$2"; shift 2 ;;
         --result-version-tag) RESULT_VERSION_TAG="$2"; shift 2 ;;
+        --oss-checkpoint-access) OSS_CHECKPOINT_ACCESS_MODE="$2"; shift 2 ;;
+        --oss-mount-root) OSS_MOUNT_ROOT="$2"; shift 2 ;;
         --eval-mode)  EVAL_MODE="$2"; shift 2 ;;
         --eval-backend) EVAL_BACKEND="$2"; shift 2 ;;
         --eval-sharded|--sharded-eval) EVAL_SHARDED="$2"; shift 2 ;;
@@ -640,8 +645,15 @@ safe_remove_checkpoint_dir() {
     local target="$1"
     local target_real
     local base_real
+    local mount_real
     target_real="$(realpath_for_cleanup "$target")"
     base_real="$(realpath_for_cleanup "$CKPT_BASE")"
+    mount_real="$(realpath_for_cleanup "$OSS_MOUNT_ROOT")"
+
+    if [[ "$target_real" == "$mount_real" || "$target_real" == "$mount_real"/* || "$target_real" == /data/oss_bucket_0 || "$target_real" == /data/oss_bucket_0/* ]]; then
+        echo "  Error: refusing to remove mounted OSS path: ${target_real}" >&2
+        return 1
+    fi
 
     if [[ "$target_real" == "$base_real"/* ]]; then
         rm -rf "$target"
@@ -650,6 +662,30 @@ safe_remove_checkpoint_dir() {
 
     echo "  ⚠️  Refusing to remove path outside ${base_real}: ${target_real}" >&2
     return 1
+}
+
+oss_uri_to_mount_path() {
+    local oss_uri="${1%/}"
+    local key
+    if [[ "$oss_uri" != oss://*/* ]]; then
+        echo "Error: invalid OSS URI: ${oss_uri}" >&2
+        return 1
+    fi
+    key="${oss_uri#oss://}"
+    key="${key#*/}"
+    printf '%s/%s\n' "${OSS_MOUNT_ROOT%/}" "$key"
+}
+
+validate_mounted_checkpoint() {
+    local checkpoint_dir="$1"
+    local required
+    for required in model.safetensors config.json; do
+        if [[ ! -r "${checkpoint_dir}/${required}" || ! -s "${checkpoint_dir}/${required}" ]]; then
+            echo "Error: mounted checkpoint is missing a readable nonempty ${required}: ${checkpoint_dir}/${required}" >&2
+            echo "Mounted mode never falls back to downloading. Check OSS FUSE or use --oss-checkpoint-access download explicitly." >&2
+            return 1
+        fi
+    done
 }
 
 download_checkpoint() {
@@ -728,13 +764,58 @@ list_oss_steps() {
     printf '%s\n' "$steps"
 }
 
+list_mounted_steps() {
+    local oss_exp_path="${1%/}"
+    local mounted_exp_path
+    local step_dir
+    local steps=()
+    mounted_exp_path="$(oss_uri_to_mount_path "$oss_exp_path")"
+    if [[ ! -d "$mounted_exp_path" ]]; then
+        echo "Error: mounted OSS experiment directory not found: ${mounted_exp_path}" >&2
+        return 1
+    fi
+    for step_dir in "${mounted_exp_path}"/global_step_*; do
+        [[ -d "$step_dir" ]] || continue
+        steps+=("$(basename "$step_dir")")
+    done
+    if [[ ${#steps[@]} -eq 0 ]]; then
+        echo "Error: no global_step_* checkpoints found under mounted path ${mounted_exp_path}" >&2
+        return 1
+    fi
+    printf '%s\n' "${steps[@]}" | sort -t_ -k3,3n -u
+}
+
 resolve_steps_for_experiment() {
     local oss_exp_path="$1"
     if [[ -n "$STEP" ]]; then
         normalize_step_name "$STEP"
         return 0
     fi
-    list_oss_steps "$oss_exp_path"
+    if [[ "$OSS_CHECKPOINT_ACCESS_MODE" == "mounted" ]]; then
+        list_mounted_steps "$oss_exp_path"
+    else
+        list_oss_steps "$oss_exp_path"
+    fi
+}
+
+infer_effective_model_profile() {
+    local exp_name_lc
+    if [[ -n "$MODEL_PROFILE" ]]; then
+        printf '%s\n' "$MODEL_PROFILE"
+        return 0
+    fi
+    exp_name_lc="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$exp_name_lc" == *thinking*8b* || "$exp_name_lc" == *8b*thinking* ]]; then
+        echo qwen3vl_8b_thinking
+    elif [[ "$exp_name_lc" == *thinking*2b* || "$exp_name_lc" == *2b*thinking* ]]; then
+        echo qwen3vl_2b_thinking
+    elif [[ "$exp_name_lc" == *thinking* ]]; then
+        echo generic_thinking
+    elif [[ "$exp_name_lc" == *instruct* ]]; then
+        echo qwen3vl_instruct
+    else
+        echo default
+    fi
 }
 
 infer_eval_spec() {
@@ -847,6 +928,14 @@ if [[ "$EVAL_BACKEND" == "sharded" ]]; then
         exit 1
     fi
 fi
+case "$OSS_CHECKPOINT_ACCESS_MODE" in
+    mounted|download)
+        ;;
+    *)
+        echo "Error: --oss-checkpoint-access must be mounted or download. Got: ${OSS_CHECKPOINT_ACCESS_MODE}" >&2
+        exit 1
+        ;;
+esac
 if [[ -z "$EVAL_MODE" ]]; then
     echo "Error: --eval-mode expanded to empty. Use chair,pope,coco,mmstar,cv-bench,vision,amber,mme,final,all." >&2
     exit 1
@@ -859,6 +948,10 @@ fi
 
 echo "=========================================="
 echo " Batch Eval from OSS"
+echo " Checkpoint access: ${OSS_CHECKPOINT_ACCESS_MODE}"
+if [[ "$OSS_CHECKPOINT_ACCESS_MODE" == "mounted" ]]; then
+    echo " OSS mount root: ${OSS_MOUNT_ROOT}"
+fi
 if [[ -n "$STEP" ]]; then
     echo " Step: $(normalize_step_name "$STEP")"
 else
@@ -927,6 +1020,7 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         echo "  Student ratio: ${STUDENT_RATIO}"
     fi
     result_version_tag="$(resolve_result_version_tag "$local_exp_name")"
+    effective_model_profile="$(infer_effective_model_profile "$local_exp_name")"
     IFS='|' read -r effective_degradation_mode effective_student_px effective_teacher_px effective_target_px effective_student_ratio effective_teacher_ratio < <(
         infer_eval_spec "$local_exp_name"
     )
@@ -941,6 +1035,7 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
     echo "=========================================="
     echo " Experiment: ${oss_name}"
     echo " Local exp:  ${local_exp_name}"
+    echo " Model profile: ${effective_model_profile}"
     echo " Result tag: ${result_version_tag}"
     echo " Steps:      ${steps_to_eval[*]}"
     echo " Student: mode=${effective_degradation_mode} px=${effective_student_px} target=${effective_target_px} ratio=${effective_student_ratio}"
@@ -969,10 +1064,19 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
             continue
         fi
 
-        # Step 1: Download checkpoint from OSS
-        echo "[1/4] Downloading from OSS ..."
-        download_checkpoint "$oss_path" "$local_ckpt_dir"
-        echo "  ✅ Download complete"
+        # Step 1: Resolve checkpoint without copying when OSS FUSE is available.
+        if [[ "$OSS_CHECKPOINT_ACCESS_MODE" == "mounted" ]]; then
+            checkpoint_model_dir="$(oss_uri_to_mount_path "$oss_path")"
+            echo "[1/4] Using mounted OSS checkpoint ..."
+            validate_mounted_checkpoint "$checkpoint_model_dir"
+            echo "  Path: ${checkpoint_model_dir}"
+            echo "  ✅ Mounted checkpoint verified; no local copy created"
+        else
+            checkpoint_model_dir="$local_ckpt_dir"
+            echo "[1/4] Downloading from OSS ..."
+            download_checkpoint "$oss_path" "$checkpoint_model_dir"
+            echo "  ✅ Download complete"
+        fi
 
         # Step 2: Run evaluation
         echo "[2/4] Running evaluation ..."
@@ -985,6 +1089,8 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         sharded_env=(
             DATASET_VERSION="$DATASET_VERSION"
             CLEANUP_LOCAL_CKPT=False
+            EXPERIMENT_NAME_OVERRIDE="$local_exp_name"
+            MODEL_PROFILE="$effective_model_profile"
             VLLM_PORT_CLEANUP="$VLLM_PORT_CLEANUP"
             VLLM_PORT_CLEANUP_WAIT="$VLLM_PORT_CLEANUP_WAIT"
             EVAL_MAX_TOKENS="$EVAL_MAX_TOKENS"
@@ -1047,7 +1153,7 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         [[ -n "${JUDGE_API_KEY:-}" ]] && sharded_env+=(JUDGE_API_KEY="$JUDGE_API_KEY")
         [[ -n "${JUDGE_MODEL:-}" ]] && sharded_env+=(JUDGE_MODEL="$JUDGE_MODEL")
         [[ -n "${JUDGE_MODEL_PATH:-}" ]] && sharded_env+=(JUDGE_MODEL_PATH="$JUDGE_MODEL_PATH")
-        env "${sharded_env[@]}" bash "$SHARDED_EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "$EVAL_MODE"
+        env "${sharded_env[@]}" bash "$SHARDED_EVAL_SCRIPT" "$checkpoint_model_dir" "$effective_student_px" "$VERSION_TAG" "$EVAL_MODE"
     else
     coco_tasks=()
     has_eval_task "$EVAL_MODE" "chair" && coco_tasks+=(chair)
@@ -1057,6 +1163,8 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         echo "  Running local COCO eval (${coco_mode}) ..."
         DATASET_VERSION="$DATASET_VERSION" \
         CLEANUP_LOCAL_CKPT=False \
+        EXPERIMENT_NAME_OVERRIDE="$local_exp_name" \
+        MODEL_PROFILE="$effective_model_profile" \
         VLLM_PORT_CLEANUP="$VLLM_PORT_CLEANUP" \
         VLLM_PORT_CLEANUP_WAIT="$VLLM_PORT_CLEANUP_WAIT" \
         EVAL_MAX_TOKENS="$EVAL_MAX_TOKENS" \
@@ -1085,13 +1193,15 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         EVAL_OPD_TRACE_CASE_ANALYSIS="$EVAL_OPD_TRACE_CASE_ANALYSIS" \
         EVAL_OPD_TRACE_MAX_SAMPLES="$EVAL_OPD_TRACE_MAX_SAMPLES" \
         RESULT_VERSION_TAG="$result_version_tag" \
-            bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "$coco_mode"
+            bash "$EVAL_SCRIPT" "$checkpoint_model_dir" "$effective_student_px" "$VERSION_TAG" "$coco_mode"
     fi
     if has_vision_eval_task "$EVAL_MODE"; then
         echo "  Running Vision-OPD auxiliary eval (${EFFECTIVE_VISION_BENCHMARK}) ..."
         vision_env=(
             DATASET_VERSION="$DATASET_VERSION"
             CLEANUP_LOCAL_CKPT=False
+            EXPERIMENT_NAME_OVERRIDE="$local_exp_name"
+            MODEL_PROFILE="$effective_model_profile"
             VLLM_PORT_CLEANUP="$VLLM_PORT_CLEANUP"
             VLLM_PORT_CLEANUP_WAIT="$VLLM_PORT_CLEANUP_WAIT"
             EVAL_MAX_TOKENS="$EVAL_MAX_TOKENS"
@@ -1120,13 +1230,15 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         [[ -n "${JUDGE_API_KEY:-}" ]] && vision_env+=(JUDGE_API_KEY="$JUDGE_API_KEY")
         [[ -n "${JUDGE_MODEL:-}" ]] && vision_env+=(JUDGE_MODEL="$JUDGE_MODEL")
         [[ -n "${JUDGE_MODEL_PATH:-}" ]] && vision_env+=(JUDGE_MODEL_PATH="$JUDGE_MODEL_PATH")
-        env "${vision_env[@]}" bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "vision"
+        env "${vision_env[@]}" bash "$EVAL_SCRIPT" "$checkpoint_model_dir" "$effective_student_px" "$VERSION_TAG" "vision"
     fi
     if has_eval_task "$EVAL_MODE" "amber"; then
         echo "  Running AMBER ..."
         eval_env=(
             DATASET_VERSION="$DATASET_VERSION"
             CLEANUP_LOCAL_CKPT=False
+            EXPERIMENT_NAME_OVERRIDE="$local_exp_name"
+            MODEL_PROFILE="$effective_model_profile"
             EVAL_MAX_TOKENS="$EVAL_MAX_TOKENS"
             EVAL_THINKING_MAX_TOKENS="$EVAL_THINKING_MAX_TOKENS"
             DEGRADATION_MODE="$effective_degradation_mode"
@@ -1148,7 +1260,7 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
             RESULT_VERSION_TAG="$result_version_tag"
         )
         [[ -n "$VISION_ENABLE_THINKING" ]] && eval_env+=(VISION_ENABLE_THINKING="$VISION_ENABLE_THINKING")
-        env "${eval_env[@]}" bash "$EVAL_SCRIPT" "$local_ckpt_dir" "$effective_student_px" "$VERSION_TAG" "amber"
+        env "${eval_env[@]}" bash "$EVAL_SCRIPT" "$checkpoint_model_dir" "$effective_student_px" "$VERSION_TAG" "amber"
     fi
     if has_eval_task "$EVAL_MODE" "mme"; then
         echo "  Running classic MME perception ..."
@@ -1156,15 +1268,19 @@ for ((idx = 0; idx < NUM_EXPERIMENTS; idx++)); do
         TARGET_PX="$effective_target_px" \
         DEGRADATION_MODE="$effective_degradation_mode" \
         STUDENT_RATIO="$effective_student_ratio" \
-            bash "$MME_SCRIPT" "$local_ckpt_dir" "$VERSION_TAG"
+            bash "$MME_SCRIPT" "$checkpoint_model_dir" "$VERSION_TAG"
     fi
     fi
     echo "  ✅ Evaluation complete"
 
-    # Step 3: Delete local checkpoint after verifying OSS backup
-    echo "[3/4] Cleaning up local checkpoint (after OSS verification) ..."
-    cleanup_checkpoint "$local_ckpt_dir" "$oss_path"
-    echo "  ✅ Local checkpoint cleaned up"
+    # Step 3: Delete only an explicit local download. Mounted OSS is read-only here.
+    if [[ "$OSS_CHECKPOINT_ACCESS_MODE" == "download" ]]; then
+        echo "[3/4] Cleaning up local checkpoint (after OSS verification) ..."
+        cleanup_checkpoint "$local_ckpt_dir" "$oss_path"
+        echo "  ✅ Local checkpoint cleaned up"
+    else
+        echo "[3/4] No local checkpoint cleanup needed (mounted OSS path was used)"
+    fi
 
     # Step 4: Verify eval results
     echo "[4/4] Verifying eval results ..."

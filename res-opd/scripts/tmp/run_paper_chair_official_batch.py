@@ -34,6 +34,15 @@ def parse_args():
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-oss-preflight", action="store_true")
+    parser.add_argument(
+        "--oss-checkpoint-access",
+        choices=("mounted", "download"),
+        default=os.environ.get("OSS_CHECKPOINT_ACCESS_MODE", "mounted"),
+    )
+    parser.add_argument(
+        "--oss-mount-root",
+        default=os.environ.get("OSS_MOUNT_ROOT", "/data/oss_bucket_0"),
+    )
     return parser.parse_args()
 
 
@@ -189,6 +198,13 @@ def run_capture(command):
     )
 
 
+def oss_uri_to_mount_path(uri, mount_root):
+    match = re.fullmatch(r"oss://[^/]+/(.+)", uri.rstrip("/"))
+    if not match:
+        raise ValueError(f"Invalid OSS URI: {uri}")
+    return Path(mount_root) / match.group(1)
+
+
 def listening_pids(port):
     if shutil.which("lsof"):
         result = run_capture(["lsof", f"-tiTCP:{port}", "-sTCP:LISTEN"])
@@ -274,7 +290,7 @@ def wait_for_clean_transition(args, gpu_ids, allowed_gpu_pids):
 
 def preflight(entries, args):
     failures = []
-    ossutil = shutil.which("ossutil")
+    ossutil = shutil.which("ossutil") if args.oss_checkpoint_access == "download" else None
     for entry in entries:
         if entry["source_type"] == "local_base":
             path = model_path(entry, args.model_root)
@@ -288,15 +304,29 @@ def preflight(entries, args):
             continue
         if args.skip_oss_preflight:
             continue
-        if not ossutil:
-            failures.append(f"{entry['index']:02d} {entry['label']}: ossutil not found")
-            continue
         base = os.environ.get("OSS_BASE", "oss://industry-algo/yanlin/ckpt/OPD/v4").rstrip("/")
-        for filename in ("model.safetensors", "config.json"):
-            uri = f"{base}/{entry['oss_name']}/{entry['step']}/{filename}"
-            result = run_capture([ossutil, "stat", uri])
-            if result.returncode != 0:
-                failures.append(f"{entry['index']:02d} {entry['label']}: missing {uri}")
+        checkpoint_uri = f"{base}/{entry['oss_name']}/{entry['step']}"
+        if args.oss_checkpoint_access == "mounted":
+            checkpoint_dir = oss_uri_to_mount_path(checkpoint_uri, args.oss_mount_root)
+            for filename in ("model.safetensors", "config.json"):
+                path = checkpoint_dir / filename
+                try:
+                    available = path.is_file() and path.stat().st_size > 0
+                except OSError:
+                    available = False
+                if not available:
+                    failures.append(
+                        f"{entry['index']:02d} {entry['label']}: missing mounted file {path}"
+                    )
+        else:
+            if not ossutil:
+                failures.append(f"{entry['index']:02d} {entry['label']}: ossutil not found")
+                continue
+            for filename in ("model.safetensors", "config.json"):
+                uri = f"{checkpoint_uri}/{filename}"
+                result = run_capture([ossutil, "stat", uri])
+                if result.returncode != 0:
+                    failures.append(f"{entry['index']:02d} {entry['label']}: missing {uri}")
     if failures:
         raise RuntimeError("Preflight failed; no evaluation was started:\n  " + "\n  ".join(failures))
 
@@ -331,7 +361,7 @@ def main():
 
     print(
         f"Resolved {len(selected)}/45 entries; job={args.job_index}/{args.num_jobs}; "
-        f"suffix={args.output_suffix}",
+        f"suffix={args.output_suffix}; checkpoint_access={args.oss_checkpoint_access}",
         flush=True,
     )
     preflight(selected, args)
@@ -379,6 +409,8 @@ def main():
             env["GPU_LIST"] = args.gpu_list
             env["EVAL_SHARD_COUNT"] = str(args.eval_shard_count)
             env["CHAIR_MAX_SAMPLES"] = str(args.max_samples)
+            env["OSS_CHECKPOINT_ACCESS_MODE"] = args.oss_checkpoint_access
+            env["OSS_MOUNT_ROOT"] = args.oss_mount_root
             if args.model_root:
                 env["MODEL_ROOT"] = args.model_root
             print(" ".join(shlex.quote(value) for value in command), flush=True)
@@ -393,7 +425,11 @@ def main():
                     f"Evaluation succeeded but official output is incomplete: {target}"
                 )
             checkpoint_dir = local_checkpoint_dir(entry, root)
-            if checkpoint_dir is not None and checkpoint_dir.exists():
+            if (
+                args.oss_checkpoint_access == "download"
+                and checkpoint_dir is not None
+                and checkpoint_dir.exists()
+            ):
                 raise RuntimeError(
                     "Evaluation finished but the downloaded checkpoint was not removed; "
                     f"refusing to start the next task: {checkpoint_dir}"
@@ -402,7 +438,7 @@ def main():
             completed += 1
             print(
                 f"Verified {args.max_samples} generations, official CHAIR metrics, "
-                "released ports, no residual GPU process, and local checkpoint cleanup.",
+                "released ports, no residual GPU process, and checkpoint source lifecycle.",
                 flush=True,
             )
 

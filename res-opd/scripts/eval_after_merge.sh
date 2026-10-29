@@ -70,6 +70,7 @@ if [[ "${EVAL_SHARDED_CHILD:-0}" != "1" ]]; then
     fi
 fi
 OSS_BASE="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}"
+OSS_MOUNT_ROOT="${OSS_MOUNT_ROOT:-/data/oss_bucket_0}"
 CLEANUP_LOCAL_CKPT_WAS_SET="${CLEANUP_LOCAL_CKPT+x}"
 CLEANUP_LOCAL_CKPT="${CLEANUP_LOCAL_CKPT:-True}"
 ALLOW_CLEANUP_OUTSIDE_CKPT_BASE="${ALLOW_CLEANUP_OUTSIDE_CKPT_BASE:-False}"
@@ -96,6 +97,7 @@ VLLM_CUSTOM_OPS="${VLLM_CUSTOM_OPS:-}"
 VLLM_TENSOR_PARALLEL_SIZE_WAS_SET="${VLLM_TENSOR_PARALLEL_SIZE+x}"
 VLLM_TENSOR_PARALLEL_SIZE="${VLLM_TENSOR_PARALLEL_SIZE:-}"
 MODEL_PROFILE="${MODEL_PROFILE:-}"
+EXPERIMENT_NAME_OVERRIDE="${EXPERIMENT_NAME_OVERRIDE:-}"
 MODEL_NAME="Res-OPD"
 EVAL_MAX_TOKENS="${EVAL_MAX_TOKENS:-8192}"
 EVAL_THINKING_MAX_TOKENS="${EVAL_THINKING_MAX_TOKENS:-$EVAL_MAX_TOKENS}"
@@ -423,8 +425,15 @@ safe_remove_checkpoint_dir() {
     local base_dir="${RES_OPD_ROOT}/checkpoints"
     local target_real
     local base_real
+    local mount_real
     target_real="$(realpath_for_cleanup "$target")"
     base_real="$(realpath_for_cleanup "$base_dir")"
+    mount_real="$(realpath_for_cleanup "$OSS_MOUNT_ROOT")"
+
+    if [[ "$target_real" == "$mount_real" || "$target_real" == "$mount_real"/* || "$target_real" == /data/oss_bucket_0 || "$target_real" == /data/oss_bucket_0/* ]]; then
+        echo "  ERROR: refusing to remove mounted OSS path: ${target_real}" >&2
+        return 1
+    fi
 
     if [[ "$target_real" == "$base_real"/* ]]; then
         rm -rf "$target"
@@ -661,9 +670,17 @@ if [[ "$(basename "$MODEL_PATH")" =~ ^global_step_[0-9]+$ ]]; then
     STEP_TAG="$(basename "$MODEL_PATH")"
     CKPT_ROOT="$(dirname "$MODEL_PATH")"
 fi
-EXPERIMENT_NAME="$(basename "$CKPT_ROOT")"
+if [[ -n "$EXPERIMENT_NAME_OVERRIDE" ]]; then
+    if [[ ! "$EXPERIMENT_NAME_OVERRIDE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+        echo "Error: EXPERIMENT_NAME_OVERRIDE must be one safe path component. Got: ${EXPERIMENT_NAME_OVERRIDE}" >&2
+        exit 1
+    fi
+    EXPERIMENT_NAME="$EXPERIMENT_NAME_OVERRIDE"
+else
+    EXPERIMENT_NAME="$(basename "$CKPT_ROOT")"
+fi
 # Append step tag to distinguish different checkpoints of the same experiment
-if [[ -n "$STEP_TAG" ]]; then
+if [[ -n "$STEP_TAG" && "$EXPERIMENT_NAME" != *"_${STEP_TAG}" ]]; then
     EXPERIMENT_NAME="${EXPERIMENT_NAME}_${STEP_TAG}"
 fi
 

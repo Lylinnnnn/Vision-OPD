@@ -49,6 +49,7 @@ TEACHER_RATIO="${TEACHER_RATIO:-}"
 TEACHER_PX="${TEACHER_PX:-}"
 TARGET_PX="${TARGET_PX:-448}"
 RESULT_VERSION_TAG="${RESULT_VERSION_TAG:-}"
+EXPERIMENT_NAME_OVERRIDE="${EXPERIMENT_NAME_OVERRIDE:-}"
 EVAL_OUTPUT_SUFFIX="${EVAL_OUTPUT_SUFFIX:-}"
 CHAIR_PROMPT="${CHAIR_PROMPT:-}"
 EVAL_OPD_TRACE="${EVAL_OPD_TRACE:-False}"
@@ -452,8 +453,16 @@ if [[ "$(basename "$MODEL_PATH")" =~ ^global_step_[0-9]+$ ]]; then
     STEP_TAG="$(basename "$MODEL_PATH")"
     CKPT_ROOT="$(dirname "$MODEL_PATH")"
 fi
-EXPERIMENT_NAME="$(basename "$CKPT_ROOT")"
-if [[ -n "$STEP_TAG" ]]; then
+if [[ -n "$EXPERIMENT_NAME_OVERRIDE" ]]; then
+    if [[ ! "$EXPERIMENT_NAME_OVERRIDE" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+        echo "Error: EXPERIMENT_NAME_OVERRIDE must be one safe path component. Got: ${EXPERIMENT_NAME_OVERRIDE}" >&2
+        exit 1
+    fi
+    EXPERIMENT_NAME="$EXPERIMENT_NAME_OVERRIDE"
+else
+    EXPERIMENT_NAME="$(basename "$CKPT_ROOT")"
+fi
+if [[ -n "$STEP_TAG" && "$EXPERIMENT_NAME" != *"_${STEP_TAG}" ]]; then
     EXPERIMENT_NAME="${EXPERIMENT_NAME}_${STEP_TAG}"
 fi
 infer_eval_spec "$EXPERIMENT_NAME"
