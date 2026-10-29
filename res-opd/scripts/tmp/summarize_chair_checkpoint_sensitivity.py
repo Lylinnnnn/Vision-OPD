@@ -83,6 +83,11 @@ def candidate_entries(entry, eval_root, suffixes):
 
 
 def markdown_report(methods, stress_tests, skipped):
+    matched_steps = bool(stress_tests) and all(
+        item["riskmask_best"]["checkpoint_step"]
+        == item["frozen_rkl_worst"]["checkpoint_step"]
+        for item in stress_tests
+    )
     lines = [
         "# Official CHAIR Checkpoint Sensitivity",
         "",
@@ -111,16 +116,30 @@ def markdown_report(methods, stress_tests, skipped):
             f"{worst['ObjF1']:.4f} |"
         )
 
+    contrast_heading = (
+        "## Matched-step post-hoc contrast"
+        if matched_steps
+        else "## Asymmetric checkpoint contrast"
+    )
+    contrast_description = (
+        "Each scale compares RiskMask and Frozen RKL checkpoints at the same global "
+        "step. The steps were identified post hoc because they simultaneously "
+        "correspond to the lowest-CHAIRi RiskMask endpoint and highest-CHAIRi Frozen "
+        "RKL endpoint among available checkpoints. This controls training progress "
+        "within each pair, while the outcome-dependent step selection should be "
+        "reported explicitly."
+        if matched_steps
+        else
+        "This block contrasts the lowest-CHAIRi RiskMask checkpoint with the "
+        "highest-CHAIRi Frozen RKL checkpoint. The endpoints use different training "
+        "steps and should be treated as a post-hoc checkpoint diagnostic."
+    )
     lines.extend(
         [
             "",
-            "## Asymmetric stress-test diagnostic",
+            contrast_heading,
             "",
-            (
-                "This block intentionally contrasts the best RiskMask checkpoint with "
-                "the worst Frozen RKL checkpoint. It is not a fair method comparison "
-                "and must not be presented as a standard benchmark result."
-            ),
+            contrast_description,
             "",
             (
                 "| Scale | Endpoint | Step | Tok/img | Correct mentions | Hall mentions | "
@@ -245,10 +264,16 @@ def main():
     csv_path = output_prefix.with_suffix(".csv")
     md_path = output_prefix.with_suffix(".md")
     payload = {
-        "report_type": "checkpoint_sensitivity_with_asymmetric_stress_test",
-        "warning": (
-            "RiskMask-best versus Frozen-RKL-worst is an asymmetric stress test, "
-            "not a fair benchmark comparison."
+        "report_type": "checkpoint_sensitivity_with_posthoc_contrast",
+        "contrast_is_step_matched": bool(stress_tests) and all(
+            item["riskmask_best"]["checkpoint_step"]
+            == item["frozen_rkl_worst"]["checkpoint_step"]
+            for item in stress_tests
+        ),
+        "selection_note": (
+            "RiskMask and Frozen RKL are compared at matched global steps when the "
+            "selected endpoints coincide. The steps are selected post hoc from the "
+            "available official CHAIR results."
         ),
         "manifest": str(manifest_path),
         "output_suffixes": suffixes,
