@@ -24,6 +24,16 @@ def parse_args():
     parser.add_argument("--indices", default="1-45")
     parser.add_argument("--output-suffix", default="chair_official_v2")
     parser.add_argument(
+        "--fallback-output-suffix",
+        action="append",
+        default=[],
+        help=(
+            "Fallback result suffix to try when --output-suffix is absent. "
+            "May be specified more than once; every selected result is still "
+            "validated against the requested prompt and official metric schema."
+        ),
+    )
+    parser.add_argument(
         "--eval-root",
         default="res-opd/eval_results/instruct/full",
     )
@@ -230,12 +240,24 @@ def validate_metrics(metrics, rows, args, metrics_path):
         raise ValueError(f"{metrics_path}: CHAIRs is inconsistent with caption totals")
 
 
-def summarize_entry(entry, eval_root, suffix, args, tokenizer_cache):
-    output_dir = entry_output_dir(entry, eval_root, suffix)
-    metrics_path = output_dir / "chair_metrics.json"
-    results_path = output_dir / "eval_results.jsonl"
-    if not metrics_path.is_file() or not results_path.is_file():
-        raise FileNotFoundError(f"Missing complete CHAIR output: {output_dir}")
+def summarize_entry(entry, eval_root, suffixes, args, tokenizer_cache):
+    attempted = []
+    output_dir = None
+    metrics_path = None
+    results_path = None
+    for suffix in suffixes:
+        candidate = entry_output_dir(entry, eval_root, suffix)
+        attempted.append(candidate)
+        candidate_metrics = candidate / "chair_metrics.json"
+        candidate_results = candidate / "eval_results.jsonl"
+        if candidate_metrics.is_file() and candidate_results.is_file():
+            output_dir = candidate
+            metrics_path = candidate_metrics
+            results_path = candidate_results
+            break
+    if output_dir is None:
+        attempted_text = "\n  ".join(str(path) for path in attempted)
+        raise FileNotFoundError(f"Missing complete CHAIR output; tried:\n  {attempted_text}")
 
     metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
     rows = load_jsonl(results_path)
@@ -462,9 +484,10 @@ def main():
     rows = []
     skipped = []
     tokenizer_cache = {}
+    suffixes = list(dict.fromkeys([args.output_suffix, *args.fallback_output_suffix]))
     for entry in entries:
         try:
-            row = summarize_entry(entry, eval_root, args.output_suffix, args, tokenizer_cache)
+            row = summarize_entry(entry, eval_root, suffixes, args, tokenizer_cache)
         except FileNotFoundError as error:
             if not args.allow_missing:
                 raise
@@ -487,6 +510,7 @@ def main():
         "manifest": str(manifest_path),
         "indices": sorted(requested),
         "output_suffix": args.output_suffix,
+        "fallback_output_suffixes": args.fallback_output_suffix,
         "expected_prompt": args.expected_prompt,
         "expected_samples": args.expected_samples,
         "length_mode": args.length_mode,
