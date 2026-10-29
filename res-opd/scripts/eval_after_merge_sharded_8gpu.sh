@@ -555,6 +555,10 @@ for shard_idx in $(seq 0 $((EVAL_SHARD_COUNT - 1))); do
     exit_file="${shard_dir}/exit_code"
     session="${SHARDED_EVAL_SESSION_PREFIX}_$(printf '%02d' "$shard_idx")"
     mkdir -p "$shard_dir"
+    if [[ -f "$exit_file" ]]; then
+        echo "Clearing stale shard status before launch: ${exit_file}"
+        rm -f "$exit_file"
+    fi
 
     {
         echo "#!/usr/bin/env bash"
@@ -650,16 +654,31 @@ echo "[cleanup] Ensuring shard vLLM ports are released ..."
 cleanup_shard_ports
 
 failed=0
+failure_summary="${SHARD_ROOT}/failure_summary.txt"
+: > "$failure_summary"
 for shard_idx in $(seq 0 $((EVAL_SHARD_COUNT - 1))); do
     shard_dir="${SHARD_ROOT}/shard_$(printf '%02d' "$shard_idx")"
     status="$(cat "${shard_dir}/exit_code")"
     if [[ "$status" != "0" ]]; then
         failed=1
-        echo "---- shard ${shard_idx} failed with status ${status}; tail log ----" >&2
-        tail -n 120 "${shard_dir}/eval.log" >&2 || true
+        {
+            echo "---- shard ${shard_idx} failed with status ${status}; likely root-cause lines ----"
+            grep -nEi \
+                'CUDA out of memory|Engine core|Connection refused|timed out|timeout|HTTP [45][0-9][0-9]|RuntimeError|ValueError|AssertionError|FileNotFoundError|OSError|ERROR:' \
+                "${shard_dir}/eval.log" \
+                | grep -vE 'KeyboardInterrupt: terminated|leaked semaphore' \
+                | tail -n 80 || true
+            echo
+            echo "---- shard ${shard_idx} tail ----"
+            tail -n 120 "${shard_dir}/eval.log" || true
+            echo
+        } >> "$failure_summary"
+        echo "---- shard ${shard_idx} failed with status ${status} ----" >&2
     fi
 done
 if [[ "$failed" -ne 0 ]]; then
+    cat "$failure_summary" >&2
+    echo "Failure summary: ${failure_summary}" >&2
     echo "Error: one or more shards failed. Temporary shard outputs kept at: ${SHARD_ROOT}" >&2
     exit 1
 fi
