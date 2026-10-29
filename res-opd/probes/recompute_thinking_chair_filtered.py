@@ -125,6 +125,7 @@ def score_rows(rows: list[dict[str, Any]], scorer_cache: dict[str, Any]) -> dict
             "image_id": row["image_id"],
             "generated_text": extract_final_response_text(str(row.get("generated_caption", ""))),
             "gt_objects": set(row.get("gt_objects", [])),
+            "gt_captions": row.get("gt_captions", []),
         }
         for row in rows
     ]

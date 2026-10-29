@@ -1000,12 +1000,14 @@ def main():
 
     model_eval_records = [
         {"image_id": iid, "generated_text": model_records[iid]["generated_caption"],
-         "gt_objects": model_records[iid].get("gt_objects", [])}
+         "gt_objects": model_records[iid].get("gt_objects", []),
+         "gt_captions": model_records[iid].get("gt_captions", [])}
         for iid in common_ids
     ]
     baseline_eval_records = [
         {"image_id": iid, "generated_text": baseline_records[iid]["generated_caption"],
-         "gt_objects": baseline_records[iid].get("gt_objects", [])}
+         "gt_objects": baseline_records[iid].get("gt_objects", []),
+         "gt_captions": baseline_records[iid].get("gt_captions", [])}
         for iid in common_ids
     ]
 

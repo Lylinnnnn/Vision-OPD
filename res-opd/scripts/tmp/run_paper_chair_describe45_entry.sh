@@ -9,6 +9,9 @@ MANIFEST="${PAPER_CHAIR_DESCRIBE_MANIFEST:-${RES_OPD_ROOT}/eval/manifests/paper_
 
 ENTRY_INDEX="${1:?Usage: $0 <entry_index:1-45> [vllm_base_port]}"
 VLLM_BASE_PORT="${2:-${VLLM_BASE_PORT:-8600}}"
+CHAIR_RERUN_PROMPT="${CHAIR_RERUN_PROMPT:-Describe the image.}"
+CHAIR_RERUN_OUTPUT_SUFFIX="${CHAIR_RERUN_OUTPUT_SUFFIX:-chair_describe_image_official}"
+MODEL_ROOT="${MODEL_ROOT:-}"
 
 if ! [[ "$ENTRY_INDEX" =~ ^[0-9]+$ ]] || (( ENTRY_INDEX < 1 || ENTRY_INDEX > 45 )); then
     echo "Error: entry_index must be an integer in [1, 45], got ${ENTRY_INDEX}" >&2
@@ -29,14 +32,17 @@ if [[ -z "$line" ]]; then
     exit 1
 fi
 IFS='|' read -r index label source_type primary oss_name step student_ratio <<< "$line"
+if [[ "$source_type" == "local_base" && -n "$MODEL_ROOT" ]]; then
+    primary="${MODEL_ROOT%/}/$(basename "$primary")"
+fi
 
 common_env=(
     DATASET_VERSION=full
     RESULT_VERSION_TAG=instruct
     DEGRADATION_MODE=original
     STUDENT_RATIO="$student_ratio"
-    CHAIR_PROMPT="Describe the image."
-    EVAL_OUTPUT_SUFFIX=chair_describe_image_official
+    CHAIR_PROMPT="$CHAIR_RERUN_PROMPT"
+    EVAL_OUTPUT_SUFFIX="$CHAIR_RERUN_OUTPUT_SUFFIX"
     CHAIR_MAX_NEW_TOKENS=8192
     GPU_LIST=0,1,2,3,4,5,6,7
     EVAL_SHARD_COUNT=8
@@ -82,8 +88,8 @@ elif [[ "$source_type" == "oss_checkpoint" ]]; then
         --eval-shard-count 8 \
         --gpu-list 0,1,2,3,4,5,6,7 \
         --result-version-tag instruct \
-        --chair-prompt "Describe the image." \
-        --eval-output-suffix chair_describe_image_official \
+        --chair-prompt "$CHAIR_RERUN_PROMPT" \
+        --eval-output-suffix "$CHAIR_RERUN_OUTPUT_SUFFIX" \
         --chair-max-new-tokens 8192 \
         --sharded-eval-keep-shards False
 else

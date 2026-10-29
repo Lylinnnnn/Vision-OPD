@@ -23,6 +23,8 @@ import sys
 
 import numpy as np
 
+from chair_singularize import singularize
+
 # ============================================================
 # Official Rohrbach CHAIR synonyms (from data/synonyms.txt)
 # Each line: canonical_name, syn1, syn2, ...
@@ -163,40 +165,6 @@ def build_double_word_dict():
     return double_word_dict
 
 
-def try_singularize(word):
-    """Simple rule-based singularization (avoids pattern.en dependency).
-
-    Handles common English plural forms. Falls back to the original word.
-    """
-    if len(word) <= 2:
-        return word
-    # Irregular
-    irregulars = {
-        "people": "person", "men": "man", "women": "woman", "children": "child",
-        "mice": "mouse", "geese": "goose", "teeth": "tooth", "feet": "foot",
-        "oxen": "ox", "dice": "die", "knives": "knife", "lives": "life",
-        "wives": "wife", "shelves": "shelf", "leaves": "leaf",
-        "calves": "calf", "halves": "half", "wolves": "wolf",
-    }
-    if word in irregulars:
-        return irregulars[word]
-    # -ies -> -y (but not if preceded by a vowel: "keys" -> "key")
-    if word.endswith("ies") and len(word) > 3 and word[-4] not in "aeiou":
-        return word[:-3] + "y"
-    # -ves -> -f/fe
-    if word.endswith("ves"):
-        return word[:-3] + "f"
-    # -ses, -xes, -zes, -ches, -shes -> remove "es"
-    if word.endswith("ses") or word.endswith("xes") or word.endswith("zes"):
-        return word[:-2]
-    if word.endswith("ches") or word.endswith("shes"):
-        return word[:-2]
-    # -s (but not -ss)
-    if word.endswith("s") and not word.endswith("ss"):
-        return word[:-1]
-    return word
-
-
 def caption_to_words(caption, mscoco_objects, inverse_synonym_dict, double_word_dict):
     """Official CHAIR caption-to-words extraction.
 
@@ -211,7 +179,7 @@ def caption_to_words(caption, mscoco_objects, inverse_synonym_dict, double_word_
     # nltk.word_tokenize; this dependency-free tokenization has the same
     # relevant behavior for COCO object words and compounds.
     raw_words = re.findall(r"[a-z0-9]+(?:'[a-z]+)?", caption.lower())
-    words = [try_singularize(w) for w in raw_words]
+    words = [singularize(w) for w in raw_words]
 
     # Replace double words
     i = 0
@@ -273,6 +241,18 @@ def compute_per_sample(records, mscoco_objects, inverse_synonym_dict,
     per_sample = {}
     for record in records:
         image_id = record.get("image_id", record.get("sample_id"))
+        if image_id is None:
+            raise ValueError("Official CHAIR requires image_id for every caption")
+        if image_id in per_sample:
+            raise ValueError(
+                "Official CHAIR expects one generated caption per image_id; "
+                f"found duplicate image_id={image_id}"
+            )
+        if gt_source == "instances_and_captions" and not record.get("gt_captions"):
+            raise ValueError(
+                "Official CHAIR requires reference captions as well as instance "
+                f"annotations; image_id={image_id} has no gt_captions"
+            )
         gt_categories = {
             inverse_synonym_dict.get(str(obj).lower(), str(obj).lower())
             for obj in record.get("gt_objects", [])
@@ -337,6 +317,7 @@ def compute_per_sample(records, mscoco_objects, inverse_synonym_dict,
             "gt_count": len(gt_categories),
             "n_sent": n_sent,
             "n_halluc_sent": n_halluc_sent,
+            "gt_source": gt_source,
             "rep_rate": repetition_rate(generated_text),
             "token_len": token_len,
         }
@@ -348,6 +329,12 @@ def aggregate_from_arrays(sample_dicts, indices):
 
     Uses ratio-of-sums (not mean-of-ratios).
     """
+    indices = list(indices)
+    gt_sources = {sample_dicts[idx].get("gt_source") for idx in indices}
+    if len(gt_sources) > 1:
+        raise ValueError(f"Cannot aggregate mixed CHAIR GT protocols: {sorted(gt_sources)}")
+    gt_source = next(iter(gt_sources), "instances_and_captions")
+
     total_mentioned = 0
     total_hallucinated = 0
     total_correct = 0
@@ -396,6 +383,13 @@ def aggregate_from_arrays(sample_dicts, indices):
         "CHAIRi_unique_category_legacy": unique_category_chair_i_legacy,
         "CHAIRs_sentence_proxy_legacy": sentence_chair_s_proxy,
         "metric_schema": "official_chair_caption_and_mention_v1",
+        "chair_i_protocol": "all_generated_object_mentions",
+        "chair_s_protocol": "captions_with_any_hallucinated_object",
+        "ground_truth_protocol": (
+            "instance_categories_only"
+            if gt_source == "instances_only"
+            else "instance_categories_union_reference_caption_objects"
+        ),
         "total_captions": total_captions,
         "hallucinated_captions": hallucinated_captions,
         "total_object_mentions": total_object_mentions,
