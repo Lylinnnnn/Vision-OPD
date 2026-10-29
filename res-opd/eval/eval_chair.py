@@ -59,6 +59,8 @@ def default_data_root():
         os.environ.get("VISION_BENCHMARK_DATA_DIR", ""),
         str(home_default),
         str(Path.home() / "notebook" / "yanlin" / "data"),
+        "/data/oss_bucket_0/yanlin/data",
+        "/data/oss_bucket_0/yanlin",
         "/home/zhengyanzhao.zyz/notebook/yanlin/data",
         "/home/liuyanlin.lyl/notebook/data",
     ]
@@ -69,6 +71,7 @@ def default_data_root():
 
 
 DEFAULT_DATA_ROOT = default_data_root()
+DEFAULT_COCO_IMAGE_ROOT = DEFAULT_DATA_ROOT / "COCO" / "coco2017val" / "val2017"
 COCO_INSTANCES_PATH = str(DEFAULT_DATA_ROOT / "COCO" / "coco2017val" / "annotations" / "instances_val2017.json")
 COCO_CAPTIONS_PATH = str(DEFAULT_DATA_ROOT / "COCO" / "coco2017val" / "annotations" / "captions_val2017.json")
 
@@ -78,6 +81,30 @@ PROMPT_TEXT = (
 )
 
 THINK_CLOSE = "</think>"
+
+
+def remap_coco_image_paths(samples):
+    missing = []
+    remapped = 0
+    for sample in samples:
+        current = Path(str(sample.get("image_path", "")))
+        if current.is_file():
+            continue
+        file_name = sample.get("file_name") or current.name
+        candidate = DEFAULT_COCO_IMAGE_ROOT / str(file_name)
+        if candidate.is_file():
+            sample["image_path"] = str(candidate)
+            remapped += 1
+        else:
+            missing.append(str(candidate))
+    if missing:
+        preview = "\n  ".join(missing[:10])
+        raise FileNotFoundError(
+            f"Could not resolve {len(missing)} COCO images under {DEFAULT_COCO_IMAGE_ROOT}:\n  {preview}"
+        )
+    if remapped:
+        print(f"Remapped {remapped} COCO image paths to {DEFAULT_COCO_IMAGE_ROOT}")
+    return samples
 
 
 def extract_final_response_text(text):
@@ -479,6 +506,7 @@ def main():
     # Load test data
     with open(args.test_json) as f:
         test_samples = json.load(f)
+    test_samples = remap_coco_image_paths(test_samples)
 
     if args.max_samples > 0:
         test_samples = test_samples[:args.max_samples]

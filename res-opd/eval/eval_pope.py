@@ -148,6 +148,38 @@ def load_res_opd_test_samples(test_json: Path) -> list[dict]:
         samples = json.load(f)
     if not isinstance(samples, list):
         raise ValueError(f"Expected a list in {test_json}")
+    data_root_candidates = [
+        os.environ.get("RES_OPD_DATA_ROOT", ""),
+        os.environ.get("BENCHMARK_DATA_DIR", ""),
+        "/data/oss_bucket_0/yanlin/data",
+        "/data/oss_bucket_0/yanlin",
+        "/home/zhengyanzhao.zyz/notebook/yanlin/data",
+        "/home/liuyanlin.lyl/notebook/data",
+    ]
+    data_root = next((Path(value) for value in data_root_candidates if value and Path(value).exists()), None)
+    if data_root is None:
+        raise FileNotFoundError("No Res-OPD data root exists; set RES_OPD_DATA_ROOT")
+    image_root = data_root / "COCO" / "coco2017val" / "val2017"
+    missing = []
+    remapped = 0
+    for sample in samples:
+        current = Path(str(sample.get("image_path", "")))
+        if current.is_file():
+            continue
+        file_name = sample.get("file_name") or current.name
+        candidate = image_root / str(file_name)
+        if candidate.is_file():
+            sample["image_path"] = str(candidate)
+            remapped += 1
+        else:
+            missing.append(str(candidate))
+    if missing:
+        preview = "\n  ".join(missing[:10])
+        raise FileNotFoundError(
+            f"Could not resolve {len(missing)} POPE source images under {image_root}:\n  {preview}"
+        )
+    if remapped:
+        print(f"Remapped {remapped} POPE source image paths to {image_root}")
     return samples
 
 

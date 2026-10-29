@@ -87,8 +87,11 @@ res_opd_default_data_root() {
     local fallback="${home}/notebook/data"
     res_opd_pick_existing_path \
         "$fallback" \
+        "${RES_OPD_DATA_ROOT:-}" \
         "${BENCHMARK_DATA_DIR:-}" \
         "${VISION_BENCHMARK_DATA_DIR:-}" \
+        "/data/oss_bucket_0/yanlin/data" \
+        "/data/oss_bucket_0/yanlin" \
         "${home}/notebook/data" \
         "${home}/notebook/yanlin/data" \
         "/home/zhengyanzhao.zyz/notebook/yanlin/data" \
