@@ -17,8 +17,9 @@ def run_git(*args, cwd=None):
         ["git", *args],
         cwd=cwd or REPO_ROOT,
         check=False,
-        capture_output=True,
-        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
     )
     if result.returncode != 0:
         return None
