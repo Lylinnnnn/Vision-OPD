@@ -60,6 +60,11 @@ def parse_args():
         choices=("tokenizer", "record", "words"),
         default="tokenizer",
     )
+    parser.add_argument(
+        "--group-by-scale",
+        action="store_true",
+        help="Group Markdown tables by model scale and show compact method names.",
+    )
     parser.add_argument("--allow-missing", action="store_true")
     return parser.parse_args()
 
@@ -147,6 +152,29 @@ def tokenizer_dir(scale, model_root):
         "8b": "Qwen3VL-8B-Instruct",
     }
     return model_root / names[scale]
+
+
+def method_name(label):
+    patterns = (
+        ("/base/", "Base"),
+        ("/lowres_sft/", "Low-res SFT"),
+        ("/frozen_rkl/", "Frozen RKL"),
+        ("/randommask/", "RandomMask"),
+        ("/entropymask/", "EntropyMask"),
+        ("/riskmask/", "RiskMask"),
+    )
+    lowered = label.lower()
+    for marker, name in patterns:
+        if marker in lowered:
+            return name
+    return label
+
+
+def checkpoint_step(step):
+    if not step:
+        return "--"
+    match = re.fullmatch(r"global_step_(\d+)", step)
+    return match.group(1) if match else step
 
 
 def load_jsonl(path):
@@ -296,6 +324,8 @@ def summarize_entry(entry, eval_root, suffixes, args, tokenizer_cache):
     return {
         "index": entry["index"],
         "label": entry["label"],
+        "method": method_name(entry["label"]),
+        "checkpoint_step": checkpoint_step(entry["step"]),
         "scale": scale,
         "output_dir": str(output_dir),
         "n": n,
@@ -361,22 +391,19 @@ def fmt(value, digits=4, signed=False):
     return f"{value:{prefix}.{digits}f}"
 
 
-def markdown(rows):
+def markdown_table(rows, experiment_header="Experiment", compact_names=False):
     lines = [
-        "# Official CHAIR Response and Mention Accounting",
-        "",
-        "Official mention counts include repeated object mentions. Unique-category counts deduplicate each canonical object category within a caption and are the basis of ObjPrec/ObjRecall/ObjF1.",
-        "",
-        "| ID | Experiment | Tok/img | Delta tok | Correct mentions | Delta correct | Hall mentions | Delta hall | Correct/img | Hall/img | Hall/100 tok | CHAIRi | CHAIRs | ObjRecall | ObjF1 |",
-        "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        f"| {experiment_header} | Step | Tok/img | Delta tok | Correct mentions | Delta correct | Hall mentions | Delta hall | Correct/img | Hall/img | Hall/100 tok | CHAIRi | CHAIRs | ObjRecall | ObjF1 |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
+        name = row["method"] if compact_names else row["label"]
         lines.append(
-            "| {index} | {label} | {tok} | {dtok} | {correct} | {dcorrect} | "
+            "| {name} | {step} | {tok} | {dtok} | {correct} | {dcorrect} | "
             "{hall} | {dhall} | {correct_img} | {hall_img} | {hall_100} | "
             "{chair_i} | {chair_s} | {recall} | {f1} |".format(
-                index=row["index"],
-                label=row["label"],
+                name=name,
+                step=row["checkpoint_step"],
                 tok=fmt(row["response_tokens_mean"], 2),
                 dtok=fmt(row["delta_response_tokens_mean"], 2, True),
                 correct=row["official_correct_mentions"],
@@ -392,21 +419,21 @@ def markdown(rows):
                 f1=fmt(row["ObjF1"], 4),
             )
         )
-    lines.extend(
-        [
-            "",
-            "## Unique-category accounting",
-            "",
-            "| ID | Experiment | Unique GT | Unique pred | Unique correct | Unique hall | Correct/img | Hall/img | ObjPrec | ObjRecall | ObjF1 |",
-            "|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
-        ]
-    )
+    return lines
+
+
+def unique_markdown_table(rows, experiment_header="Experiment", compact_names=False):
+    lines = [
+        f"| {experiment_header} | Step | Unique GT | Unique pred | Unique correct | Unique hall | Correct/img | Hall/img | ObjPrec | ObjRecall | ObjF1 |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
     for row in rows:
+        name = row["method"] if compact_names else row["label"]
         lines.append(
-            "| {index} | {label} | {gt} | {pred} | {correct} | {hall} | {correct_img} | "
+            "| {name} | {step} | {gt} | {pred} | {correct} | {hall} | {correct_img} | "
             "{hall_img} | {precision} | {recall} | {f1} |".format(
-                index=row["index"],
-                label=row["label"],
+                name=name,
+                step=row["checkpoint_step"],
                 gt=row["unique_gt_categories"],
                 pred=row["unique_pred_categories"],
                 correct=row["unique_correct_categories"],
@@ -418,10 +445,39 @@ def markdown(rows):
                 f1=fmt(row["ObjF1"], 4),
             )
         )
+    return lines
+
+
+def markdown(rows, group_by_scale=False):
+    lines = [
+        "# Official CHAIR Response and Mention Accounting",
+        "",
+        "Official mention counts include repeated object mentions. Unique-category counts deduplicate each canonical object category within a caption and are the basis of ObjPrec/ObjRecall/ObjF1.",
+        "",
+    ]
+    if group_by_scale:
+        scale_titles = {
+            "2b": "Qwen3VL-2B-Instruct",
+            "4b": "Qwen3VL-4B-Instruct",
+            "8b": "Qwen3VL-8B-Instruct",
+        }
+        for scale in ("2b", "4b", "8b"):
+            scale_rows = [row for row in rows if row["scale"] == scale]
+            if not scale_rows:
+                continue
+            lines.extend([f"## {scale_titles[scale]}", ""])
+            lines.extend(markdown_table(scale_rows, "Method", compact_names=True))
+            lines.extend(["", "### Unique-category accounting", ""])
+            lines.extend(unique_markdown_table(scale_rows, "Method", compact_names=True))
+            lines.append("")
+    else:
+        lines.extend(markdown_table(rows))
+        lines.extend(["", "## Unique-category accounting", ""])
+        lines.extend(unique_markdown_table(rows))
     return "\n".join(lines) + "\n"
 
 
-def append_markdown(rows, path, title):
+def append_markdown(rows, path, title, group_by_scale=False):
     if not path.is_file():
         raise FileNotFoundError(f"Append target does not exist: {path}")
     marker_id = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
@@ -431,7 +487,7 @@ def append_markdown(rows, path, title):
     if begin_marker in existing or end_marker in existing:
         raise ValueError(f"Append section already exists in {path}: {title}")
 
-    section = markdown(rows)
+    section = markdown(rows, group_by_scale=group_by_scale)
     section = section.replace(
         "# Official CHAIR Response and Mention Accounting",
         f"## {title}",
@@ -443,7 +499,14 @@ def append_markdown(rows, path, title):
         handle.write(f"\n{begin_marker}\n{section}{end_marker}\n")
 
 
-def write_outputs(rows, output_prefix, metadata, append_md=None, append_title=None):
+def write_outputs(
+    rows,
+    output_prefix,
+    metadata,
+    append_md=None,
+    append_title=None,
+    group_by_scale=False,
+):
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = output_prefix.with_suffix(".json")
     csv_path = output_prefix.with_suffix(".csv")
@@ -460,10 +523,10 @@ def write_outputs(rows, output_prefix, metadata, append_md=None, append_title=No
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    md_path.write_text(markdown(rows), encoding="utf-8")
+    md_path.write_text(markdown(rows, group_by_scale=group_by_scale), encoding="utf-8")
     outputs = [json_path, csv_path, md_path]
     if append_md is not None:
-        append_markdown(rows, append_md, append_title)
+        append_markdown(rows, append_md, append_title, group_by_scale=group_by_scale)
         outputs.append(append_md)
     return outputs
 
@@ -515,6 +578,7 @@ def main():
         "expected_samples": args.expected_samples,
         "length_mode": args.length_mode,
         "model_root": args.model_root,
+        "group_by_scale": args.group_by_scale,
         "skipped": skipped,
     }
     outputs = write_outputs(
@@ -523,6 +587,7 @@ def main():
         metadata,
         append_md=append_md,
         append_title=args.append_title,
+        group_by_scale=args.group_by_scale,
     )
     print("\nSaved:")
     for path in outputs:
