@@ -12,6 +12,8 @@ VLLM_BASE_PORT="${2:-${VLLM_BASE_PORT:-8600}}"
 CHAIR_RERUN_PROMPT="${CHAIR_RERUN_PROMPT:-Describe the image.}"
 CHAIR_RERUN_OUTPUT_SUFFIX="${CHAIR_RERUN_OUTPUT_SUFFIX:-chair_describe_image_official}"
 MODEL_ROOT="${MODEL_ROOT:-}"
+RERUN_GPU_LIST="${GPU_LIST:-0,1,2,3,4,5,6,7}"
+RERUN_SHARD_COUNT="${EVAL_SHARD_COUNT:-8}"
 
 if ! [[ "$ENTRY_INDEX" =~ ^[0-9]+$ ]] || (( ENTRY_INDEX < 1 || ENTRY_INDEX > 45 )); then
     echo "Error: entry_index must be an integer in [1, 45], got ${ENTRY_INDEX}" >&2
@@ -44,8 +46,8 @@ common_env=(
     CHAIR_PROMPT="$CHAIR_RERUN_PROMPT"
     EVAL_OUTPUT_SUFFIX="$CHAIR_RERUN_OUTPUT_SUFFIX"
     CHAIR_MAX_NEW_TOKENS=8192
-    GPU_LIST=0,1,2,3,4,5,6,7
-    EVAL_SHARD_COUNT=8
+    GPU_LIST="$RERUN_GPU_LIST"
+    EVAL_SHARD_COUNT="$RERUN_SHARD_COUNT"
     VLLM_BASE_PORT="$VLLM_BASE_PORT"
     VLLM_PORT_CLEANUP=True
     SHARDED_EVAL_FORCE_TP1=True
@@ -85,8 +87,8 @@ elif [[ "$source_type" == "oss_checkpoint" ]]; then
         --student-ratio "$student_ratio" \
         --eval-mode chair \
         --eval-backend sharded \
-        --eval-shard-count 8 \
-        --gpu-list 0,1,2,3,4,5,6,7 \
+        --eval-shard-count "$RERUN_SHARD_COUNT" \
+        --gpu-list "$RERUN_GPU_LIST" \
         --result-version-tag instruct \
         --chair-prompt "$CHAIR_RERUN_PROMPT" \
         --eval-output-suffix "$CHAIR_RERUN_OUTPUT_SUFFIX" \

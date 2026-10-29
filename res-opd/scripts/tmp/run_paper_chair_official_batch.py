@@ -21,6 +21,8 @@ def parse_args():
     parser.add_argument("--num-jobs", type=int, default=1)
     parser.add_argument("--job-index", type=int, default=0)
     parser.add_argument("--base-port", type=int, default=8600)
+    parser.add_argument("--gpu-list", default="0,1,2,3,4,5,6,7")
+    parser.add_argument("--eval-shard-count", type=int, default=8)
     parser.add_argument("--model-root", default=os.environ.get("MODEL_ROOT", ""))
     parser.add_argument("--prompt", default="Describe the image.")
     parser.add_argument("--output-suffix", default="chair_describe_image_official")
@@ -158,6 +160,9 @@ def main():
     args = parse_args()
     if args.num_jobs < 1 or not 0 <= args.job_index < args.num_jobs:
         raise ValueError("--job-index must be in [0, --num-jobs)")
+    gpu_ids = [value.strip() for value in args.gpu_list.split(",") if value.strip()]
+    if len(gpu_ids) != args.eval_shard_count or len(set(gpu_ids)) != len(gpu_ids):
+        raise ValueError("--gpu-list must contain exactly --eval-shard-count unique GPU IDs")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", args.output_suffix):
         raise ValueError("--output-suffix must be one safe path component")
 
@@ -200,6 +205,8 @@ def main():
         env = os.environ.copy()
         env["CHAIR_RERUN_PROMPT"] = args.prompt
         env["CHAIR_RERUN_OUTPUT_SUFFIX"] = args.output_suffix
+        env["GPU_LIST"] = args.gpu_list
+        env["EVAL_SHARD_COUNT"] = str(args.eval_shard_count)
         if args.model_root:
             env["MODEL_ROOT"] = args.model_root
         print(" ".join(shlex.quote(value) for value in command), flush=True)
