@@ -15,6 +15,8 @@ from openai import OpenAI
 from PIL import Image
 from tqdm import tqdm
 
+from benchmark_paths import resolve_benchmark_images
+
 VSTAR_BENCHMARKS = {"vstar"}
 VSTAR_MAX_IMAGE_SIZE = 20 * 1024 * 1024
 
@@ -161,6 +163,14 @@ def main():
     data_path = Path(args.benchmark_json)
     with open(data_path, "r", encoding="utf-8") as f:
         total_data = json.load(f)
+    if not isinstance(total_data, list):
+        raise ValueError(f"Benchmark JSON must contain a list: {data_path}")
+    remapped_images = resolve_benchmark_images(total_data, benchmark, data_path)
+    if remapped_images:
+        print(
+            f"Resolved {remapped_images} stale image path(s) under {data_path.parent} "
+            f"for benchmark={benchmark}."
+        )
     if args.shard_count > 1:
         total_data = [
             item for idx, item in enumerate(total_data)

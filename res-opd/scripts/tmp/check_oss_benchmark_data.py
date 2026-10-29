@@ -6,6 +6,11 @@ import random
 import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT / "eval"))
+
+from benchmark_paths import resolve_benchmark_image_path
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -225,19 +230,19 @@ def check_json_image_benchmark(report, mount_root, benchmark, json_name, image_d
                 direct += 1
                 resolved_paths.append(current)
                 continue
-            candidates = [directory / current.name for directory in directories]
-            candidate = next((path for path in candidates if path.is_file()), None)
-            if candidate is None:
+            try:
+                candidate = resolve_benchmark_image_path(values[0], benchmark, root)
+            except (FileNotFoundError, RuntimeError):
                 unresolved.append(str(values[0]))
-            else:
-                remappable += 1
-                resolved_paths.append(candidate)
+                continue
+            remappable += 1
+            resolved_paths.append(candidate)
         if unresolved:
             raise ValueError(f"unresolved_images={len(unresolved)}, examples={unresolved[:5]}")
-        status = "PASS" if remappable == 0 else "WARN"
+        status = "PASS"
         message = f"rows={len(rows)}, direct_paths={direct}, basename_remappable={remappable}"
         if remappable:
-            message += "; runtime JSON path remapping is required"
+            message += "; runtime JSON path remapping is supported"
         report.add(benchmark, status, message, json_path)
         verify_images(report, benchmark, resolved_paths, sample_count)
     except Exception as error:
