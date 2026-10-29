@@ -57,9 +57,9 @@ def endpoint_payload(row):
         "response_tokens_mean",
         "official_correct_mentions",
         "official_hallucinated_mentions",
-        "correct_mentions_per_image",
-        "hallucinated_mentions_per_image",
-        "hallucinated_mentions_per_100_tokens",
+        "official_correct_mentions_per_caption",
+        "official_hallucinated_mentions_per_caption",
+        "official_hallucinated_mentions_per_100_tokens",
         "CHAIRi",
         "CHAIRs",
         "ObjPrec",
@@ -138,7 +138,7 @@ def markdown_report(methods, stress_tests, skipped):
                 f"{row['response_tokens_mean']:.2f} | "
                 f"{row['official_correct_mentions']} | "
                 f"{row['official_hallucinated_mentions']} | "
-                f"{row['hallucinated_mentions_per_100_tokens']:.3f} | "
+                f"{row['official_hallucinated_mentions_per_100_tokens']:.3f} | "
                 f"{row['CHAIRi']:.4f} | {row['CHAIRs']:.4f} | "
                 f"{row['ObjRecall']:.4f} | {row['ObjF1']:.4f} |"
             )
@@ -270,7 +270,7 @@ def main():
         "response_tokens_mean",
         "official_correct_mentions",
         "official_hallucinated_mentions",
-        "hallucinated_mentions_per_100_tokens",
+        "official_hallucinated_mentions_per_100_tokens",
         "CHAIRi",
         "CHAIRs",
         "ObjPrec",
