@@ -35,6 +35,14 @@ def parse_args():
         "--output-prefix",
         default="res-opd/paper/tmp/paper_chair_official_v2_accounting",
     )
+    parser.add_argument(
+        "--append-md",
+        help="Append the generated tables as a new section to an existing Markdown file.",
+    )
+    parser.add_argument(
+        "--append-title",
+        default="Additional CHAIR accounting results",
+    )
     parser.add_argument("--expected-prompt", default=OFFICIAL_PROMPT)
     parser.add_argument("--expected-samples", type=int, default=1000)
     parser.add_argument(
@@ -391,11 +399,35 @@ def markdown(rows):
     return "\n".join(lines) + "\n"
 
 
-def write_outputs(rows, output_prefix, metadata):
+def append_markdown(rows, path, title):
+    if not path.is_file():
+        raise FileNotFoundError(f"Append target does not exist: {path}")
+    marker_id = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    begin_marker = f"<!-- BEGIN chair-accounting-{marker_id} -->"
+    end_marker = f"<!-- END chair-accounting-{marker_id} -->"
+    existing = path.read_text(encoding="utf-8")
+    if begin_marker in existing or end_marker in existing:
+        raise ValueError(f"Append section already exists in {path}: {title}")
+
+    section = markdown(rows)
+    section = section.replace(
+        "# Official CHAIR Response and Mention Accounting",
+        f"## {title}",
+        1,
+    ).replace("## Unique-category accounting", "### Unique-category accounting", 1)
+    with path.open("a", encoding="utf-8") as handle:
+        if existing and not existing.endswith("\n"):
+            handle.write("\n")
+        handle.write(f"\n{begin_marker}\n{section}{end_marker}\n")
+
+
+def write_outputs(rows, output_prefix, metadata, append_md=None, append_title=None):
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
     json_path = output_prefix.with_suffix(".json")
     csv_path = output_prefix.with_suffix(".csv")
     md_path = output_prefix.with_suffix(".md")
+    if append_md is not None and append_md.resolve() == md_path.resolve():
+        raise ValueError("--append-md must differ from the generated --output-prefix Markdown path")
 
     json_path.write_text(
         json.dumps({"metadata": metadata, "experiments": rows}, indent=2) + "\n",
@@ -407,7 +439,11 @@ def write_outputs(rows, output_prefix, metadata):
         writer.writeheader()
         writer.writerows(rows)
     md_path.write_text(markdown(rows), encoding="utf-8")
-    return json_path, csv_path, md_path
+    outputs = [json_path, csv_path, md_path]
+    if append_md is not None:
+        append_markdown(rows, append_md, append_title)
+        outputs.append(append_md)
+    return outputs
 
 
 def main():
@@ -416,6 +452,7 @@ def main():
     manifest_path = resolve_path(args.manifest, root)
     eval_root = resolve_path(args.eval_root, root)
     output_prefix = resolve_path(args.output_prefix, root)
+    append_md = resolve_path(args.append_md, root) if args.append_md else None
     requested = parse_indices(args.indices)
     entries = [entry for entry in load_manifest(manifest_path) if entry["index"] in requested]
     missing_indices = requested - {entry["index"] for entry in entries}
@@ -456,7 +493,13 @@ def main():
         "model_root": args.model_root,
         "skipped": skipped,
     }
-    outputs = write_outputs(rows, output_prefix, metadata)
+    outputs = write_outputs(
+        rows,
+        output_prefix,
+        metadata,
+        append_md=append_md,
+        append_title=args.append_title,
+    )
     print("\nSaved:")
     for path in outputs:
         print(path)
