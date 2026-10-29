@@ -1,0 +1,13 @@
+# index|label|source_type|model_path_or_experiment_name|oss_name|step|student_ratio
+1|2b/base/original|local_base|/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct|||1.0
+2|2b/lowres_sft/tr05/s156|oss_checkpoint|Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr0.5-sft-lowres-b32-full5k-e1|ResOPD_orig_sr1.0_tr0.5_sft_lowres_b32_full5k-e1|global_step_156|1.0
+3|4b/base/original|local_base|/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-4B-Instruct|||1.0
+4|4b/lowres_sft/tr05/s156|oss_checkpoint|Res-OPD-Qwen3VL-4B-Instruct-orig-sr1.0-tr0.5-sft-lowres-b32-full5k-e1|ResOPD_Qwen3VL_4B_Instruct_orig_sr1.0_tr0.5_sft_lowres_b32_full5k-e1|global_step_156|1.0
+5|8b/base/original|local_base|/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-8B-Instruct|||1.0
+6|8b/lowres_sft/tr05/s50|oss_checkpoint|Res-OPD-Qwen3VL-8B-Instruct-orig-sr1.0-tr0.5-sft-lowres-b16-full5k-e1|ResOPD_Qwen3VL_8B_Instruct_orig_sr1.0_tr0.5_sft_lowres_b16_full5k-e1|global_step_50|1.0
+7|8b/lowres_sft/tr05/s100|oss_checkpoint|Res-OPD-Qwen3VL-8B-Instruct-orig-sr1.0-tr0.5-sft-lowres-b16-full5k-e1|ResOPD_Qwen3VL_8B_Instruct_orig_sr1.0_tr0.5_sft_lowres_b16_full5k-e1|global_step_100|1.0
+8|8b/lowres_sft/tr05/s150|oss_checkpoint|Res-OPD-Qwen3VL-8B-Instruct-orig-sr1.0-tr0.5-sft-lowres-b16-full5k-e1|ResOPD_Qwen3VL_8B_Instruct_orig_sr1.0_tr0.5_sft_lowres_b16_full5k-e1|global_step_150|1.0
+9|8b/lowres_sft/tr05/s200|oss_checkpoint|Res-OPD-Qwen3VL-8B-Instruct-orig-sr1.0-tr0.5-sft-lowres-b16-full5k-e1|ResOPD_Qwen3VL_8B_Instruct_orig_sr1.0_tr0.5_sft_lowres_b16_full5k-e1|global_step_200|1.0
+10|8b/lowres_sft/tr05/s250|oss_checkpoint|Res-OPD-Qwen3VL-8B-Instruct-orig-sr1.0-tr0.5-sft-lowres-b16-full5k-e1|ResOPD_Qwen3VL_8B_Instruct_orig_sr1.0_tr0.5_sft_lowres_b16_full5k-e1|global_step_250|1.0
+11|8b/lowres_sft/tr05/s300|oss_checkpoint|Res-OPD-Qwen3VL-8B-Instruct-orig-sr1.0-tr0.5-sft-lowres-b16-full5k-e1|ResOPD_Qwen3VL_8B_Instruct_orig_sr1.0_tr0.5_sft_lowres_b16_full5k-e1|global_step_300|1.0
+12|8b/lowres_sft/tr05/s312|oss_checkpoint|Res-OPD-Qwen3VL-8B-Instruct-orig-sr1.0-tr0.5-sft-lowres-b16-full5k-e1|ResOPD_Qwen3VL_8B_Instruct_orig_sr1.0_tr0.5_sft_lowres_b16_full5k-e1|global_step_312|1.0
