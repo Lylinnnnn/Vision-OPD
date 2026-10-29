@@ -158,6 +158,18 @@ cleanup_vllm_port() {
             fi
         done
     fi
+
+    for _ in $(seq 1 "$VLLM_PORT_CLEANUP_WAIT"); do
+        pids="$(port_listener_pids "$port")" || return $?
+        [[ -z "$pids" ]] && return 0
+        sleep 1
+    done
+
+    pids="$(port_listener_pids "$port")" || return $?
+    if [[ -n "$pids" ]]; then
+        echo "Error: port ${port} is still occupied after forced vLLM cleanup: ${pids}" >&2
+        return 1
+    fi
 }
 
 cleanup_shard_ports() {
@@ -607,7 +619,7 @@ cleanup_sessions() {
     done
     cleanup_shard_ports || true
 }
-trap cleanup_sessions INT TERM
+trap cleanup_sessions EXIT INT TERM
 
 echo "Waiting for shard tmux sessions ..."
 while true; do
@@ -634,8 +646,6 @@ while true; do
     fi
     sleep "$SHARDED_EVAL_POLL_SECONDS"
 done
-trap - INT TERM
-
 echo "[cleanup] Ensuring shard vLLM ports are released ..."
 cleanup_shard_ports
 
@@ -696,3 +706,4 @@ else
 fi
 
 echo "Sharded evaluation complete. Results saved to: $FINAL_OUTPUT_DIR"
+trap - EXIT INT TERM

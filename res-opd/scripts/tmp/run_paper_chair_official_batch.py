@@ -8,6 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -26,6 +27,9 @@ def parse_args():
     parser.add_argument("--model-root", default=os.environ.get("MODEL_ROOT", ""))
     parser.add_argument("--prompt", default="Describe the image.")
     parser.add_argument("--output-suffix", default="chair_describe_image_official")
+    parser.add_argument("--max-samples", type=int, default=1000)
+    parser.add_argument("--transition-wait-seconds", type=int, default=180)
+    parser.add_argument("--require-idle-gpus", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--skip-oss-preflight", action="store_true")
@@ -101,7 +105,13 @@ def output_dir(entry, root, suffix):
     return root / "res-opd" / "eval_results" / "instruct" / "full" / experiment / dataset / suffix
 
 
-def output_complete(path):
+def local_checkpoint_dir(entry, root):
+    if entry["source_type"] != "oss_checkpoint":
+        return None
+    return root / "res-opd" / "checkpoints" / entry["primary"] / entry["step"]
+
+
+def output_complete(path, expected_count):
     metrics_path = path / "chair_metrics.json"
     results_path = path / "eval_results.jsonl"
     if not metrics_path.is_file() or not results_path.is_file():
@@ -114,7 +124,11 @@ def output_complete(path):
             rows = sum(1 for line in handle if line.strip())
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return False
-    return count == 1000 and rows == 1000 and schema == "official_chair_caption_and_mention_v1"
+    return (
+        count == expected_count
+        and rows == expected_count
+        and schema == "official_chair_caption_and_mention_v1"
+    )
 
 
 def run_capture(command):
@@ -125,6 +139,89 @@ def run_capture(command):
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
+
+
+def listening_pids(port):
+    if shutil.which("lsof"):
+        result = run_capture(["lsof", f"-tiTCP:{port}", "-sTCP:LISTEN"])
+    elif shutil.which("fuser"):
+        result = run_capture(["fuser", "-n", "tcp", str(port)])
+    elif shutil.which("ss"):
+        result = run_capture(["ss", "-ltnp", f"sport = :{port}"])
+        return set(re.findall(r"pid=(\d+)", result.stdout))
+    else:
+        raise RuntimeError("Cannot inspect ports: install lsof, fuser, or ss")
+    return set(re.findall(r"\b\d+\b", result.stdout))
+
+
+def gpu_processes(gpu_ids):
+    if not shutil.which("nvidia-smi"):
+        raise RuntimeError("nvidia-smi is required for --require-idle-gpus")
+    uuid_result = run_capture(
+        ["nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader,nounits"]
+    )
+    if uuid_result.returncode != 0:
+        raise RuntimeError(f"Failed to query GPU UUIDs:\n{uuid_result.stdout}")
+    uuid_to_index = {}
+    for raw in uuid_result.stdout.splitlines():
+        index, uuid = (value.strip() for value in raw.split(",", 1))
+        uuid_to_index[uuid] = index
+
+    process_result = run_capture(
+        [
+            "nvidia-smi",
+            "--query-compute-apps=gpu_uuid,pid,process_name",
+            "--format=csv,noheader,nounits",
+        ]
+    )
+    if process_result.returncode != 0:
+        raise RuntimeError(f"Failed to query GPU processes:\n{process_result.stdout}")
+    selected = set(gpu_ids)
+    processes = {}
+    for raw in process_result.stdout.splitlines():
+        fields = [value.strip() for value in raw.split(",", 2)]
+        if len(fields) != 3 or uuid_to_index.get(fields[0]) not in selected:
+            continue
+        processes[fields[1]] = {
+            "gpu": uuid_to_index[fields[0]],
+            "name": fields[2],
+        }
+    return processes
+
+
+def transition_state(base_port, shard_count, gpu_ids, check_gpus):
+    ports = {}
+    for shard_index in range(shard_count):
+        port = base_port + shard_index * 10
+        pids = listening_pids(port)
+        if pids:
+            ports[port] = sorted(pids)
+    gpus = gpu_processes(gpu_ids) if check_gpus else {}
+    return ports, gpus
+
+
+def wait_for_clean_transition(args, gpu_ids, allowed_gpu_pids):
+    deadline = time.monotonic() + args.transition_wait_seconds
+    while True:
+        ports, gpu_process_map = transition_state(
+            args.base_port,
+            args.eval_shard_count,
+            gpu_ids,
+            args.require_idle_gpus,
+        )
+        new_gpu_processes = {
+            pid: details
+            for pid, details in gpu_process_map.items()
+            if pid not in allowed_gpu_pids
+        }
+        if not ports and not new_gpu_processes:
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                "Previous task did not release resources; refusing to start the next task: "
+                f"ports={ports}, new_gpu_processes={new_gpu_processes}"
+            )
+        time.sleep(2)
 
 
 def preflight(entries, args):
@@ -160,6 +257,10 @@ def main():
     args = parse_args()
     if args.num_jobs < 1 or not 0 <= args.job_index < args.num_jobs:
         raise ValueError("--job-index must be in [0, --num-jobs)")
+    if args.max_samples < 1:
+        raise ValueError("--max-samples must be positive")
+    if args.transition_wait_seconds < 1:
+        raise ValueError("--transition-wait-seconds must be positive")
     gpu_ids = [value.strip() for value in args.gpu_list.split(",") if value.strip()]
     if len(gpu_ids) != args.eval_shard_count or len(set(gpu_ids)) != len(gpu_ids):
         raise ValueError("--gpu-list must contain exactly --eval-shard-count unique GPU IDs")
@@ -187,6 +288,19 @@ def main():
     )
     preflight(selected, args)
     print("All selected model/checkpoint sources passed preflight.", flush=True)
+    initial_ports, initial_gpu_processes = transition_state(
+        args.base_port,
+        args.eval_shard_count,
+        gpu_ids,
+        args.require_idle_gpus,
+    )
+    if initial_ports:
+        raise RuntimeError(f"Selected ports are busy before evaluation: {initial_ports}")
+    if args.require_idle_gpus and initial_gpu_processes:
+        raise RuntimeError(
+            f"Selected GPUs are not idle before evaluation: {initial_gpu_processes}"
+        )
+    allowed_gpu_pids = set(initial_gpu_processes)
 
     launcher = root / "res-opd" / "scripts" / "tmp" / "run_paper_chair_describe45_entry.sh"
     completed = 0
@@ -197,7 +311,7 @@ def main():
             f"\n[{position}/{len(selected)}] {entry['index']:02d} {entry['label']}\nOutput: {target}",
             flush=True,
         )
-        if output_complete(target) and not args.force:
+        if output_complete(target, args.max_samples) and not args.force:
             print("Complete official output exists; skipping.", flush=True)
             skipped += 1
             continue
@@ -207,6 +321,7 @@ def main():
         env["CHAIR_RERUN_OUTPUT_SUFFIX"] = args.output_suffix
         env["GPU_LIST"] = args.gpu_list
         env["EVAL_SHARD_COUNT"] = str(args.eval_shard_count)
+        env["CHAIR_MAX_SAMPLES"] = str(args.max_samples)
         if args.model_root:
             env["MODEL_ROOT"] = args.model_root
         print(" ".join(shlex.quote(value) for value in command), flush=True)
@@ -218,10 +333,21 @@ def main():
                 f"Evaluation failed for {entry['index']:02d} {entry['label']}: "
                 f"exit={result.returncode}"
             )
-        if not output_complete(target):
+        if not output_complete(target, args.max_samples):
             raise RuntimeError(f"Evaluation succeeded but official output is incomplete: {target}")
+        checkpoint_dir = local_checkpoint_dir(entry, root)
+        if checkpoint_dir is not None and checkpoint_dir.exists():
+            raise RuntimeError(
+                "Evaluation finished but the downloaded checkpoint was not removed; "
+                f"refusing to start the next task: {checkpoint_dir}"
+            )
+        wait_for_clean_transition(args, gpu_ids, allowed_gpu_pids)
         completed += 1
-        print("Verified 1000 generations and official CHAIR metrics.", flush=True)
+        print(
+            f"Verified {args.max_samples} generations, official CHAIR metrics, "
+            "released ports, and no residual GPU process.",
+            flush=True,
+        )
 
     print(
         f"\nFinished selected={len(selected)} completed={completed} skipped={skipped} "
