@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "baselines": {
+    "vcd": {
+      "display_name": "Visual Contrastive Decoding",
+      "repository": "https://github.com/damo-nlp-sg/VCD.git",
+      "source_path": "res-opd/third_party/baselines/VCD",
+      "commit": "d6568ff81b8fd306a49e630df44f2db5c2300191",
+      "license": "Apache-2.0",
+      "license_files": [
+        "LICENSE"
+      ],
+      "native_qwen3vl_support": false,
+      "integration_status": "adapter_required",
+      "result_suffix": "chair_external_vcd_official"
+    },
+    "opera": {
+      "display_name": "OPERA",
+      "repository": "https://github.com/shikiw/OPERA.git",
+      "source_path": "res-opd/third_party/baselines/OPERA",
+      "commit": "e1bb7632508bdfaa5cdaf5b69b64419688107da8",
+      "license": "MIT",
+      "license_files": [
+        "LICENSE"
+      ],
+      "native_qwen3vl_support": false,
+      "integration_status": "source_only",
+      "result_suffix": "chair_external_opera_official"
+    },
+    "halc": {
+      "display_name": "HALC",
+      "repository": "https://github.com/BillChan226/HALC.git",
+      "source_path": "res-opd/third_party/baselines/HALC",
+      "commit": "c757ced4f1f26d992e6e7200a44d3b899bb000af",
+      "license": "MIT; bundled components retain their own licenses",
+      "license_files": [
+        "LICENSE",
+        "transformers-4.36.2/LICENSE",
+        "mPLUG-Owl/LICENSE"
+      ],
+      "native_qwen3vl_support": false,
+      "integration_status": "source_only",
+      "result_suffix": "chair_external_halc_official"
+    }
+  }
+}

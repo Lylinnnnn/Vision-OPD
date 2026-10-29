@@ -1,0 +1,9 @@
+[submodule "res-opd/third_party/baselines/VCD"]
+	path = res-opd/third_party/baselines/VCD
+	url = https://github.com/damo-nlp-sg/VCD.git
+[submodule "res-opd/third_party/baselines/OPERA"]
+	path = res-opd/third_party/baselines/OPERA
+	url = https://github.com/shikiw/OPERA.git
+[submodule "res-opd/third_party/baselines/HALC"]
+	path = res-opd/third_party/baselines/HALC
+	url = https://github.com/BillChan226/HALC.git
