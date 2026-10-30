@@ -242,8 +242,9 @@ def markdown_section(summary):
         ),
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         (
-            f"| VCD | $\\alpha={config['alpha']:g}$, $\\beta={config['beta']:g}$, "
-            f"noise={config['noise_step']} | {summary['response_tokens_mean']:.2f} | "
+            f"| VCD | {config['decode_mode']}; $\\alpha={config['alpha']:g}$, "
+            f"$\\beta={config['beta']:g}$, noise={config['noise_step']} | "
+            f"{summary['response_tokens_mean']:.2f} | "
             f"{summary['official_correct_mentions']} | "
             f"{summary['official_hallucinated_mentions']} | "
             f"{summary['official_hallucinated_mentions_per_100_tokens']:.3f} | "
