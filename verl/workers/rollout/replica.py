@@ -33,6 +33,8 @@ logger = logging.getLogger(__file__)
 class TokenOutput(BaseModel):
     token_ids: list[int]
     """response token ids"""
+    prompt_token_ids: Optional[list[int]] = None
+    """Prompt token ids returned by the rollout engine, when available."""
     log_probs: Optional[list[float]] = None
     """logprobs of response token ids"""
     routed_experts: Optional[Any] = None

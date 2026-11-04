@@ -18,6 +18,11 @@ from uuid import uuid4
 
 from verl.experimental.agent_loop.agent_loop import AgentLoopBase, AgentLoopOutput, register
 from verl.tools.utils.tool_registry import initialize_tools_from_config
+from verl.utils.internvl_hf import (
+    assert_internvl_image_alignment,
+    assert_internvl_rollout_prompt_alignment,
+    is_internvl_hf_processor,
+)
 from verl.utils.profiler import simple_timer
 
 logger = logging.getLogger(__file__)
@@ -62,6 +67,24 @@ class SingleTurnAgentLoop(AgentLoopBase):
                 image_data=images,
                 video_data=videos,
             )
+        if is_internvl_hf_processor(self.processor):
+            model_inputs = self.processor(
+                text=[self._internvl_raw_prompt], images=images, return_tensors="pt"
+            )
+            model_prompt_ids = model_inputs["input_ids"].squeeze(0).tolist()
+            assert_internvl_image_alignment(
+                model_inputs["input_ids"], model_inputs["pixel_values"], self.processor, "HF forward"
+            )
+            if len(model_prompt_ids) > self.prompt_length:
+                raise ValueError(
+                    f"InternVL expanded prompt length {len(model_prompt_ids)} exceeds {self.prompt_length}"
+                )
+            prompt_mode = assert_internvl_rollout_prompt_alignment(
+                output.prompt_token_ids, prompt_ids, model_prompt_ids
+            )
+            if prompt_mode == "placeholder":
+                logger.info("InternVL vLLM returned image placeholders; using HF-expanded prompt for forward")
+            prompt_ids = model_prompt_ids
         response_mask = [1] * len(output.token_ids)
         response_length = self._get_response_length()
 

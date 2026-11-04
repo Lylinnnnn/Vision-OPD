@@ -83,6 +83,7 @@ DEFAULT_MODEL_ROOT="$(res_opd_default_model_root)"
 MODEL_PATH="${MODEL_PATH:-${DEFAULT_MODEL_ROOT}/Qwen3VL-2B-Instruct}"
 MODEL_NAME=$(basename "$MODEL_PATH")
 MODEL_NAME_LC="$(echo "$MODEL_NAME" | tr '[:upper:]' '[:lower:]')"
+MODEL_USE_REMOVE_PADDING="${MODEL_USE_REMOVE_PADDING:-True}"
 PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
 res_opd_validate_python_bin "$PYTHON_BIN"
 if [[ "$MODEL_NAME_LC" == *"8b"* ]]; then
@@ -1023,7 +1024,7 @@ set +e
     data.teacher_ratio=$TEACHER_RATIO \
     actor_rollout_ref.model.path=$MODEL_PATH \
     actor_rollout_ref.model.trust_remote_code=True \
-    actor_rollout_ref.model.use_remove_padding=True \
+    actor_rollout_ref.model.use_remove_padding=$MODEL_USE_REMOVE_PADDING \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.rollout.n=$ROLLOUT_N \
     actor_rollout_ref.actor.optim.lr=$LR \

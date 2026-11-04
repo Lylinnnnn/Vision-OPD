@@ -1069,6 +1069,13 @@ class RayPPOTrainer:
             prompt_input_ids = teacher_multi_modal_inputs.pop("input_ids").squeeze(0)
             prompt_attention_mask = teacher_multi_modal_inputs.pop("attention_mask").squeeze(0)
 
+            from verl.utils.internvl_hf import assert_internvl_image_alignment, is_internvl_hf_processor
+
+            if is_internvl_hf_processor(self.processor) and prompt_images:
+                assert_internvl_image_alignment(
+                    prompt_input_ids, teacher_multi_modal_inputs["pixel_values"], self.processor, "teacher forward"
+                )
+
             if hasattr(self.processor, "get_rope_index"):
                 processor_model_type = getattr(getattr(self.processor, "config", None), "model_type", None)
                 if processor_model_type in {"qwen3_5", "qwen3_5_moe", "qwen3_vl", "qwen3_vl_moe"}:

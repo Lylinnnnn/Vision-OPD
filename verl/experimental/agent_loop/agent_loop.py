@@ -17,6 +17,7 @@ import logging
 import os
 import random
 from abc import ABC, abstractmethod
+from io import BytesIO
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -40,6 +41,7 @@ from verl.utils import hf_processor, hf_tokenizer
 from verl.utils.chat_template import initialize_system_prompt, resolve_custom_chat_template
 from verl.utils.dataset.rl_dataset import RLHFDataset, get_dataset_class
 from verl.utils.fs import copy_to_local
+from verl.utils.internvl_hf import assert_internvl_image_alignment, internvl_vllm_prompt, is_internvl_hf_processor
 from verl.utils.model import compute_position_id_with_mask
 from verl.utils.ray_utils import get_event_loop
 from verl.utils.rollout_trace import (
@@ -250,6 +252,32 @@ class AgentLoopBase(ABC):
         """
         multi_modal_data = {}
         if self.processor is not None:
+            if is_internvl_hf_processor(self.processor):
+                images = []
+                for message in messages:
+                    content = message.get("content", [])
+                    if not isinstance(content, list):
+                        continue
+                    for item in content:
+                        if not isinstance(item, dict):
+                            continue
+                        if item.get("type") == "video":
+                            raise NotImplementedError("InternVL OPD rollout currently supports images only")
+                        if item.get("type") != "image":
+                            continue
+                        image = item.get("image", item.get("path"))
+                        if image is None and item.get("bytes") is not None:
+                            image = BytesIO(item["bytes"])
+                        if isinstance(image, Image.Image):
+                            images.append(image.convert("RGB"))
+                        elif isinstance(image, (str, os.PathLike, BytesIO)):
+                            with Image.open(image) as loaded:
+                                images.append(loaded.convert("RGB"))
+                        else:
+                            raise TypeError(f"Unsupported InternVL image input: {type(image)}")
+                if images:
+                    multi_modal_data["images"] = images
+                return multi_modal_data
             images, videos = await self.dataset_cls.process_vision_info(
                 messages, image_patch_size=self.processor.image_processor.patch_size, config=self.dataset_config
             )
@@ -303,14 +331,21 @@ class AgentLoopBase(ABC):
             else:
                 video_metadatas = None
 
-            model_inputs = self.processor(
-                text=[raw_prompt],
-                images=images,
-                videos=videos,
-                video_metadatas=video_metadatas,
-                return_tensors="pt",
-                do_sample_frames=False,
-            )
+            if is_internvl_hf_processor(self.processor):
+                if self.__class__.__name__ != "SingleTurnAgentLoop":
+                    raise NotImplementedError("HF InternVL OPD currently supports single-turn rollouts only")
+                self._internvl_raw_prompt = raw_prompt
+                vllm_prompt = internvl_vllm_prompt(raw_prompt, self.processor, len(images or []))
+                model_inputs = self.tokenizer(text=[vllm_prompt], return_tensors="pt")
+            else:
+                model_inputs = self.processor(
+                    text=[raw_prompt],
+                    images=images,
+                    videos=videos,
+                    video_metadatas=video_metadatas,
+                    return_tensors="pt",
+                    do_sample_frames=False,
+                )
             prompt_ids = model_inputs.pop("input_ids").squeeze(0).tolist()
         else:
             prompt_ids = await self.loop.run_in_executor(
@@ -723,6 +758,17 @@ class AgentLoopWorker:
 
         images = output.multi_modal_data.get("images")
         videos = output.multi_modal_data.get("videos")
+        if is_internvl_hf_processor(self.processor):
+            if not images:
+                return multi_modal_inputs
+            image_inputs = self.processor(
+                text=[self.processor.image_token * len(images)],
+                images=images,
+                return_tensors="pt",
+            )
+            pixel_values = image_inputs["pixel_values"]
+            assert_internvl_image_alignment(input_ids, pixel_values, self.processor, "rollout forward")
+            return {"pixel_values": pixel_values}
         # split the videos and according metadatas
         if videos is not None:
             videos, video_metadatas = zip(*videos, strict=False)
@@ -754,6 +800,8 @@ class AgentLoopWorker:
         """Compute position ids for multi-modal inputs."""
         if self.processor is None:
             return compute_position_id_with_mask(attention_mask)  # (1, seq_len)
+        if is_internvl_hf_processor(self.processor):
+            return compute_position_id_with_mask(attention_mask)
 
         multi_modal_kwargs = {
             "image_grid_thw": multi_modal_inputs.get("image_grid_thw"),
