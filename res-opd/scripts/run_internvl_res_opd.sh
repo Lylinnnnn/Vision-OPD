@@ -11,6 +11,12 @@ PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
 res_opd_validate_python_bin "$PYTHON_BIN"
 export PYTHON_BIN MODEL_PATH
 
+case "${DATASET_VERSION:-full}" in
+    full) TRAIN_PARQUET="${RES_OPD_ROOT}/data/train_5k.parquet" ;;
+    quick) TRAIN_PARQUET="${RES_OPD_ROOT}/data/train_1.5k.parquet" ;;
+    *) TRAIN_PARQUET="${RES_OPD_ROOT}/data/train.parquet" ;;
+esac
+"$PYTHON_BIN" "${RES_OPD_ROOT}/probes/preflight_training_images.py" "$TRAIN_PARQUET"
 "$PYTHON_BIN" "${RES_OPD_ROOT}/probes/preflight_internvl3_hf.py" "$MODEL_PATH" \
     --teacher-ratio "${TEACHER_RATIO:-0.75}"
 

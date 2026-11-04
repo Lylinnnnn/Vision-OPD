@@ -82,6 +82,8 @@ class ResOPDDataset(RLHFDataset):
             os.environ.get("BENCHMARK_DATA_DIR", ""),
             os.environ.get("VISION_BENCHMARK_DATA_DIR", ""),
             os.environ.get("RES_OPD_DATA_ROOT", ""),
+            "/data/oss_bucket_0/yanlin/data",
+            "/data/oss_bucket_0/yanlin",
             str(Path.home() / "notebook" / "data"),
             str(Path.home() / "notebook" / "yanlin" / "data"),
             "/home/zhengyanzhao.zyz/notebook/yanlin/data",
