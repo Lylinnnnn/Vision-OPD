@@ -119,8 +119,14 @@ def default_compute_score(
             aggregate_from_arrays,
         )
         gt_objects = set(extra_info.get("objects", [])) if extra_info else set()
+        gt_captions = extra_info.get("captions") if extra_info else None
+        if isinstance(gt_captions, str):
+            gt_captions = [gt_captions]
+        else:
+            gt_captions = list(gt_captions) if gt_captions is not None else []
         record = {"image_id": extra_info.get("image_id", 0) if extra_info else 0,
-                  "generated_text": solution_str, "gt_objects": gt_objects}
+                  "generated_text": solution_str, "gt_objects": gt_objects,
+                  "gt_captions": gt_captions}
         mscoco_objects, inverse_synonym_dict = parse_official_synonyms()
         double_word_dict = build_double_word_dict()
         sample_dicts = compute_per_sample([record], mscoco_objects, inverse_synonym_dict, double_word_dict)
