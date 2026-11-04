@@ -29,7 +29,7 @@ adapter or an isolated environment before it can be marked runnable.
 | Method | Upstream source | Current status | Qwen3VL support upstream |
 | --- | --- | --- | --- |
 | VCD | `third_party/baselines/VCD` | Qwen3VL CHAIR adapter | No |
-| OPERA | `third_party/baselines/OPERA` | source only | No |
+| OPERA | `third_party/baselines/OPERA` | Qwen3VL CHAIR adapter | No |
 | HALC | `third_party/baselines/HALC` | source only | No |
 
 `source only` means that the official implementation is available for audit,
@@ -58,3 +58,16 @@ It uses one Hugging Face process per GPU because VCD requires original/noisy
 visual logits at every decoding step and cannot be represented by the current
 vLLM server interface. Its defaults match the upstream Qwen VCD example:
 `alpha=1`, `beta=0.1`, `noise_step=500`, and seeded sampling at temperature 1.
+
+The Qwen3VL OPERA adapter can be launched with:
+
+```bash
+bash res-opd/baselines/run_opera_chair_sharded_8gpu.sh /path/to/Qwen3VL-2B-Instruct
+```
+
+It ports the pinned upstream OPERA beam-search penalty and rollback procedure
+to the Transformers 5.5 custom-generation interface. The default settings are
+the upstream values: five beams, `scale_factor=50`, `threshold=15`, five
+attention candidates, `penalty_weights=1`, and `window_size=512`. It uses one
+eager-attention Hugging Face process per GPU because OPERA needs language-model
+self-attention and candidate forwards during decoding.
