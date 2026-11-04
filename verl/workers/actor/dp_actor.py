@@ -1094,14 +1094,13 @@ class DataParallelPPOActor(BasePPOActor):
                     log_probs = logprobs_from_logits(logits, micro_batch["responses"])
                     if compute_all_logps:
                         all_logps = torch.log_softmax(logits, dim=-1)
-                    logsumexp = None
                     if use_topk:
                         if topk_indices is None:
                             topk = min(distill_topk, logits.size(-1))
                             topk_logits, topk_indices = torch.topk(logits, topk, dim=-1)
                         else:
                             topk_logits = torch.gather(logits, dim=-1, index=topk_indices)
-                        logsumexp = verl_F.logsumexp_over_vocab_in_token_chunks(logits)
+                        logsumexp = torch.logsumexp(logits, dim=-1, keepdim=True)
                         topk_logps = topk_logits - logsumexp
                     if use_trace_topk:
                         trace_k = min(trace_topk, logits.size(-1))
@@ -1110,8 +1109,7 @@ class DataParallelPPOActor(BasePPOActor):
                             trace_topk_logps = topk_logps
                         else:
                             trace_topk_logits, trace_topk_indices = torch.topk(logits, trace_k, dim=-1)
-                            if logsumexp is None:
-                                logsumexp = verl_F.logsumexp_over_vocab_in_token_chunks(logits)
+                            logsumexp = torch.logsumexp(logits, dim=-1, keepdim=True)
                             trace_topk_logps = trace_topk_logits - logsumexp
                     if calculate_entropy:
                         if not self.config.entropy_checkpointing:

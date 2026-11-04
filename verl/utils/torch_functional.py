@@ -238,27 +238,6 @@ def entropy_from_logits(logits: torch.Tensor) -> torch.Tensor:
     return entropy
 
 
-def logsumexp_over_vocab_in_token_chunks(
-    logits: torch.Tensor, max_chunk_bytes: int = 64 * 1024 * 1024
-) -> torch.Tensor:
-    """Reduce over the full vocabulary in token chunks to bound temporary memory."""
-    if logits.ndim != 3:
-        raise ValueError(f"Expected (batch, tokens, vocab) logits, got {tuple(logits.shape)}")
-    if max_chunk_bytes <= 0:
-        raise ValueError("max_chunk_bytes must be positive")
-    if logits.shape[1] == 0:
-        return torch.logsumexp(logits, dim=-1, keepdim=True)
-
-    # logsumexp can promote its working tensor to float32 under autocast.
-    tokens_per_chunk = max(1, max_chunk_bytes // (logits.shape[0] * logits.shape[2] * 4))
-    if tokens_per_chunk >= logits.shape[1]:
-        return torch.logsumexp(logits, dim=-1, keepdim=True)
-    return torch.cat(
-        [torch.logsumexp(chunk, dim=-1, keepdim=True) for chunk in logits.split(tokens_per_chunk, dim=1)],
-        dim=1,
-    )
-
-
 def entropy_from_logits_with_chunking(logits: torch.Tensor, chunk_size: int = 2048) -> torch.Tensor:
     """Memory-efficient entropy calculation using chunked processing.
 
