@@ -88,8 +88,11 @@ def main():
         )
         vllm_prompt = internvl_vllm_prompt(raw_prompt, adapted_processor, 1)
         vllm_prompt_ids = adapted_processor.tokenizer(vllm_prompt, return_tensors="pt")["input_ids"]
-        if vllm_prompt.count("<image>") != 1 or vllm_prompt_ids.shape[-1] >= input_ids.shape[-1]:
-            raise SystemExit(f"{view}: vLLM image placeholder was not kept compact")
+        if vllm_prompt != raw_prompt or vllm_prompt.count(adapted_processor.image_token) != 1:
+            raise SystemExit(f"{view}: vLLM prompt must retain one HF image marker")
+        marker_count = int((vllm_prompt_ids == adapted_processor.image_token_id).sum().item())
+        if marker_count != 1 or vllm_prompt_ids.shape[-1] >= input_ids.shape[-1]:
+            raise SystemExit(f"{view}: vLLM HF image marker was not kept compact")
         rollout_batch = adapted_processor(
             text=[raw_prompt], images=[picture], return_tensors="pt"
         )

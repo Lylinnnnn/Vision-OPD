@@ -47,11 +47,11 @@ class InternVLAlignmentTest(unittest.TestCase):
     def setUp(self):
         self.processor = InternVLProcessor()
 
-    def test_vllm_placeholder_preserves_text_and_image_order(self):
+    def test_vllm_prompt_preserves_hf_markers_and_image_order(self):
         prompt = "before <IMG_CONTEXT> between <IMG_CONTEXT> after"
         self.assertEqual(
             internvl_hf.internvl_vllm_prompt(prompt, self.processor, 2),
-            "before <image> between <image> after",
+            prompt,
         )
 
     def test_prompt_rejects_wrong_image_count(self):

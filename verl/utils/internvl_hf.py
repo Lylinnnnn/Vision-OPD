@@ -16,8 +16,8 @@ def internvl_vllm_prompt(raw_prompt, processor, image_count):
             f"InternVL prompt has {raw_prompt.count(marker)} image markers for {image_count} images"
         )
     if "<image>" in raw_prompt:
-        raise ValueError("InternVL prompt already contains a vLLM image placeholder")
-    return raw_prompt.replace(marker, "<image>")
+        raise ValueError("InternVL prompt already contains a non-HF image placeholder")
+    return raw_prompt
 
 
 def assert_internvl_image_alignment(input_ids, pixel_values, processor, context):
