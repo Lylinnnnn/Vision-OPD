@@ -47,6 +47,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RES_OPD_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
 source "${SCRIPT_DIR}/path_utils.sh"
+source "${SCRIPT_DIR}/vllm_process_group.sh"
 
 export PYTHONPATH="$VISION_OPD_ROOT:${PYTHONPATH:-}"
 
@@ -829,18 +830,23 @@ fi
 if [[ -n "$VLLM_MAX_NUM_BATCHED_TOKENS" ]]; then
     vllm_args+=(--max-num-batched-tokens "$VLLM_MAX_NUM_BATCHED_TOKENS")
 fi
-"$PYTHON_BIN" "${vllm_args[@]}" &
+"$PYTHON_BIN" "${SCRIPT_DIR}/launch_vllm_session.py" "$PYTHON_BIN" "${vllm_args[@]}" &
 VLLM_PID=$!
 
 cleanup() {
-    if [[ -n "${VLLM_PID:-}" ]] && kill -0 "$VLLM_PID" 2>/dev/null; then
-        echo ""
-        echo "[cleanup] Shutting down vLLM server ..."
-        kill "$VLLM_PID" 2>/dev/null || true
-        wait "$VLLM_PID" 2>/dev/null || true
-    fi
+    local pid="${VLLM_PID:-}"
+    local status=0
+    [[ -n "$pid" ]] || return 0
+    echo ""
+    res_opd_stop_vllm_group "$pid" "${VLLM_PROCESS_CLEANUP_WAIT:-30}" || status=$?
+    wait "$pid" 2>/dev/null || true
+    VLLM_PID=""
+    return "$status"
 }
 trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Wait for server to be ready
 echo "  Waiting for vLLM server (pid=$VLLM_PID) ..."
@@ -859,7 +865,6 @@ done
 
 if ! curl -s "http://localhost:$PORT/health" > /dev/null 2>&1; then
     echo "  vLLM server failed to start within ${VLLM_STARTUP_TIMEOUT}s" >&2
-    kill $VLLM_PID 2>/dev/null || true
     exit 1
 fi
 
@@ -1020,7 +1025,7 @@ fi
 echo ""
 echo "[3/3] Shutting down vLLM server ..."
 cleanup
-trap - EXIT
+trap - EXIT HUP INT TERM
 
 if has_eval_task "$EVAL_MODE" "chair" && [[ "$EVAL_OPD_TRACE" == "True" || "$EVAL_OPD_TRACE" == "true" || "$EVAL_OPD_TRACE" == "1" ]]; then
     echo ""
