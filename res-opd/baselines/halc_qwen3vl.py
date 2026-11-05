@@ -9,6 +9,12 @@ import torch
 from PIL import Image
 
 
+EXEMPT_OBJECT_WORDS = frozenset({
+    "image", "side", "background", "feature", "features", "center", "left",
+    "right", "scene", "view", "detail", "group", "manner",
+})
+
+
 @dataclass(frozen=True)
 class HALCConfig:
     beam_size: int = 3
@@ -139,6 +145,8 @@ class HALCDecoder:
     def _is_object_token(self, token_id):
         token = self.processor.tokenizer.decode([token_id], skip_special_tokens=True).strip()
         if not re.fullmatch(r"[A-Za-z][A-Za-z'-]*", token):
+            return None
+        if token.lower() in EXEMPT_OBJECT_WORDS:
             return None
         parsed = self.nlp(token)
         return token.lower() if parsed and parsed[0].pos_ in ("NOUN", "PROPN") else None

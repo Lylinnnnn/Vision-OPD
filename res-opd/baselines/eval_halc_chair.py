@@ -47,6 +47,7 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--require-trigger", action="store_true")
     parser.add_argument("--require-change", action="store_true")
+    parser.add_argument("--allow-unvalidated-full-run", action="store_true")
     parser.add_argument("--preflight-only", action="store_true")
     return parser.parse_args()
 
@@ -88,6 +89,8 @@ def main():
     args = parse_args()
     if args.max_samples < 1 or args.max_new_tokens < 1:
         raise ValueError("max-samples and max-new-tokens must be positive")
+    if args.max_samples > 5 and not args.allow_unvalidated_full_run:
+        raise ValueError("HALC adapter is unvalidated; limit smoke to <=5 images")
     source_commit = preflight(args)
     if args.preflight_only:
         return
