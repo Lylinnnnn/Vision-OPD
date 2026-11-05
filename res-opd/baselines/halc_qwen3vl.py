@@ -156,7 +156,8 @@ def install_groundingdino_bert_compatibility():
 
 class HALCDecoder:
     def __init__(self, model, processor, detector_config, detector_weights,
-                 blip_model_path, config, device):
+                 blip_model_path, config, device, input_builder=build_qwen_inputs,
+                 logits_fn=next_token_logits):
         import spacy
         from groundingdino.util.inference import load_model
         from transformers import BlipForImageTextRetrieval, BlipProcessor
@@ -169,6 +170,8 @@ class HALCDecoder:
         self.processor = processor
         self.config = config
         self.device = device
+        self.input_builder = input_builder
+        self.logits_fn = logits_fn
         self.nlp = spacy.load("en_core_web_sm")
         install_groundingdino_bert_compatibility()
         self.detector = load_model(detector_config, detector_weights, device=str(device))
@@ -234,7 +237,7 @@ class HALCDecoder:
     @torch.inference_mode()
     def generate(self, image_path, prompt="Describe the image.", seed=42):
         image = Image.open(image_path).convert("RGB")
-        original_inputs = build_qwen_inputs(self.processor, image, prompt, self.device)
+        original_inputs = self.input_builder(self.processor, image, prompt, self.device)
         rng = random.Random(seed)
         beams = [([], 0.0, False, 0)]
         grounding_cache = {}
@@ -246,7 +249,7 @@ class HALCDecoder:
                 if finished:
                     proposals.append((tokens, score, finished, changed))
                     continue
-                base_logits = next_token_logits(self.model, original_inputs, tokens)
+                base_logits = self.logits_fn(self.model, original_inputs, tokens)
                 base_token = int(torch.argmax(base_logits).item())
                 word = self._is_object_token(base_token)
                 options = [base_token]
@@ -257,8 +260,8 @@ class HALCDecoder:
                                             self.config.expand_ratio)
                         view_logits = []
                         for crop in crops:
-                            inputs = build_qwen_inputs(self.processor, crop, prompt, self.device)
-                            view_logits.append(next_token_logits(self.model, inputs, tokens))
+                            inputs = self.input_builder(self.processor, crop, prompt, self.device)
+                            view_logits.append(self.logits_fn(self.model, inputs, tokens))
                         options = focal_contrast_candidates(
                             view_logits, self.config.candidate_count,
                             self.config.contrast_weight,

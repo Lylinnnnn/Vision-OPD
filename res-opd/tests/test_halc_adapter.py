@@ -89,7 +89,7 @@ class HALCAdapterTest(unittest.TestCase):
 class HALCStaticContractTest(unittest.TestCase):
     def test_smoke_is_separate_from_paper_results(self):
         evaluator = MODULE_PATH.with_name("eval_halc_chair.py").read_text()
-        self.assertIn("halc_qwen3vl_adaptation", evaluator)
+        self.assertIn('method = f"halc_{args.model_family}_adaptation"', evaluator)
         self.assertIn("focal_contrast_paper_eq4_blip_itm_v2", evaluator)
         self.assertIn("--require-trigger", evaluator)
         self.assertIn("--require-change", evaluator)
@@ -107,6 +107,7 @@ class HALCStaticContractTest(unittest.TestCase):
             source = Path(directory)
             (source / "README.md").write_text("HALC")
             args = SimpleNamespace(
+                model_family="qwen3vl",
                 model_path=str(source / "model"), test_json=str(source / "test.json"),
                 detector_config=str(source / "dino.py"),
                 detector_weights=str(source / "dino.pth"),
@@ -120,7 +121,7 @@ class HALCStaticContractTest(unittest.TestCase):
                     module.preflight(args)
             self.assertIn("supervision", str(caught.exception))
             self.assertIn("addict", str(caught.exception))
-            self.assertIn("Qwen3VL model missing", str(caught.exception))
+            self.assertIn("VLM model missing", str(caught.exception))
 
 
 if __name__ == "__main__":

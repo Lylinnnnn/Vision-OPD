@@ -6,15 +6,21 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RES_OPD_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "${RES_OPD_ROOT}/scripts/path_utils.sh"
 
-MODEL_PATH="${1:?Usage: $0 <Qwen3VL model path> [output directory]}"
+MODEL_PATH="${1:?Usage: $0 <model path> [output directory]}"
 PYTHON_BIN="${PYTHON_BIN:-$(res_opd_default_python_bin)}"
 res_opd_validate_python_bin "$PYTHON_BIN"
 
 MODEL_NAME="$(basename "$MODEL_PATH")"
+MODEL_FAMILY="${MODEL_FAMILY:-qwen3vl}"
+[[ "$MODEL_FAMILY" == qwen3vl || "$MODEL_FAMILY" == internvl3 ]] || { echo "ERROR: invalid MODEL_FAMILY" >&2; exit 1; }
 TEST_JSON="${TEST_JSON:-${RES_OPD_ROOT}/data/test_1000.json}"
 EVAL_SHARD_COUNT="${EVAL_SHARD_COUNT:-8}"
 GPU_LIST="${GPU_LIST:-0,1,2,3,4,5,6,7}"
-OPERA_OUTPUT_SUFFIX="${OPERA_OUTPUT_SUFFIX:-chair_external_opera_official}"
+if [[ "$MODEL_FAMILY" == internvl3 ]]; then
+    OPERA_OUTPUT_SUFFIX="${OPERA_OUTPUT_SUFFIX:-chair_external_opera_internvl3_adapted_official}"
+else
+    OPERA_OUTPUT_SUFFIX="${OPERA_OUTPUT_SUFFIX:-chair_external_opera_official}"
+fi
 FINAL_OUTPUT_DIR="${2:-${RES_OPD_ROOT}/eval_results/external_baselines/full/${MODEL_NAME}/train5000_test1000_original_sr1p0/${OPERA_OUTPUT_SUFFIX}}"
 RUN_ID="${OPERA_RUN_ID:-$(date +%Y%m%d_%H%M%S)_$$}"
 SHARD_ROOT="${OPERA_SHARD_ROOT:-${FINAL_OUTPUT_DIR}/.shards/${RUN_ID}}"
@@ -30,6 +36,9 @@ OPERA_TORCH_DTYPE="${OPERA_TORCH_DTYPE:-bfloat16}"
 OPERA_SHARD_START_DELAY="${OPERA_SHARD_START_DELAY:-3}"
 OPERA_KEEP_SHARDS="${OPERA_KEEP_SHARDS:-False}"
 CHAIR_PROMPT="${CHAIR_PROMPT:-Describe the image.}"
+if [[ "$MODEL_FAMILY" == internvl3 && ( "$OPERA_MAX_SAMPLES" == 0 || "$OPERA_MAX_SAMPLES" -gt 5 ) ]]; then
+    [[ "${OPERA_ENABLE_FULL_RUN:-0}" == 1 ]] || { echo "ERROR: InternVL3 OPERA needs <=5-image GPU smoke before full run" >&2; exit 1; }
+fi
 
 [[ -d "$MODEL_PATH" ]] || { echo "ERROR: model path does not exist: $MODEL_PATH" >&2; exit 1; }
 [[ -f "$TEST_JSON" ]] || { echo "ERROR: test JSON does not exist: $TEST_JSON" >&2; exit 1; }
@@ -46,7 +55,7 @@ fi
 
 mkdir -p "$SHARD_ROOT" "$FINAL_OUTPUT_DIR"
 echo "============================================================"
-echo " Qwen3VL OPERA Official CHAIR Evaluation"
+echo " ${MODEL_FAMILY} OPERA Official CHAIR Evaluation"
 echo "============================================================"
 echo "Model:       $MODEL_PATH"
 echo "Output:      $FINAL_OUTPUT_DIR"
@@ -79,6 +88,7 @@ for shard_index in $(seq 0 $((EVAL_SHARD_COUNT - 1))); do
     (
         set +e
         CUDA_VISIBLE_DEVICES="$gpu" "$PYTHON_BIN" "${SCRIPT_DIR}/eval_opera_chair.py" \
+            --model-family "$MODEL_FAMILY" \
             --model-path "$MODEL_PATH" \
             --test-json "$TEST_JSON" \
             --output-dir "${shard_dir}/out" \
@@ -94,6 +104,7 @@ for shard_index in $(seq 0 $((EVAL_SHARD_COUNT - 1))); do
             --penalty-weights "$OPERA_PENALTY_WEIGHTS" \
             --window-size "$OPERA_WINDOW_SIZE" \
             --torch-dtype "$OPERA_TORCH_DTYPE" \
+            --allow-unvalidated-full-run \
             > "$log_file" 2>&1
         status=$?
         echo "$status" > "$exit_file"

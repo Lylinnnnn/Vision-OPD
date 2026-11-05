@@ -12,7 +12,9 @@
       ],
       "native_qwen3vl_support": false,
       "integration_status": "qwen3vl_chair_adapter",
-      "result_suffix": "chair_external_vcd_official"
+      "result_suffix": "chair_external_vcd_official",
+      "internvl3_integration_status": "adapter_needs_gpu_smoke",
+      "internvl3_result_suffix": "chair_external_vcd_internvl3_adapted_official"
     },
     "opera": {
       "display_name": "OPERA",
@@ -25,7 +27,9 @@
       ],
       "native_qwen3vl_support": false,
       "integration_status": "qwen3vl_chair_adapter",
-      "result_suffix": "chair_external_opera_official"
+      "result_suffix": "chair_external_opera_official",
+      "internvl3_integration_status": "adapter_needs_gpu_smoke",
+      "internvl3_result_suffix": "chair_external_opera_internvl3_adapted_official"
     },
     "halc": {
       "display_name": "HALC",
@@ -40,7 +44,9 @@
       ],
       "native_qwen3vl_support": false,
       "integration_status": "qwen3vl_sharded_chair_adapter_unvalidated",
-      "result_suffix": "chair_external_halc_qwen3vl_adapted_official"
+      "result_suffix": "chair_external_halc_qwen3vl_adapted_official",
+      "internvl3_integration_status": "experimental_adapter_needs_gpu_smoke_and_algorithm_check",
+      "internvl3_result_suffix": "chair_external_halc_internvl3_adapted_official"
     }
   }
 }

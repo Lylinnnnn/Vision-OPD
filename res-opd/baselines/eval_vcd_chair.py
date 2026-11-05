@@ -39,7 +39,8 @@ DEFAULT_PROMPT = "Describe the image."
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Qwen3VL VCD evaluation on official CHAIR")
+    parser = argparse.ArgumentParser(description="VCD evaluation on official CHAIR")
+    parser.add_argument("--model-family", choices=["qwen3vl", "internvl3"], default="qwen3vl")
     parser.add_argument("--model-path", required=True)
     parser.add_argument("--test-json", required=True)
     parser.add_argument("--output-dir", required=True)
@@ -57,6 +58,7 @@ def parse_args():
     parser.add_argument("--top-k", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--torch-dtype", choices=["bfloat16", "float16"], default="bfloat16")
+    parser.add_argument("--allow-unvalidated-full-run", action="store_true")
     return parser.parse_args()
 
 
@@ -67,7 +69,7 @@ def stable_seed(base_seed, image_id, stream):
 
 def vcd_config(args):
     registry = json.loads((BASELINES_DIR / "registry.json").read_text())
-    return {
+    config = {
         "method": "vcd",
         "source_commit": registry["baselines"]["vcd"]["commit"],
         "model_name": Path(args.model_path).name,
@@ -86,6 +88,9 @@ def vcd_config(args):
         "degradation_mode": "original",
         "student_ratio": 1.0,
     }
+    if args.model_family == "internvl3":
+        config["model_family"] = args.model_family
+    return config
 
 
 def validate_existing(completed, config):
@@ -111,6 +116,9 @@ def validate_existing(completed, config):
         "vcd_top_k": config["top_k"],
         "eval_prompt": config["prompt"],
     }
+    if "model_family" in config:
+        expected["model_family"] = config["model_family"]
+        keys += ("model_family",)
     for image_id, record in completed.items():
         mismatches = [key for key in keys if record.get(key) != expected[key]]
         if mismatches:
@@ -120,7 +128,11 @@ def validate_existing(completed, config):
             )
 
 
-def build_inputs(processor, image, prompt, noise_step, noise_seed):
+def build_inputs(processor, image, prompt, noise_step, noise_seed, model_family="qwen3vl"):
+    if model_family == "internvl3":
+        from internvl3_inputs import build_vcd_inputs
+
+        return build_vcd_inputs(processor, image, prompt, noise_step, noise_seed)
     from qwen_vl_utils import process_vision_info
 
     messages = [
@@ -168,9 +180,12 @@ def generate_caption(model, processor, device, image, args, image_id):
         args.prompt,
         args.noise_step,
         noise_seed,
+        args.model_family,
     )
     inputs = {
-        key: value.to(device) if torch.is_tensor(value) else value
+        key: value.to(device=device, dtype=model.dtype)
+        if args.model_family == "internvl3" and torch.is_tensor(value) and value.is_floating_point()
+        else value.to(device) if torch.is_tensor(value) else value
         for key, value in inputs.items()
     }
     input_length = inputs["input_ids"].shape[1]
@@ -251,6 +266,12 @@ def main():
         )
     if args.shard_count <= 0 or not 0 <= args.shard_index < args.shard_count:
         raise ValueError("invalid shard-count/shard-index")
+    if args.model_family == "internvl3":
+        from internvl3_inputs import require_checkpoint
+
+        require_checkpoint(args.model_path)
+        if (args.max_samples == 0 or args.max_samples > 5) and not args.allow_unvalidated_full_run:
+            raise ValueError("InternVL3 VCD needs a <=5-image GPU smoke before full evaluation")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -281,13 +302,18 @@ def main():
 
     if pending:
         import torch
-        from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+        from transformers import AutoProcessor
+
+        if args.model_family == "internvl3":
+            from transformers import InternVLForConditionalGeneration as ModelClass
+        else:
+            from transformers import Qwen3VLForConditionalGeneration as ModelClass
 
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         if device.type != "cuda":
-            raise RuntimeError("VCD Qwen3VL evaluation requires a CUDA GPU")
+            raise RuntimeError("VCD evaluation requires a CUDA GPU")
         dtype = torch.bfloat16 if args.torch_dtype == "bfloat16" else torch.float16
-        model = Qwen3VLForConditionalGeneration.from_pretrained(
+        model = ModelClass.from_pretrained(
             args.model_path,
             torch_dtype=dtype,
             low_cpu_mem_usage=True,
@@ -330,6 +356,8 @@ def main():
                     "vcd_top_p": args.top_p,
                     "vcd_top_k": args.top_k,
                 }
+                if args.model_family == "internvl3":
+                    row["model_family"] = args.model_family
                 row.update(generation)
                 output.write(json.dumps(row, ensure_ascii=False) + "\n")
                 output.flush()

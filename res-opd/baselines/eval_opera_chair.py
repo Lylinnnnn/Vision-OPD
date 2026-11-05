@@ -30,7 +30,8 @@ DEFAULT_PROMPT = "Describe the image."
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Qwen3VL OPERA evaluation on official CHAIR")
+    parser = argparse.ArgumentParser(description="OPERA evaluation on official CHAIR")
+    parser.add_argument("--model-family", choices=["qwen3vl", "internvl3"], default="qwen3vl")
     parser.add_argument("--model-path", required=True)
     parser.add_argument("--test-json", required=True)
     parser.add_argument("--output-dir", required=True)
@@ -46,12 +47,13 @@ def parse_args():
     parser.add_argument("--penalty-weights", type=float, default=1.0)
     parser.add_argument("--window-size", type=int, default=512)
     parser.add_argument("--torch-dtype", choices=["bfloat16", "float16"], default="bfloat16")
+    parser.add_argument("--allow-unvalidated-full-run", action="store_true")
     return parser.parse_args()
 
 
 def opera_config(args):
     registry = json.loads((BASELINES_DIR / "registry.json").read_text())
-    return {
+    config = {
         "method": "opera",
         "source_commit": registry["baselines"]["opera"]["commit"],
         "model_name": Path(args.model_path).name,
@@ -69,6 +71,9 @@ def opera_config(args):
         "degradation_mode": "original",
         "student_ratio": 1.0,
     }
+    if args.model_family == "internvl3":
+        config["model_family"] = args.model_family
+    return config
 
 
 def validate_existing(completed, config):
@@ -82,6 +87,8 @@ def validate_existing(completed, config):
         "opera_window_size": config["window_size"],
         "eval_prompt": config["prompt"],
     }
+    if "model_family" in config:
+        expected["model_family"] = config["model_family"]
     for image_id, record in completed.items():
         mismatches = [key for key, value in expected.items() if record.get(key) != value]
         if mismatches:
@@ -91,7 +98,11 @@ def validate_existing(completed, config):
             )
 
 
-def build_inputs(processor, image, prompt):
+def build_inputs(processor, image, prompt, model_family="qwen3vl", device=None, dtype=None):
+    if model_family == "internvl3":
+        from internvl3_inputs import build_inputs as build_internvl_inputs
+
+        return build_internvl_inputs(processor, image, prompt, device, dtype)
     from qwen_vl_utils import process_vision_info
 
     messages = [
@@ -119,7 +130,11 @@ def build_inputs(processor, image, prompt):
 def generate_caption(model, processor, device, image, args):
     import torch
 
-    inputs = build_inputs(processor, image, args.prompt)
+    inputs = build_inputs(
+        processor, image, args.prompt, args.model_family,
+        device if args.model_family == "internvl3" else None,
+        model.dtype if args.model_family == "internvl3" else None,
+    )
     inputs = {
         key: value.to(device) if torch.is_tensor(value) else value
         for key, value in inputs.items()
@@ -216,6 +231,13 @@ def main():
         raise ValueError("window-size must be positive")
     if args.max_new_tokens < 1:
         raise ValueError("max-new-tokens must be positive")
+    if args.model_family == "internvl3" and (args.max_samples == 0 or args.max_samples > 5):
+        if not args.allow_unvalidated_full_run:
+            raise ValueError("InternVL3 OPERA needs a <=5-image GPU smoke before full evaluation")
+    if args.model_family == "internvl3":
+        from internvl3_inputs import require_checkpoint
+
+        require_checkpoint(args.model_path)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -245,7 +267,12 @@ def main():
     if pending:
         import torch
         import transformers
-        from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+        from transformers import AutoProcessor
+
+        if args.model_family == "internvl3":
+            from transformers import InternVLForConditionalGeneration as ModelClass
+        else:
+            from transformers import Qwen3VLForConditionalGeneration as ModelClass
 
         if transformers.__version__ != "5.5.0":
             raise RuntimeError(
@@ -253,9 +280,9 @@ def main():
             )
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         if device.type != "cuda":
-            raise RuntimeError("OPERA Qwen3VL evaluation requires a CUDA GPU")
+            raise RuntimeError("OPERA evaluation requires a CUDA GPU")
         dtype = torch.bfloat16 if args.torch_dtype == "bfloat16" else torch.float16
-        model = Qwen3VLForConditionalGeneration.from_pretrained(
+        model = ModelClass.from_pretrained(
             args.model_path,
             torch_dtype=dtype,
             low_cpu_mem_usage=True,
@@ -287,6 +314,8 @@ def main():
                     "opera_penalty_weights": args.penalty_weights,
                     "opera_window_size": args.window_size,
                 }
+                if args.model_family == "internvl3":
+                    row["model_family"] = args.model_family
                 row.update(generation)
                 output.write(json.dumps(row, ensure_ascii=False) + "\n")
                 output.flush()

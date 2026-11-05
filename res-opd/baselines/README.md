@@ -32,6 +32,45 @@ adapter or an isolated environment before it can be marked runnable.
 | OPERA | `third_party/baselines/OPERA` | Qwen3VL CHAIR adapter | No |
 | HALC | `third_party/baselines/HALC` | Qwen3VL smoke and sharded adapter, unvalidated | No |
 
+InternVL3-2B-hf adapters now share the same official CHAIR prompt/scorer and
+use separate `chair_external_*_internvl3_adapted_official` result directories.
+They are not upstream-supported implementations. VCD uses identical HF
+InternVL3 prompts with original/noised visual patches; OPERA uses the
+language-model attention and contiguous image-token span; HALC reuses the
+experimental focal-crop/BLIP correction with an InternVL3 input bridge.
+Only code-level checks have run locally. Verify each on 1-5 images with a
+GPU before any full evaluation, and check VCD's paired branch alignment,
+OPERA's available attention and recorded rollback count, and HALC's triggered/changed
+token counts. A passing CHAIR score alone does not establish algorithmic
+equivalence to the upstream baseline.
+
+For a single-image smoke on the server, use the same installed dependencies
+and model path as the InternVL3 base evaluation:
+
+```bash
+MODEL=/path/to/InternVL3-2B-hf
+PYTHON_BIN="$CONDA_PREFIX/bin/python3"
+$PYTHON_BIN res-opd/baselines/eval_vcd_chair.py --model-family internvl3 \
+  --model-path "$MODEL" --test-json res-opd/data/test_1000.json \
+  --output-dir res-opd/eval_results/external_baselines/smoke/internvl3_vcd \
+  --max-samples 1 --max-new-tokens 128
+$PYTHON_BIN res-opd/baselines/eval_opera_chair.py --model-family internvl3 \
+  --model-path "$MODEL" --test-json res-opd/data/test_1000.json \
+  --output-dir res-opd/eval_results/external_baselines/smoke/internvl3_opera \
+  --max-samples 1 --max-new-tokens 128
+$PYTHON_BIN res-opd/baselines/eval_halc_chair.py --model-family internvl3 \
+  --model-path "$MODEL" --detector-config /path/to/GroundingDINO_config.py \
+  --detector-weights /path/to/groundingdino.pth \
+  --blip-model-path /path/to/blip-itm-base-coco \
+  --output-dir res-opd/eval_results/external_baselines/smoke/internvl3_halc \
+  --max-samples 5 --max-new-tokens 128 --require-trigger --require-change
+```
+
+After smoke validation, set `MODEL_FAMILY=internvl3` for the existing
+eight-GPU runners. VCD and OPERA additionally require `VCD_ENABLE_FULL_RUN=1`
+and `OPERA_ENABLE_FULL_RUN=1`, respectively; HALC still requires
+`HALC_ENABLE_FULL_RUN=1`.
+
 The HALC Qwen3VL adapter is an experimental translation of the focal-view
 contrast and visual beam-selection procedure. It is not a line-for-line port
 of the upstream Transformers 4.36.2 generation patch: its object-word trigger

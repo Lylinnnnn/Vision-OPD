@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HALC/Qwen3VL adaptation with the shared CHAIR scorer."""
+"""HALC adaptation with the shared CHAIR scorer."""
 
 import argparse
 import json
@@ -28,7 +28,8 @@ from robust_chair_analysis import (
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Experimental HALC/Qwen3VL CHAIR smoke")
+    parser = argparse.ArgumentParser(description="Experimental HALC CHAIR smoke")
+    parser.add_argument("--model-family", choices=["qwen3vl", "internvl3"], default="qwen3vl")
     parser.add_argument("--model-path", required=True)
     parser.add_argument("--test-json", default=str(RES_OPD_ROOT / "data" / "test_1000.json"))
     parser.add_argument("--output-dir", required=True)
@@ -71,7 +72,7 @@ def preflight(args):
     if actual != expected:
         raise RuntimeError(f"HALC source revision mismatch: expected {expected}, got {actual}")
     paths = {
-        "Qwen3VL model": (args.model_path, True),
+        "VLM model": (args.model_path, True),
         "test JSON": (args.test_json, False),
         "GroundingDINO config": (args.detector_config, False),
         "GroundingDINO weights": (args.detector_weights, False),
@@ -89,7 +90,7 @@ def preflight(args):
                 errors.append(f"test JSON has no samples: {args.test_json}")
         except (OSError, ValueError) as exc:
             errors.append(f"Cannot read test JSON: {exc}")
-    for label, path in (("Qwen3VL model", args.model_path), ("BLIP model", args.blip_model_path)):
+    for label, path in (("VLM model", args.model_path), ("BLIP model", args.blip_model_path)):
         root = Path(path)
         if root.is_dir():
             if not (root / "config.json").is_file():
@@ -127,10 +128,12 @@ def preflight(args):
 
     modules = (
         "torch", "torchvision", "numpy", "PIL", "cv2", "transformers",
-        "qwen_vl_utils", "spacy", "timm", "addict", "yapf",
+        "spacy", "timm", "addict", "yapf",
         "supervision", "groundingdino", "pycocotools", "yaml",
         "scipy", "matplotlib", "requests",
     )
+    if args.model_family == "qwen3vl":
+        modules += ("qwen_vl_utils",)
     missing = [name for name in modules if importlib.util.find_spec(name) is None]
     if missing:
         errors.append("Missing Python packages: " + ", ".join(missing))
@@ -152,24 +155,26 @@ def preflight(args):
     if "transformers" not in missing:
         try:
             transformers = importlib.import_module("transformers")
-            for name in ("Qwen3VLForConditionalGeneration", "AutoProcessor", "BlipForImageTextRetrieval", "BlipProcessor"):
+            model_class = ("InternVLForConditionalGeneration" if args.model_family == "internvl3"
+                           else "Qwen3VLForConditionalGeneration")
+            for name in (model_class, "AutoProcessor", "BlipForImageTextRetrieval", "BlipProcessor"):
                 getattr(transformers, name)
         except Exception as exc:
             errors.append(f"Transformers model imports failed: {type(exc).__name__}: {exc}")
         else:
             for label, path, processor in (
-                ("Qwen3VL", args.model_path, transformers.AutoProcessor),
+                ("VLM", args.model_path, transformers.AutoProcessor),
                 ("BLIP", args.blip_model_path, transformers.BlipProcessor),
             ):
                 if Path(path).is_dir():
                     try:
                         kwargs = {"local_files_only": True}
-                        if label == "Qwen3VL":
+                        if label == "VLM":
                             kwargs["trust_remote_code"] = True
                         processor.from_pretrained(path, **kwargs)
                     except Exception as exc:
                         errors.append(f"Cannot load {label} processor: {type(exc).__name__}: {exc}")
-    if "qwen_vl_utils" not in missing:
+    if args.model_family == "qwen3vl" and "qwen_vl_utils" not in missing:
         try:
             getattr(importlib.import_module("qwen_vl_utils"), "process_vision_info")
         except Exception as exc:
@@ -218,17 +223,28 @@ def main():
         raise ValueError("invalid shard-count/shard-index")
     if (args.max_samples == 0 or args.max_samples > 5) and not args.allow_unvalidated_full_run:
         raise ValueError("HALC adapter is unvalidated; limit smoke to <=5 images")
+    if args.model_family == "internvl3":
+        from internvl3_inputs import require_checkpoint
+
+        require_checkpoint(args.model_path)
     source_commit = preflight(args)
     if args.preflight_only:
         return
 
     import torch
-    from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+    from transformers import AutoProcessor
+
+    if args.model_family == "internvl3":
+        from transformers import InternVLForConditionalGeneration as ModelClass
+        from internvl3_inputs import build_inputs as build_internvl_inputs
+        from internvl3_inputs import next_token_logits as internvl_next_token_logits
+    else:
+        from transformers import Qwen3VLForConditionalGeneration as ModelClass
 
     from halc_qwen3vl import HALCConfig, HALCDecoder
 
     if not torch.cuda.is_available():
-        raise RuntimeError("HALC/Qwen3VL smoke requires a GPU")
+        raise RuntimeError("HALC smoke requires a GPU")
     config = HALCConfig(
         beam_size=args.beam_size,
         context_window=args.context_window,
@@ -242,8 +258,9 @@ def main():
     config.validate()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    method = f"halc_{args.model_family}_adaptation"
     config_record = {
-        "method": "halc_qwen3vl_adaptation",
+        "method": method,
         "adapter_revision": ADAPTER_REVISION,
         "source_commit": source_commit,
         "model_path": str(Path(args.model_path).resolve()),
@@ -275,14 +292,22 @@ def main():
           f"samples={len(samples)} pending={len(pending)}", flush=True)
     if pending:
         device = torch.device("cuda:0")
-        model = Qwen3VLForConditionalGeneration.from_pretrained(
+        model = ModelClass.from_pretrained(
             args.model_path, torch_dtype=torch.bfloat16, low_cpu_mem_usage=True,
             trust_remote_code=True,
         ).to(device).eval()
         processor = AutoProcessor.from_pretrained(args.model_path, trust_remote_code=True)
+        adapter = {}
+        if args.model_family == "internvl3":
+            adapter = {
+                "input_builder": lambda proc, image, prompt, dev: build_internvl_inputs(
+                    proc, image, prompt, dev, model.dtype
+                ),
+                "logits_fn": internvl_next_token_logits,
+            }
         decoder = HALCDecoder(
             model, processor, args.detector_config, args.detector_weights,
-            args.blip_model_path, config, device,
+            args.blip_model_path, config, device, **adapter,
         )
         started = time.monotonic()
         with result_path.open("a", encoding="utf-8") as output:
@@ -302,7 +327,7 @@ def main():
                     "eval_prompt": args.prompt,
                     "eval_degradation_mode": "original",
                     "eval_student_ratio": 1.0,
-                    "decoding_method": "halc_qwen3vl_adaptation",
+                    "decoding_method": method,
                     "halc_source_commit": source_commit,
                     "halc_config": config_record,
                     **generation,
@@ -337,7 +362,7 @@ def main():
         "num_samples": len(records),
         "total_results": len(rows),
         "eval_prompt": args.prompt,
-        "decoding_method": "halc_qwen3vl_adaptation",
+        "decoding_method": method,
         "halc_config": config_record,
         "halc_total_triggered": sum(row["halc_triggered_count"] for row in rows),
         "halc_total_changed_tokens": sum(row["halc_changed_token_count"] for row in rows),
