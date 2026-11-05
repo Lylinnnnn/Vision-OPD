@@ -821,6 +821,9 @@ vllm_args=(
     --max-model-len "$VLLM_MAX_MODEL_LEN"
     --disable-frontend-multiprocessing
 )
+if is_truthy "${VLLM_ENFORCE_EAGER:-False}"; then
+    vllm_args+=(--enforce-eager)
+fi
 if [[ -n "$VLLM_TENSOR_PARALLEL_SIZE" ]]; then
     vllm_args+=(--tensor-parallel-size "$VLLM_TENSOR_PARALLEL_SIZE")
 fi

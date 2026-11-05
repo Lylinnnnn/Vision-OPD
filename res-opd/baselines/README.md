@@ -41,6 +41,11 @@ result. A GPU smoke must first confirm nonzero focal triggers and changed tokens
 algorithmic equivalence needs separate validation. The evaluator deliberately
 uses the isolated `chair_external_halc_smoke` result suffix.
 
+Before installing the pinned GroundingDINO source with a recent PyTorch, run
+`python res-opd/baselines/prepare_groundingdino_torch2.py`. This applies the
+two dispatch-call compatibility edits from GroundingDINO PR #415 to the local
+HALC submodule; the upstream commit remains pinned.
+
 ## Evaluation Boundary
 
 Adapters must write the standard CHAIR `eval_results.jsonl` schema documented
