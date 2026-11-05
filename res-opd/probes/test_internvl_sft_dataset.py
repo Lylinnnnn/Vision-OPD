@@ -50,13 +50,17 @@ class InternVLSFTDatasetTest(unittest.TestCase):
             dataset.video_key = "videos"
             dataset.processor = InternVLProcessor()
             dataset.image_patch_size = 14
-            messages = dataset._build_messages({
+            example = {
                 "messages": [{"role": "user", "content": "<image> Describe it."}],
                 "images": [{"path": str(path)}],
-            })
+            }
+            messages = dataset._build_messages(example)
             loaded = messages[0]["content"][0]["image"]
             self.assertEqual(loaded.size, image.size)
             self.assertEqual(loaded.getpixel((0, 0)), image.getpixel((0, 0)))
+            self.assertEqual(example["messages"][0]["content"], "<image> Describe it.")
+            repeated = dataset._build_messages(example)
+            self.assertEqual(repeated[0]["content"][0]["image"].size, image.size)
 
             buffer = io.BytesIO()
             image.save(buffer, format="PNG")

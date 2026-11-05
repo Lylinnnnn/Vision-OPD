@@ -6,6 +6,7 @@ paths across the two server layouts used by the Res-OPD experiments.
 
 from __future__ import annotations
 
+import copy
 import os
 import re
 from io import BytesIO
@@ -94,7 +95,7 @@ class ResOPDSFTDataset(MultiTurnSFTDataset):
 
     def _build_messages(self, example: dict):
         """Resolve image paths before delegating to the processor."""
-        messages: list = example[self.messages_key]
+        messages: list = copy.deepcopy(example[self.messages_key])
         images = example[self.image_key] if self.image_key in example else []
         videos = example[self.video_key] if self.video_key in example else []
         images = [self._resolve_image_entry(image) for image in images]
