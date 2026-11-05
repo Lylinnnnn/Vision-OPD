@@ -86,8 +86,9 @@ class MultiTurnSFTDataset(Dataset):
         self.messages_key = config.get("messages_key", "messages")
         self.image_key = config.get("image_key", "images")
         self.video_key = config.get("video_key", "videos")
+        image_processor = getattr(processor, "image_processor", None)
         self.image_patch_size = config.get(
-            "image_patch_size", processor.image_processor.patch_size if processor else None
+            "image_patch_size", getattr(image_processor, "patch_size", 14) if processor else None
         )
         self.tools_key = config.get("tools_key", "tools")
         self.enable_thinking_key = config.get("enable_thinking_key", "enable_thinking")

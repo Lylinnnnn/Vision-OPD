@@ -8,8 +8,12 @@ from __future__ import annotations
 
 import os
 import re
+from io import BytesIO
 from pathlib import Path
 
+from PIL import Image
+
+from verl.utils.internvl_hf import is_internvl_hf_processor
 from verl.utils.dataset.multiturn_sft_dataset import MultiTurnSFTDataset
 from verl.utils.dataset.vision_utils import process_image, process_video
 
@@ -74,6 +78,20 @@ class ResOPDSFTDataset(MultiTurnSFTDataset):
             return resolved
         return image
 
+    @staticmethod
+    def _load_internvl_image(image):
+        if isinstance(image, Image.Image):
+            return image.convert("RGB")
+        if isinstance(image, dict):
+            if image.get("bytes") is not None:
+                return Image.open(BytesIO(image["bytes"])).convert("RGB")
+            inner = image.get("image")
+            image = inner if inner is not None else image.get("path")
+        if isinstance(image, (str, os.PathLike)):
+            with Image.open(image) as loaded:
+                return loaded.convert("RGB")
+        raise TypeError(f"Unsupported InternVL SFT image input: {type(image)}")
+
     def _build_messages(self, example: dict):
         """Resolve image paths before delegating to the processor."""
         messages: list = example[self.messages_key]
@@ -96,7 +114,10 @@ class ResOPDSFTDataset(MultiTurnSFTDataset):
             segments = [item for item in segments if item != ""]
             for segment in segments:
                 if segment == "<image>":
-                    image = process_image(images[image_offset], image_patch_size=self.image_patch_size)
+                    if is_internvl_hf_processor(self.processor):
+                        image = self._load_internvl_image(images[image_offset])
+                    else:
+                        image = process_image(images[image_offset], image_patch_size=self.image_patch_size)
                     content_list.append({"type": "image", "image": image})
                     image_offset += 1
                 elif segment == "<video>":
