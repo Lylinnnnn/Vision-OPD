@@ -47,6 +47,14 @@ class HALCAdapterTest(unittest.TestCase):
         self.assertEqual(len(candidates), 4)
         self.assertTrue(all(0 <= token < 4 for token in candidates))
 
+    def test_contrast_weight_zero_reduces_to_view_logits(self):
+        views = [torch.tensor([2.0, 0.0]), torch.tensor([0.0, 1.0])]
+        self.assertEqual(self.module.focal_contrast_candidates(views, 2, 0.0), [1, 0])
+
+    def test_contrast_uses_paper_amplification_formula(self):
+        views = [torch.tensor([2.0, 0.0]), torch.tensor([1.0, 0.9])]
+        self.assertEqual(self.module.focal_contrast_candidates(views, 2, 1.0), [1, 0])
+
     def test_invalid_config_rejected(self):
         with self.assertRaisesRegex(ValueError, "even"):
             self.module.HALCConfig(candidate_count=3).validate()
@@ -81,9 +89,11 @@ class HALCAdapterTest(unittest.TestCase):
 class HALCStaticContractTest(unittest.TestCase):
     def test_smoke_is_separate_from_paper_results(self):
         evaluator = MODULE_PATH.with_name("eval_halc_chair.py").read_text()
-        self.assertIn("halc_qwen3vl_adaptation_smoke", evaluator)
+        self.assertIn("halc_qwen3vl_adaptation", evaluator)
+        self.assertIn("focal_contrast_paper_eq4_blip_itm_v2", evaluator)
         self.assertIn("--require-trigger", evaluator)
         self.assertIn("--require-change", evaluator)
+        self.assertIn("--shard-count", evaluator)
         self.assertIn("compute_per_sample", evaluator)
         self.assertIn('"Describe the image."', evaluator)
 

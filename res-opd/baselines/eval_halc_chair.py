@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Single-GPU HALC/Qwen3VL smoke evaluation with the shared CHAIR scorer."""
+"""HALC/Qwen3VL adaptation with the shared CHAIR scorer."""
 
 import argparse
 import json
@@ -13,6 +13,7 @@ from PIL import Image
 BASELINES_DIR = Path(__file__).resolve().parent
 RES_OPD_ROOT = BASELINES_DIR.parent
 HALC_SOURCE = RES_OPD_ROOT / "third_party" / "baselines" / "HALC"
+ADAPTER_REVISION = "focal_contrast_paper_eq4_blip_itm_v2"
 sys.path.insert(0, str(BASELINES_DIR))
 sys.path.insert(0, str(RES_OPD_ROOT / "eval"))
 sys.path.insert(0, str(HALC_SOURCE / "decoder_zoo" / "GroundingDINO"))
@@ -36,6 +37,8 @@ def parse_args():
     parser.add_argument("--blip-model-path", required=True)
     parser.add_argument("--prompt", default="Describe the image.")
     parser.add_argument("--max-samples", type=int, default=1)
+    parser.add_argument("--shard-count", type=int, default=1)
+    parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--beam-size", type=int, default=3)
     parser.add_argument("--context-window", type=int, default=4)
@@ -209,9 +212,11 @@ def preflight(args):
 
 def main():
     args = parse_args()
-    if args.max_samples < 1 or args.max_new_tokens < 1:
-        raise ValueError("max-samples and max-new-tokens must be positive")
-    if args.max_samples > 5 and not args.allow_unvalidated_full_run:
+    if args.max_samples < 0 or args.max_new_tokens < 1:
+        raise ValueError("max-samples must be nonnegative and max-new-tokens positive")
+    if args.shard_count < 1 or not 0 <= args.shard_index < args.shard_count:
+        raise ValueError("invalid shard-count/shard-index")
+    if (args.max_samples == 0 or args.max_samples > 5) and not args.allow_unvalidated_full_run:
         raise ValueError("HALC adapter is unvalidated; limit smoke to <=5 images")
     source_commit = preflight(args)
     if args.preflight_only:
@@ -238,7 +243,8 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     config_record = {
-        "method": "halc_qwen3vl_adaptation_smoke",
+        "method": "halc_qwen3vl_adaptation",
+        "adapter_revision": ADAPTER_REVISION,
         "source_commit": source_commit,
         "model_path": str(Path(args.model_path).resolve()),
         "detector_weights": str(Path(args.detector_weights).resolve()),
@@ -246,6 +252,8 @@ def main():
         "prompt": args.prompt,
         "seed": args.seed,
         "parameters": vars(config),
+        "shard_count": args.shard_count,
+        "shard_index": args.shard_index,
     }
     config_path = output_dir / "halc_config.json"
     if config_path.exists() and json.loads(config_path.read_text()) != config_record:
@@ -253,11 +261,18 @@ def main():
     config_path.write_text(json.dumps(config_record, ensure_ascii=False, indent=2))
 
     samples = remap_coco_image_paths(json.loads(Path(args.test_json).read_text()))
-    samples = samples[:args.max_samples]
+    if args.max_samples:
+        samples = samples[:args.max_samples]
+    samples = [sample for index, sample in enumerate(samples)
+               if index % args.shard_count == args.shard_index]
     result_path = output_dir / "eval_results.jsonl"
     completed = load_existing_results(str(result_path)) if result_path.exists() else {}
+    for image_id, row in completed.items():
+        if row.get("halc_config") != config_record:
+            raise RuntimeError(f"Refusing to mix incompatible HALC results for image {image_id}")
     pending = [sample for sample in samples if sample["image_id"] not in completed]
-    print(f"HALC samples={len(samples)} pending={len(pending)}", flush=True)
+    print(f"HALC shard={args.shard_index}/{args.shard_count} "
+          f"samples={len(samples)} pending={len(pending)}", flush=True)
     if pending:
         device = torch.device("cuda:0")
         model = Qwen3VLForConditionalGeneration.from_pretrained(
@@ -287,7 +302,7 @@ def main():
                     "eval_prompt": args.prompt,
                     "eval_degradation_mode": "original",
                     "eval_student_ratio": 1.0,
-                    "decoding_method": "halc_qwen3vl_adaptation_smoke",
+                    "decoding_method": "halc_qwen3vl_adaptation",
                     "halc_source_commit": source_commit,
                     "halc_config": config_record,
                     **generation,
@@ -301,6 +316,9 @@ def main():
                       f"elapsed={time.monotonic() - started:.1f}s", flush=True)
 
     completed = load_existing_results(str(result_path))
+    missing_ids = {sample["image_id"] for sample in samples} - set(completed)
+    if missing_ids:
+        raise RuntimeError(f"HALC shard incomplete; missing image ids: {sorted(missing_ids)[:20]}")
     rows = [completed[sample["image_id"]] for sample in samples]
     if args.require_trigger and not any(row["halc_triggered_count"] > 0 for row in rows):
         raise RuntimeError("HALC_SMOKE=FAIL: no focal correction was triggered")
@@ -319,14 +337,14 @@ def main():
         "num_samples": len(records),
         "total_results": len(rows),
         "eval_prompt": args.prompt,
-        "decoding_method": "halc_qwen3vl_adaptation_smoke",
+        "decoding_method": "halc_qwen3vl_adaptation",
         "halc_config": config_record,
         "halc_total_triggered": sum(row["halc_triggered_count"] for row in rows),
         "halc_total_changed_tokens": sum(row["halc_changed_token_count"] for row in rows),
         "metric_schema": "official_chair_caption_and_mention_v1",
     })
     (output_dir / "chair_metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2))
-    print(f"HALC_SMOKE=PASS rows={len(rows)} triggered={metrics['halc_total_triggered']} "
+    print(f"HALC_EVAL=PASS rows={len(rows)} triggered={metrics['halc_total_triggered']} "
           f"changed={metrics['halc_total_changed_tokens']}", flush=True)
 
 

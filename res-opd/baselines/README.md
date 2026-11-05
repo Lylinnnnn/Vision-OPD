@@ -30,7 +30,7 @@ adapter or an isolated environment before it can be marked runnable.
 | --- | --- | --- | --- |
 | VCD | `third_party/baselines/VCD` | Qwen3VL CHAIR adapter | No |
 | OPERA | `third_party/baselines/OPERA` | Qwen3VL CHAIR adapter | No |
-| HALC | `third_party/baselines/HALC` | Qwen3VL single-GPU smoke adapter, unvalidated | No |
+| HALC | `third_party/baselines/HALC` | Qwen3VL smoke and sharded adapter, unvalidated | No |
 
 The HALC Qwen3VL adapter is an experimental translation of the focal-view
 contrast and visual beam-selection procedure. It is not a line-for-line port
@@ -38,13 +38,23 @@ of the upstream Transformers 4.36.2 generation patch: its object-word trigger
 operates on Qwen tokenizer tokens, and it does not include the upstream
 HALC/DoLa coupling. Thus the output must not be reported as an official HALC
 result. A GPU smoke must first confirm nonzero focal triggers and changed tokens;
-algorithmic equivalence needs separate validation. The evaluator deliberately
-uses the isolated `chair_external_halc_smoke` result suffix.
+algorithmic equivalence needs separate validation. In particular, its BLIP
+image-text matching score is not yet verified to match the upstream scoring
+implementation. Full evaluation uses the isolated
+`chair_external_halc_qwen3vl_adapted_official` result suffix, where `official`
+refers only to the CHAIR scorer, not to the HALC implementation.
 
 Before installing the pinned GroundingDINO source with a recent PyTorch, run
 `python res-opd/baselines/prepare_groundingdino_torch2.py`. This applies the
 two dispatch-call compatibility edits from GroundingDINO PR #415 to the local
 HALC submodule; the upstream commit remains pinned.
+
+After single-image GPU smoke, the sharded runner is
+`run_halc_chair_sharded_8gpu.sh <model> <DINO config> <DINO weights> <BLIP ITM model>`.
+It requires `HALC_ENABLE_FULL_RUN=1` because the adaptation has not been
+validated against upstream HALC. It keeps per-shard logs and generations for
+inspection. `HALC_MAX_SAMPLES=0` evaluates the complete test set;
+`HALC_MAX_NEW_TOKENS=8192` follows the shared CHAIR generation cap.
 
 ## Evaluation Boundary
 

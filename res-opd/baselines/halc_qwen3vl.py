@@ -80,7 +80,7 @@ def focal_contrast_candidates(logits_by_view, candidate_count, weight):
     candidates = []
     for _, i, j in pairs[: candidate_count // 2]:
         for base, final in ((i, j), (j, i)):
-            contrast = logits_by_view[final].float() - weight * logits_by_view[base].float()
+            contrast = (1 + weight) * logits_by_view[final].float() - weight * logits_by_view[base].float()
             candidates.append(int(torch.argmax(contrast).item()))
     return candidates
 
