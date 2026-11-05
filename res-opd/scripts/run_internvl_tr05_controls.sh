@@ -48,6 +48,7 @@ if [[ "$METHOD" == lowres_sft ]]; then
     export ENGINE_OPTIMIZER_OFFLOAD=False
     export SFT_CKPT_SAVE_CONTENTS=model,extra
     export SFT_CKPT_LOAD_CONTENTS=model,extra
+    export TRAINER_MAX_CKPT_TO_KEEP="${TRAINER_MAX_CKPT_TO_KEEP:-2}"
     export STRICT_GENERATION_MODEL_CACHE=True
     export GEN_GPU_LIST="${GEN_GPU_LIST:-0}"
     "$PYTHON_BIN" "$RES_OPD_ROOT/probes/preflight_training_images.py" \
