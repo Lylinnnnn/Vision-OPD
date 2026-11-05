@@ -134,7 +134,7 @@ def install_groundingdino_bert_compatibility():
             mask = kwargs.get("attention_mask")
             if mask is not None and mask.ndim == 3:
                 kwargs["attention_mask"] = module.get_extended_attention_mask(
-                    mask, mask.shape[:2], mask.device
+                    mask, mask.shape[:2]
                 )
             return args, kwargs
 
