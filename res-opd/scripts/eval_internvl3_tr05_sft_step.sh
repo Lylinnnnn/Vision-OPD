@@ -2,13 +2,20 @@
 
 set -euo pipefail
 
-step="${1:?Usage: $0 <50|100|150|156>}"
+step="${1:?Usage: $0 <all|50|100|150|156>}"
+script_dir="$(cd "$(dirname "$0")" && pwd)"
 case "$step" in
+    all)
+        for current_step in 50 100 150 156; do
+            echo "===== InternVL3 tr0.5 low-res SFT global_step_$current_step ====="
+            bash "$script_dir/eval_internvl3_tr05_sft_step.sh" "$current_step"
+        done
+        exit 0
+        ;;
     50|100|150|156) ;;
     *) echo "Unsupported checkpoint step: $step" >&2; exit 2 ;;
 esac
 
-script_dir="$(cd "$(dirname "$0")" && pwd)"
 res_opd_root="$(cd "$script_dir/.." && pwd)"
 cd "$(dirname "$res_opd_root")"
 

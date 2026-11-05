@@ -103,6 +103,8 @@ def build_qwen_inputs(processor, image, prompt, device):
 
 def next_token_logits(model, inputs, generated):
     kwargs = dict(inputs)
+    if "mm_token_type_ids" not in kwargs:
+        raise ValueError("Qwen3VL processor did not return mm_token_type_ids")
     if generated:
         continuation = torch.tensor([generated], dtype=kwargs["input_ids"].dtype,
                                     device=kwargs["input_ids"].device)
@@ -110,6 +112,13 @@ def next_token_logits(model, inputs, generated):
         kwargs["attention_mask"] = torch.cat(
             (kwargs["attention_mask"], torch.ones_like(continuation)), dim=1
         )
+        kwargs["mm_token_type_ids"] = torch.cat(
+            (kwargs["mm_token_type_ids"],
+             torch.zeros_like(continuation, dtype=kwargs["mm_token_type_ids"].dtype)), dim=1
+        )
+    if not (kwargs["input_ids"].shape == kwargs["attention_mask"].shape ==
+            kwargs["mm_token_type_ids"].shape):
+        raise ValueError("Qwen3VL input_ids, attention_mask, and mm_token_type_ids must align")
     output = model.generate(
         **kwargs, max_new_tokens=1, do_sample=False, num_beams=1,
         return_dict_in_generate=True, output_scores=True, use_cache=False,
@@ -150,7 +159,7 @@ class HALCDecoder:
                  blip_model_path, config, device):
         import spacy
         from groundingdino.util.inference import load_model
-        from transformers import BlipModel, BlipProcessor
+        from transformers import BlipForImageTextRetrieval, BlipProcessor
 
         config.validate()
         for path in (detector_config, detector_weights, blip_model_path):
@@ -164,7 +173,13 @@ class HALCDecoder:
         install_groundingdino_bert_compatibility()
         self.detector = load_model(detector_config, detector_weights, device=str(device))
         self.blip_processor = BlipProcessor.from_pretrained(blip_model_path)
-        self.blip = BlipModel.from_pretrained(blip_model_path).to(device).eval()
+        self.blip, loading = BlipForImageTextRetrieval.from_pretrained(
+            blip_model_path, output_loading_info=True, local_files_only=True
+        )
+        missing = [key for key in loading["missing_keys"] if not key.endswith("position_ids")]
+        if missing:
+            raise RuntimeError(f"BLIP retrieval checkpoint has uninitialized weights: {missing[:10]}")
+        self.blip = self.blip.to(device).eval()
         self.eos_ids = {int(x) for x in (model.generation_config.eos_token_id
                        if isinstance(model.generation_config.eos_token_id, (list, tuple))
                        else [model.generation_config.eos_token_id]) if x is not None}
@@ -205,14 +220,16 @@ class HALCDecoder:
         texts = [self.processor.tokenizer.decode(tokens, skip_special_tokens=True).strip()
                  or "image" for tokens in token_sequences]
         inputs = self.blip_processor(
-            text=texts, images=image, return_tensors="pt", padding=True, truncation=True
+            text=texts, images=[image] * len(texts), return_tensors="pt",
+            padding=True, truncation=True
         )
         inputs = {key: value.to(self.device) if torch.is_tensor(value) else value
                   for key, value in inputs.items()}
         outputs = self.blip(**inputs)
-        if not hasattr(outputs, "logits_per_image"):
-            raise RuntimeError("BLIP matching model did not return logits_per_image")
-        return outputs.logits_per_image[0].float().tolist()
+        scores = outputs.itm_score
+        if scores is None or scores.shape != (len(texts), 2):
+            raise RuntimeError("BLIP retrieval model did not return paired ITM logits")
+        return scores.float().softmax(dim=-1)[:, 1].tolist()
 
     @torch.inference_mode()
     def generate(self, image_path, prompt="Describe the image.", seed=42):

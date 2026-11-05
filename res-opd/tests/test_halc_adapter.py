@@ -51,6 +51,32 @@ class HALCAdapterTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "even"):
             self.module.HALCConfig(candidate_count=3).validate()
 
+    def test_next_token_logits_extends_text_modality_with_generated_tokens(self):
+        class FakeModel:
+            def generate(self, **kwargs):
+                self.input_ids = kwargs["input_ids"]
+                self.attention_mask = kwargs["attention_mask"]
+                self.mm_token_type_ids = kwargs["mm_token_type_ids"]
+                return SimpleNamespace(scores=[torch.tensor([[0.1, 0.9]])])
+
+        inputs = {
+            "input_ids": torch.tensor([[10, 11, 12]]),
+            "attention_mask": torch.tensor([[1, 1, 1]]),
+            "mm_token_type_ids": torch.tensor([[0, 1, 0]]),
+        }
+        model = FakeModel()
+        logits = self.module.next_token_logits(model, inputs, [13, 14])
+        self.assertEqual(tuple(logits.shape), (2,))
+        self.assertEqual(tuple(model.input_ids.shape), (1, 5))
+        self.assertEqual(tuple(model.attention_mask.shape), (1, 5))
+        self.assertEqual(model.mm_token_type_ids.tolist(), [[0, 1, 0, 0, 0]])
+        self.assertEqual(tuple(inputs["input_ids"].shape), (1, 3))
+
+    def test_next_token_logits_rejects_missing_modality_ids(self):
+        inputs = {"input_ids": torch.tensor([[10]]), "attention_mask": torch.tensor([[1]])}
+        with self.assertRaisesRegex(ValueError, "mm_token_type_ids"):
+            self.module.next_token_logits(None, inputs, [11])
+
 
 class HALCStaticContractTest(unittest.TestCase):
     def test_smoke_is_separate_from_paper_results(self):

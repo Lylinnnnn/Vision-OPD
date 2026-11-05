@@ -91,6 +91,16 @@ def preflight(args):
         if root.is_dir():
             if not (root / "config.json").is_file():
                 errors.append(f"{label} has no config.json: {root}")
+            elif label == "BLIP model":
+                try:
+                    architectures = json.loads((root / "config.json").read_text()).get("architectures") or []
+                    if "BlipForImageTextRetrieval" not in architectures:
+                        errors.append(
+                            f"BLIP model must be an image-text retrieval checkpoint, got {architectures}; "
+                            "use Salesforce/blip-itm-base-coco"
+                        )
+                except (OSError, ValueError, TypeError) as exc:
+                    errors.append(f"Cannot read BLIP model architecture: {exc}")
             weight_names = (
                 "model.safetensors", "model.safetensors.index.json",
                 "pytorch_model.bin", "pytorch_model.bin.index.json",
@@ -139,7 +149,7 @@ def preflight(args):
     if "transformers" not in missing:
         try:
             transformers = importlib.import_module("transformers")
-            for name in ("Qwen3VLForConditionalGeneration", "AutoProcessor", "BlipModel", "BlipProcessor"):
+            for name in ("Qwen3VLForConditionalGeneration", "AutoProcessor", "BlipForImageTextRetrieval", "BlipProcessor"):
                 getattr(transformers, name)
         except Exception as exc:
             errors.append(f"Transformers model imports failed: {type(exc).__name__}: {exc}")
