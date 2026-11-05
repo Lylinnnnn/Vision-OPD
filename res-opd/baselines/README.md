@@ -30,11 +30,16 @@ adapter or an isolated environment before it can be marked runnable.
 | --- | --- | --- | --- |
 | VCD | `third_party/baselines/VCD` | Qwen3VL CHAIR adapter | No |
 | OPERA | `third_party/baselines/OPERA` | Qwen3VL CHAIR adapter | No |
-| HALC | `third_party/baselines/HALC` | source only | No |
+| HALC | `third_party/baselines/HALC` | Qwen3VL single-GPU smoke adapter, unvalidated | No |
 
-`source only` means that the official implementation is available for audit,
-but must not be invoked from the main environment. It does not mean that an
-experimental result has been reproduced.
+The HALC Qwen3VL adapter is an experimental translation of the focal-view
+contrast and visual beam-selection procedure. It is not a line-for-line port
+of the upstream Transformers 4.36.2 generation patch: its object-word trigger
+operates on Qwen tokenizer tokens, and it does not include the upstream
+HALC/DoLa coupling. Thus the output must not be reported as an official HALC
+result. A GPU smoke must first confirm nonzero focal triggers and changed tokens;
+algorithmic equivalence needs separate validation. The evaluator deliberately
+uses the isolated `chair_external_halc_smoke` result suffix.
 
 ## Evaluation Boundary
 

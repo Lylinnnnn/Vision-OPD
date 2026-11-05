@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""Single-GPU HALC/Qwen3VL smoke evaluation with the shared CHAIR scorer."""
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+from PIL import Image
+
+
+BASELINES_DIR = Path(__file__).resolve().parent
+RES_OPD_ROOT = BASELINES_DIR.parent
+HALC_SOURCE = RES_OPD_ROOT / "third_party" / "baselines" / "HALC"
+sys.path.insert(0, str(BASELINES_DIR))
+sys.path.insert(0, str(RES_OPD_ROOT / "eval"))
+sys.path.insert(0, str(HALC_SOURCE / "decoder_zoo" / "GroundingDINO"))
+
+from eval_chair import extract_final_response_text, load_existing_results, remap_coco_image_paths
+from robust_chair_analysis import (
+    aggregate_from_arrays,
+    build_double_word_dict,
+    compute_per_sample,
+    parse_official_synonyms,
+)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Experimental HALC/Qwen3VL CHAIR smoke")
+    parser.add_argument("--model-path", required=True)
+    parser.add_argument("--test-json", default=str(RES_OPD_ROOT / "data" / "test_1000.json"))
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--detector-config", required=True)
+    parser.add_argument("--detector-weights", required=True)
+    parser.add_argument("--blip-model-path", required=True)
+    parser.add_argument("--prompt", default="Describe the image.")
+    parser.add_argument("--max-samples", type=int, default=1)
+    parser.add_argument("--max-new-tokens", type=int, default=64)
+    parser.add_argument("--beam-size", type=int, default=3)
+    parser.add_argument("--context-window", type=int, default=4)
+    parser.add_argument("--candidate-count", type=int, default=4)
+    parser.add_argument("--expand-ratio", type=float, default=0.6)
+    parser.add_argument("--box-threshold", type=float, default=0.4)
+    parser.add_argument("--contrast-weight", type=float, default=0.05)
+    parser.add_argument("--skip-rate", type=float, default=0.5)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--require-trigger", action="store_true")
+    parser.add_argument("--require-change", action="store_true")
+    parser.add_argument("--preflight-only", action="store_true")
+    return parser.parse_args()
+
+
+def preflight(args):
+    import importlib
+    import importlib.util
+    import subprocess
+
+    if not (HALC_SOURCE / "README.md").is_file():
+        raise RuntimeError("HALC source missing; initialize the pinned Git submodule")
+    registry = json.loads((BASELINES_DIR / "registry.json").read_text())
+    expected = registry["baselines"]["halc"]["commit"]
+    actual = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=HALC_SOURCE, text=True
+    ).strip()
+    if actual != expected:
+        raise RuntimeError(f"HALC source revision mismatch: expected {expected}, got {actual}")
+    for path in (args.model_path, args.test_json, args.detector_config,
+                 args.detector_weights, args.blip_model_path):
+        if not Path(path).exists():
+            raise FileNotFoundError(path)
+    for package in ("torch", "transformers", "qwen_vl_utils", "spacy", "groundingdino"):
+        if importlib.util.find_spec(package) is None:
+            raise RuntimeError(f"Missing dependency: {package}")
+    importlib.import_module("groundingdino.util.inference")
+    import spacy
+
+    spacy.load("en_core_web_sm")
+    transformers = importlib.import_module("transformers")
+    for name in ("Qwen3VLForConditionalGeneration", "AutoProcessor", "BlipModel", "BlipProcessor"):
+        if not hasattr(transformers, name):
+            raise RuntimeError(f"Installed transformers lacks {name}")
+    print(f"HALC_PREFLIGHT=PASS source={actual} transformers={transformers.__version__}", flush=True)
+    return actual
+
+
+def main():
+    args = parse_args()
+    if args.max_samples < 1 or args.max_new_tokens < 1:
+        raise ValueError("max-samples and max-new-tokens must be positive")
+    source_commit = preflight(args)
+    if args.preflight_only:
+        return
+
+    import torch
+    from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+
+    from halc_qwen3vl import HALCConfig, HALCDecoder
+
+    if not torch.cuda.is_available():
+        raise RuntimeError("HALC/Qwen3VL smoke requires a GPU")
+    config = HALCConfig(
+        beam_size=args.beam_size,
+        context_window=args.context_window,
+        candidate_count=args.candidate_count,
+        expand_ratio=args.expand_ratio,
+        box_threshold=args.box_threshold,
+        contrast_weight=args.contrast_weight,
+        skip_rate=args.skip_rate,
+        max_new_tokens=args.max_new_tokens,
+    )
+    config.validate()
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    config_record = {
+        "method": "halc_qwen3vl_adaptation_smoke",
+        "source_commit": source_commit,
+        "model_path": str(Path(args.model_path).resolve()),
+        "detector_weights": str(Path(args.detector_weights).resolve()),
+        "blip_model_path": str(Path(args.blip_model_path).resolve()),
+        "prompt": args.prompt,
+        "seed": args.seed,
+        "parameters": vars(config),
+    }
+    config_path = output_dir / "halc_config.json"
+    if config_path.exists() and json.loads(config_path.read_text()) != config_record:
+        raise RuntimeError("Refusing to mix HALC runs with different configurations")
+    config_path.write_text(json.dumps(config_record, ensure_ascii=False, indent=2))
+
+    samples = remap_coco_image_paths(json.loads(Path(args.test_json).read_text()))
+    samples = samples[:args.max_samples]
+    result_path = output_dir / "eval_results.jsonl"
+    completed = load_existing_results(str(result_path)) if result_path.exists() else {}
+    pending = [sample for sample in samples if sample["image_id"] not in completed]
+    print(f"HALC samples={len(samples)} pending={len(pending)}", flush=True)
+    if pending:
+        device = torch.device("cuda:0")
+        model = Qwen3VLForConditionalGeneration.from_pretrained(
+            args.model_path, torch_dtype=torch.bfloat16, low_cpu_mem_usage=True,
+            trust_remote_code=True,
+        ).to(device).eval()
+        processor = AutoProcessor.from_pretrained(args.model_path, trust_remote_code=True)
+        decoder = HALCDecoder(
+            model, processor, args.detector_config, args.detector_weights,
+            args.blip_model_path, config, device,
+        )
+        started = time.monotonic()
+        with result_path.open("a", encoding="utf-8") as output:
+            for offset, sample in enumerate(pending, 1):
+                with Image.open(sample["image_path"]) as source:
+                    source.verify()
+                generation = decoder.generate(
+                    sample["image_path"], prompt=args.prompt,
+                    seed=args.seed + int(sample["image_id"]),
+                )
+                row = {
+                    "image_id": sample["image_id"],
+                    "file_name": sample["file_name"],
+                    "image_path": sample["image_path"],
+                    "gt_captions": sample.get("captions", []),
+                    "gt_objects": sample.get("objects", []),
+                    "eval_prompt": args.prompt,
+                    "eval_degradation_mode": "original",
+                    "eval_student_ratio": 1.0,
+                    "decoding_method": "halc_qwen3vl_adaptation_smoke",
+                    "halc_source_commit": source_commit,
+                    "halc_config": config_record,
+                    **generation,
+                }
+                output.write(json.dumps(row, ensure_ascii=False) + "\n")
+                output.flush()
+                print(f"[{offset}/{len(pending)}] image={sample['image_id']} "
+                      f"tokens={generation['generated_token_count']} "
+                      f"triggered={generation['halc_triggered_count']} "
+                      f"changed={generation['halc_changed_token_count']} "
+                      f"elapsed={time.monotonic() - started:.1f}s", flush=True)
+
+    completed = load_existing_results(str(result_path))
+    rows = [completed[sample["image_id"]] for sample in samples]
+    if args.require_trigger and not any(row["halc_triggered_count"] > 0 for row in rows):
+        raise RuntimeError("HALC_SMOKE=FAIL: no focal correction was triggered")
+    if args.require_change and not any(row["halc_changed_token_count"] > 0 for row in rows):
+        raise RuntimeError("HALC_SMOKE=FAIL: no generated token was changed")
+    objects, inverse = parse_official_synonyms()
+    records = [{
+        "image_id": row["image_id"],
+        "generated_text": extract_final_response_text(row["generated_caption"]),
+        "gt_objects": set(row.get("gt_objects", [])),
+        "gt_captions": row.get("gt_captions", []),
+    } for row in rows]
+    per_sample = compute_per_sample(records, objects, inverse, build_double_word_dict())
+    metrics = aggregate_from_arrays(per_sample, list(per_sample))
+    metrics.update({
+        "num_samples": len(records),
+        "total_results": len(rows),
+        "eval_prompt": args.prompt,
+        "decoding_method": "halc_qwen3vl_adaptation_smoke",
+        "halc_config": config_record,
+        "halc_total_triggered": sum(row["halc_triggered_count"] for row in rows),
+        "halc_total_changed_tokens": sum(row["halc_changed_token_count"] for row in rows),
+        "metric_schema": "official_chair_caption_and_mention_v1",
+    })
+    (output_dir / "chair_metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2))
+    print(f"HALC_SMOKE=PASS rows={len(rows)} triggered={metrics['halc_total_triggered']} "
+          f"changed={metrics['halc_total_changed_tokens']}", flush=True)
+
+
+if __name__ == "__main__":
+    main()
