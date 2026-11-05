@@ -2,6 +2,9 @@ import importlib.util
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from unittest import mock
 
 from PIL import Image
 
@@ -57,6 +60,31 @@ class HALCStaticContractTest(unittest.TestCase):
         self.assertIn("--require-change", evaluator)
         self.assertIn("compute_per_sample", evaluator)
         self.assertIn('"Describe the image."', evaluator)
+
+    def test_preflight_reports_multiple_missing_dependencies(self):
+        spec = importlib.util.spec_from_file_location(
+            "eval_halc_chair_preflight_test", MODULE_PATH.with_name("eval_halc_chair.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with TemporaryDirectory() as directory:
+            source = Path(directory)
+            (source / "README.md").write_text("HALC")
+            args = SimpleNamespace(
+                model_path=str(source / "model"), test_json=str(source / "test.json"),
+                detector_config=str(source / "dino.py"),
+                detector_weights=str(source / "dino.pth"),
+                blip_model_path=str(source / "blip"),
+            )
+            expected = "c757ced4f1f26d992e6e7200a44d3b899bb000af\n"
+            with mock.patch.object(module, "HALC_SOURCE", source), \
+                 mock.patch("subprocess.check_output", return_value=expected), \
+                 mock.patch("importlib.util.find_spec", return_value=None):
+                with self.assertRaisesRegex(RuntimeError, "HALC_PREFLIGHT=FAIL") as caught:
+                    module.preflight(args)
+            self.assertIn("supervision", str(caught.exception))
+            self.assertIn("addict", str(caught.exception))
+            self.assertIn("Qwen3VL model missing", str(caught.exception))
 
 
 if __name__ == "__main__":

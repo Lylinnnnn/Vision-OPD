@@ -57,6 +57,7 @@ def preflight(args):
     import importlib.util
     import subprocess
 
+    errors = []
     if not (HALC_SOURCE / "README.md").is_file():
         raise RuntimeError("HALC source missing; initialize the pinned Git submodule")
     registry = json.loads((BASELINES_DIR / "registry.json").read_text())
@@ -66,21 +67,109 @@ def preflight(args):
     ).strip()
     if actual != expected:
         raise RuntimeError(f"HALC source revision mismatch: expected {expected}, got {actual}")
-    for path in (args.model_path, args.test_json, args.detector_config,
-                 args.detector_weights, args.blip_model_path):
-        if not Path(path).exists():
-            raise FileNotFoundError(path)
-    for package in ("torch", "transformers", "qwen_vl_utils", "spacy", "groundingdino"):
-        if importlib.util.find_spec(package) is None:
-            raise RuntimeError(f"Missing dependency: {package}")
-    importlib.import_module("groundingdino.util.inference")
-    import spacy
+    paths = {
+        "Qwen3VL model": (args.model_path, True),
+        "test JSON": (args.test_json, False),
+        "GroundingDINO config": (args.detector_config, False),
+        "GroundingDINO weights": (args.detector_weights, False),
+        "BLIP model": (args.blip_model_path, True),
+    }
+    for label, (path, is_dir) in paths.items():
+        item = Path(path)
+        if not (item.is_dir() if is_dir else item.is_file()):
+            errors.append(f"{label} missing or wrong type: {path}")
+        elif not is_dir and item.stat().st_size == 0:
+            errors.append(f"{label} is empty: {path}")
+    if Path(args.test_json).is_file():
+        try:
+            if not json.loads(Path(args.test_json).read_text()):
+                errors.append(f"test JSON has no samples: {args.test_json}")
+        except (OSError, ValueError) as exc:
+            errors.append(f"Cannot read test JSON: {exc}")
+    for label, path in (("Qwen3VL model", args.model_path), ("BLIP model", args.blip_model_path)):
+        root = Path(path)
+        if root.is_dir():
+            if not (root / "config.json").is_file():
+                errors.append(f"{label} has no config.json: {root}")
+            weight_names = (
+                "model.safetensors", "model.safetensors.index.json",
+                "pytorch_model.bin", "pytorch_model.bin.index.json",
+            )
+            if not any((root / name).is_file() for name in weight_names):
+                errors.append(f"{label} has no model weights or weight index: {root}")
+            for index_name in ("model.safetensors.index.json", "pytorch_model.bin.index.json"):
+                index_path = root / index_name
+                if not index_path.is_file():
+                    continue
+                try:
+                    shards = set(json.loads(index_path.read_text())["weight_map"].values())
+                    missing_shards = sorted(name for name in shards if not (root / name).is_file())
+                    if missing_shards:
+                        errors.append(f"{label} missing {len(missing_shards)} weight shards: {missing_shards[:3]}")
+                except (OSError, ValueError, KeyError, TypeError) as exc:
+                    errors.append(f"Cannot read {label} weight index: {exc}")
+    weights = Path(args.detector_weights)
+    if weights.is_file() and weights.stat().st_size < 1_000_000:
+        errors.append(f"GroundingDINO weights look truncated: {weights}")
 
-    spacy.load("en_core_web_sm")
-    transformers = importlib.import_module("transformers")
-    for name in ("Qwen3VLForConditionalGeneration", "AutoProcessor", "BlipModel", "BlipProcessor"):
-        if not hasattr(transformers, name):
-            raise RuntimeError(f"Installed transformers lacks {name}")
+    modules = (
+        "torch", "torchvision", "numpy", "PIL", "cv2", "transformers",
+        "qwen_vl_utils", "spacy", "timm", "addict", "yapf",
+        "supervision", "groundingdino", "pycocotools", "yaml",
+        "scipy", "matplotlib", "requests",
+    )
+    missing = [name for name in modules if importlib.util.find_spec(name) is None]
+    if missing:
+        errors.append("Missing Python packages: " + ", ".join(missing))
+    for name in ("torch", "torchvision.ops", "cv2", "timm", "supervision",
+                 "groundingdino._C", "groundingdino.util.inference"):
+        if name.split(".")[0] in missing:
+            continue
+        try:
+            importlib.import_module(name)
+        except Exception as exc:
+            errors.append(f"Cannot import {name}: {type(exc).__name__}: {exc}")
+
+    if "spacy" not in missing:
+        try:
+            importlib.import_module("spacy").load("en_core_web_sm")
+        except Exception as exc:
+            errors.append(f"Cannot load spaCy en_core_web_sm: {type(exc).__name__}: {exc}")
+    transformers = None
+    if "transformers" not in missing:
+        try:
+            transformers = importlib.import_module("transformers")
+            for name in ("Qwen3VLForConditionalGeneration", "AutoProcessor", "BlipModel", "BlipProcessor"):
+                getattr(transformers, name)
+        except Exception as exc:
+            errors.append(f"Transformers model imports failed: {type(exc).__name__}: {exc}")
+        else:
+            for label, path, processor in (
+                ("Qwen3VL", args.model_path, transformers.AutoProcessor),
+                ("BLIP", args.blip_model_path, transformers.BlipProcessor),
+            ):
+                if Path(path).is_dir():
+                    try:
+                        kwargs = {"local_files_only": True}
+                        if label == "Qwen3VL":
+                            kwargs["trust_remote_code"] = True
+                        processor.from_pretrained(path, **kwargs)
+                    except Exception as exc:
+                        errors.append(f"Cannot load {label} processor: {type(exc).__name__}: {exc}")
+    if "qwen_vl_utils" not in missing:
+        try:
+            getattr(importlib.import_module("qwen_vl_utils"), "process_vision_info")
+        except Exception as exc:
+            errors.append(f"Cannot import process_vision_info: {type(exc).__name__}: {exc}")
+    if "torch" not in missing:
+        try:
+            torch = importlib.import_module("torch")
+            if not torch.cuda.is_available():
+                errors.append("PyTorch CUDA is unavailable")
+        except Exception as exc:
+            errors.append(f"PyTorch CUDA check failed: {type(exc).__name__}: {exc}")
+    if errors:
+        raise RuntimeError("HALC_PREFLIGHT=FAIL\n- " + "\n- ".join(errors))
     print(f"HALC_PREFLIGHT=PASS source={actual} transformers={transformers.__version__}", flush=True)
     return actual
 
