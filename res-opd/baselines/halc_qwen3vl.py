@@ -119,6 +119,32 @@ def next_token_logits(model, inputs, generated):
     return output.scores[0][0]
 
 
+def install_groundingdino_bert_compatibility():
+    from groundingdino.models.GroundingDINO import groundingdino
+
+    if getattr(groundingdino.BertModelWarper, "_res_opd_compatible", False):
+        return
+    original_warper = groundingdino.BertModelWarper
+
+    def compatible_warper(bert_model):
+        if hasattr(bert_model, "get_head_mask"):
+            return original_warper(bert_model)
+
+        def expand_attention_mask(module, args, kwargs):
+            mask = kwargs.get("attention_mask")
+            if mask is not None and mask.ndim == 3:
+                kwargs["attention_mask"] = module.get_extended_attention_mask(
+                    mask, mask.shape[:2], mask.device
+                )
+            return args, kwargs
+
+        bert_model.register_forward_pre_hook(expand_attention_mask, with_kwargs=True)
+        return bert_model
+
+    compatible_warper._res_opd_compatible = True
+    groundingdino.BertModelWarper = compatible_warper
+
+
 class HALCDecoder:
     def __init__(self, model, processor, detector_config, detector_weights,
                  blip_model_path, config, device):
@@ -135,6 +161,7 @@ class HALCDecoder:
         self.config = config
         self.device = device
         self.nlp = spacy.load("en_core_web_sm")
+        install_groundingdino_bert_compatibility()
         self.detector = load_model(detector_config, detector_weights, device=str(device))
         self.blip_processor = BlipProcessor.from_pretrained(blip_model_path)
         self.blip = BlipModel.from_pretrained(blip_model_path).to(device).eval()

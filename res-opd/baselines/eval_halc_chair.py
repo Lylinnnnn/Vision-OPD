@@ -168,6 +168,29 @@ def preflight(args):
                 errors.append("PyTorch CUDA is unavailable")
         except Exception as exc:
             errors.append(f"PyTorch CUDA check failed: {type(exc).__name__}: {exc}")
+    if transformers is not None and not errors:
+        try:
+            from halc_qwen3vl import install_groundingdino_bert_compatibility
+            from groundingdino.models.GroundingDINO import groundingdino
+
+            install_groundingdino_bert_compatibility()
+            config = transformers.BertConfig(
+                vocab_size=32, hidden_size=32, num_hidden_layers=1,
+                num_attention_heads=4, intermediate_size=64,
+            )
+            bert = transformers.BertModel(config).eval()
+            wrapped = groundingdino.BertModelWarper(bert).eval()
+            if set(bert.state_dict()) != set(wrapped.state_dict()):
+                raise RuntimeError("GroundingDINO BERT checkpoint keys changed")
+            mask = torch.tensor([[[1, 1, 0], [1, 1, 0], [0, 0, 1]]], dtype=torch.bool)
+            with torch.inference_mode():
+                output = wrapped(
+                    input_ids=torch.tensor([[1, 2, 3]]), attention_mask=mask
+                )
+            if output.last_hidden_state.shape != (1, 3, 32) or not torch.isfinite(output.last_hidden_state).all():
+                raise RuntimeError("GroundingDINO BERT forward returned invalid values")
+        except Exception as exc:
+            errors.append(f"GroundingDINO BERT compatibility smoke failed: {type(exc).__name__}: {exc}")
     if errors:
         raise RuntimeError("HALC_PREFLIGHT=FAIL\n- " + "\n- ".join(errors))
     print(f"HALC_PREFLIGHT=PASS source={actual} transformers={transformers.__version__}", flush=True)
