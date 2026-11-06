@@ -17,6 +17,12 @@ def write_json(path, value):
 
 
 class InternVL3FullSummaryTest(unittest.TestCase):
+    def test_main_checkpoint_name_is_recognized(self):
+        self.assertEqual(
+            MODULE.method_name("Res-OPD-InternVL3-2B-hf-tr05-fixedmb1-full5k-e1"),
+            "RiskMask",
+        )
+
     def test_all_steps_and_suffixes_remain_separate(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

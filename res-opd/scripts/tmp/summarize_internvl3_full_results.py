@@ -44,6 +44,8 @@ def load_judge(path, issues):
 
 
 def method_name(name):
+    if "internvl3-2b-hf-tr05-fixedmb1-" in name.lower():
+        return "RiskMask"
     for marker, label in (
         ("riskmask-entropy", "RiskMask (entropy)"),
         ("riskmask", "RiskMask"),
