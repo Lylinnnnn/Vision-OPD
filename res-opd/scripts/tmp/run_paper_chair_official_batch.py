@@ -29,6 +29,7 @@ def parse_args():
     parser.add_argument("--model-root", default=os.environ.get("MODEL_ROOT", ""))
     parser.add_argument("--prompt", default="Describe the image.")
     parser.add_argument("--output-suffix", default="chair_describe_image_official")
+    parser.add_argument("--reuse-output-suffix", action="append", default=[])
     parser.add_argument("--max-samples", type=int, default=1000)
     parser.add_argument("--transition-wait-seconds", type=int, default=180)
     parser.add_argument("--require-idle-gpus", action="store_true")
@@ -179,7 +180,7 @@ def entry_lock(entry, root, suffix):
             pass
 
 
-def output_complete(path, expected_count):
+def output_complete(path, expected_count, expected_prompt, expected_ratio=None):
     metrics_path = path / "chair_metrics.json"
     results_path = path / "eval_results.jsonl"
     if not metrics_path.is_file() or not results_path.is_file():
@@ -188,15 +189,43 @@ def output_complete(path, expected_count):
         metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
         count = int(metrics.get("total_results", metrics.get("total_captions", 0)))
         schema = metrics.get("metric_schema")
+        ratios = set()
+        modes = set()
+        prompts = set()
         with results_path.open("r", encoding="utf-8") as handle:
-            rows = sum(1 for line in handle if line.strip())
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            rows = 0
+            for line in handle:
+                if not line.strip():
+                    continue
+                rows += 1
+                if expected_ratio is not None:
+                    record = json.loads(line)
+                    ratios.add(float(record["eval_student_ratio"]))
+                    modes.add(record["eval_degradation_mode"])
+                    prompts.add(record["eval_prompt"])
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
         return False
     return (
         count == expected_count
         and rows == expected_count
         and schema == "official_chair_caption_and_mention_v1"
+        and metrics.get("eval_prompt") == expected_prompt
+        and metrics.get("ground_truth_protocol") == "instance_categories_union_reference_caption_objects"
+        and int(metrics.get("invalid_final_answer", 0)) == 0
+        and (expected_ratio is None or (
+            ratios == {float(expected_ratio)}
+            and modes == {"original"}
+            and prompts == {expected_prompt}
+        ))
     )
+
+
+def first_complete_output(entry, root, suffixes, expected_count, expected_prompt):
+    for suffix in suffixes:
+        path = output_dir(entry, root, suffix)
+        if output_complete(path, expected_count, expected_prompt, entry["student_ratio"]):
+            return path
+    return None
 
 
 def run_capture(command):
@@ -355,6 +384,11 @@ def main():
         raise ValueError("--gpu-list must contain exactly --eval-shard-count unique GPU IDs")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", args.output_suffix):
         raise ValueError("--output-suffix must be one safe path component")
+    if any(
+        not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", suffix)
+        for suffix in args.reuse_output_suffix
+    ):
+        raise ValueError("--reuse-output-suffix must be one safe path component")
 
     root = root_dir()
     manifest = Path(args.manifest)
@@ -395,14 +429,18 @@ def main():
     launcher = root / "res-opd" / "scripts" / "tmp" / "run_paper_chair_describe45_entry.sh"
     completed = 0
     skipped = 0
+    acceptable_suffixes = list(dict.fromkeys([args.output_suffix, *args.reuse_output_suffix]))
     for position, entry in enumerate(selected, 1):
         target = output_dir(entry, root, args.output_suffix)
         print(
             f"\n[{position}/{len(selected)}] {entry['index']:02d} {entry['label']}\nOutput: {target}",
             flush=True,
         )
-        if output_complete(target, args.max_samples) and not args.force:
-            print("Complete official output exists; skipping.", flush=True)
+        existing = first_complete_output(
+            entry, root, acceptable_suffixes, args.max_samples, args.prompt
+        )
+        if existing is not None and not args.force:
+            print(f"Complete compatible official output exists; skipping: {existing}", flush=True)
             skipped += 1
             continue
         if args.dry_run:
@@ -410,8 +448,11 @@ def main():
             print(" ".join(shlex.quote(value) for value in command), flush=True)
             continue
         with entry_lock(entry, root, args.output_suffix):
-            if output_complete(target, args.max_samples) and not args.force:
-                print("Output completed while waiting for the shared lock; skipping.", flush=True)
+            existing = first_complete_output(
+                entry, root, acceptable_suffixes, args.max_samples, args.prompt
+            )
+            if existing is not None and not args.force:
+                print(f"Output completed while waiting for the shared lock; skipping: {existing}", flush=True)
                 skipped += 1
                 continue
             command = ["bash", str(launcher), str(entry["index"]), str(args.base_port)]
@@ -433,7 +474,9 @@ def main():
                     f"Evaluation failed for {entry['index']:02d} {entry['label']}: "
                     f"exit={result.returncode}"
                 )
-            if not output_complete(target, args.max_samples):
+            if not output_complete(
+                target, args.max_samples, args.prompt, entry["student_ratio"]
+            ):
                 raise RuntimeError(
                     f"Evaluation succeeded but official output is incomplete: {target}"
                 )
