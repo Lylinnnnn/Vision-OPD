@@ -21,6 +21,7 @@ def parse_args():
         default="res-opd/eval/manifests/paper_chair_describe45_sources.txt",
     )
     parser.add_argument("--indices", default="1-45")
+    parser.add_argument("--label-regex", default="")
     parser.add_argument("--num-jobs", type=int, default=1)
     parser.add_argument("--job-index", type=int, default=0)
     parser.add_argument("--base-port", type=int, default=8600)
@@ -396,10 +397,13 @@ def main():
         manifest = root / manifest
     entries = load_manifest(manifest)
     requested = parse_indices(args.indices)
+    label_pattern = re.compile(args.label_regex) if args.label_regex else None
     selected = [
         row
         for row in entries
-        if row["index"] in requested and (row["index"] - 1) % args.num_jobs == args.job_index
+        if row["index"] in requested
+        and (label_pattern is None or label_pattern.search(row["label"]))
+        and (row["index"] - 1) % args.num_jobs == args.job_index
     ]
     if not selected:
         raise ValueError("No manifest entries matched this partition")

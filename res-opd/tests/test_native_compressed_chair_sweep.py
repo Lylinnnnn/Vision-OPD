@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts" / "tmp"
@@ -22,6 +23,39 @@ BATCH_SPEC.loader.exec_module(BATCH)
 
 
 class NativeCompressedChairSweepTest(unittest.TestCase):
+    def test_strict_new_suffix_summary_filters_to_requested_riskmask_steps(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = root / "sources.txt"
+            manifest.write_text(
+                "1|2b/native_base/sr075|local_base|/models/Qwen3VL-2B-Instruct|||0.75\n"
+                "2|2b/riskmask/tr075/p30/s50|oss_checkpoint|risk2|oss2|global_step_50|1.0\n"
+                "3|8b/riskmask/tr075/p30/s100|oss_checkpoint|risk8|oss8|global_step_100|1.0\n",
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                manifest_out=str(manifest),
+                eval_root=str(root / "eval"),
+                output_suffix="new_official_run",
+                fallback_output_suffix=["chair_official_v2"],
+                no_fallback=True,
+                label_regex=r"^(2b|8b)/riskmask/tr075/",
+                model_root=str(root / "models"),
+                checkpoint_root=str(root / "ckpt"),
+                output_md=str(root / "summary.md"),
+                strict=False,
+            )
+            SWEEP.summarize(args, root)
+            text = (root / "summary.md").read_text(encoding="utf-8")
+            self.assertIn("missing/invalid: **2**", text)
+            self.assertIn("2b/riskmask/tr075/p30/s50", text)
+            self.assertIn("8b/riskmask/tr075/p30/s100", text)
+            self.assertNotIn("2b/native_base/sr075", text)
+            self.assertNotIn("chair_official_v2", text)
+            args.strict = True
+            with self.assertRaisesRegex(RuntimeError, "2 entries are missing"):
+                SWEEP.summarize(args, root)
+
     def test_paper_rows_resolve_to_expected_old_steps(self):
         source_manifest = (
             Path(__file__).resolve().parents[1]

@@ -50,6 +50,8 @@ def parse_args():
         "--eval-root", default="res-opd/eval_results/instruct/full"
     )
     parser.add_argument("--output-suffix", default="chair_native_sweep_official_v2")
+    parser.add_argument("--label-regex", default="")
+    parser.add_argument("--no-fallback", action="store_true")
     parser.add_argument(
         "--fallback-output-suffix",
         action="append",
@@ -191,7 +193,7 @@ def describe_entry(entry):
     return "Res-OPSD (RiskMask)", {"025": "0.25", "05": "0.5", "075": "0.75"}[match.group(1)]
 
 
-def summary_lines(rows, missing, manifest, suffixes):
+def summary_lines(rows, missing, manifest, suffixes, label_regex):
     lines = [
         "# Native Compressed-View CHAIR: All Available Steps", "",
         "All rows use the 1,000-image COCO CHAIR set, `Describe the image.`, and "
@@ -203,6 +205,8 @@ def summary_lines(rows, missing, manifest, suffixes):
         f"{', '.join(f'`{suffix}`' for suffix in suffixes)}. "
         f"Validated: **{len(rows)}**; missing/invalid: **{len(missing)}**.", "",
     ]
+    if label_regex:
+        lines.extend([f"Label filter: `{label_regex}`.", ""])
     grouped = defaultdict(list)
     for row in rows:
         grouped[row["scale"]].append(row)
@@ -257,7 +261,14 @@ def summarize(args, root):
     manifest = accounting.resolve_path(args.manifest_out, root)
     eval_root = accounting.resolve_path(args.eval_root, root)
     entries = accounting.load_manifest(manifest)
-    suffixes = list(dict.fromkeys([args.output_suffix, *args.fallback_output_suffix]))
+    if args.label_regex:
+        label_pattern = re.compile(args.label_regex)
+        entries = [entry for entry in entries if label_pattern.search(entry["label"])]
+    if not entries:
+        raise ValueError("No manifest entries match the label filter")
+    suffixes = list(dict.fromkeys(
+        [args.output_suffix, *([] if args.no_fallback else args.fallback_output_suffix)]
+    ))
     accounting_args = SimpleNamespace(
         expected_prompt=accounting.OFFICIAL_PROMPT,
         expected_samples=1000,
@@ -298,7 +309,9 @@ def summarize(args, root):
         raise RuntimeError(f"{len(missing)} entries are missing or invalid; refusing partial summary")
     output = accounting.resolve_path(args.output_md, root)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(summary_lines(rows, missing, manifest, suffixes), encoding="utf-8")
+    output.write_text(
+        summary_lines(rows, missing, manifest, suffixes, args.label_regex), encoding="utf-8"
+    )
     print(f"Saved {output}; validated={len(rows)}, missing_or_invalid={len(missing)}")
 
 
