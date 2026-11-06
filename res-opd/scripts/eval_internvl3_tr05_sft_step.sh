@@ -7,7 +7,7 @@ script_dir="$(cd "$(dirname "$0")" && pwd)"
 case "$step" in
     all)
         for current_step in 50 100 150 156; do
-            echo "===== InternVL3 tr0.5 low-res SFT global_step_$current_step ====="
+            echo "===== InternVL3 tr0.5 ${INTERNVL_EVAL_EXPERIMENT:-low-res SFT} global_step_$current_step ====="
             bash "$script_dir/eval_internvl3_tr05_sft_step.sh" "$current_step"
         done
         exit 0
@@ -32,8 +32,8 @@ export VLLM_BASE_PORT="${VLLM_BASE_PORT:-9300}"
 export VLLM_PORT_CLEANUP=False VLLM_STARTUP_TIMEOUT="${VLLM_STARTUP_TIMEOUT:-1200}"
 unset EVAL_OUTPUT_DIR VISION_BENCHMARK_OUTPUT_SUFFIX BENCHMARK_OUTPUT_SUFFIX
 
-experiment=Res-OPD-InternVL3-2B-hf-orig-sr1.0-tr0.5-sft-lowres-b32-full5k-e1
-oss_name=ResOPD_InternVL3_2B_hf_orig_sr1.0_tr0.5_sft_lowres_b32_full5k-e1
+experiment="${INTERNVL_EVAL_EXPERIMENT:-Res-OPD-InternVL3-2B-hf-orig-sr1.0-tr0.5-sft-lowres-b32-full5k-e1}"
+oss_name="${INTERNVL_EVAL_OSS_NAME:-ResOPD_InternVL3_2B_hf_orig_sr1.0_tr0.5_sft_lowres_b32_full5k-e1}"
 source_dir="$data_root/ckpt/OPD/v4/$oss_name/global_step_$step"
 oss_dir="${OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4}/$oss_name/global_step_$step"
 output_dir="$res_opd_root/eval_results/internvl3/full/${experiment}_global_step_${step}/train5000_test1000_original_sr1p0/official_v2"
@@ -77,7 +77,7 @@ command -v ossutil >/dev/null || { echo "ossutil is required for local staging" 
 command -v flock >/dev/null || { echo "flock is required for step locking" >&2; exit 1; }
 command -v sha256sum >/dev/null || { echo "sha256sum is required for checkpoint verification" >&2; exit 1; }
 
-stage_root=/tmp/resopd_internvl3_tr05_sft_eval
+stage_root=/tmp/resopd_internvl3_tr05_control_eval
 stage_dir="$stage_root/$experiment/global_step_$step"
 mkdir -p "$stage_dir"
 exec 9>"$stage_root/step_$step.lock"
