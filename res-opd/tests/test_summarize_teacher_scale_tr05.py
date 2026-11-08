@@ -30,6 +30,12 @@ class TeacherScaleTr05Test(unittest.TestCase):
         self.assertEqual(fixed.oss_name,
                          "ResOPD_Qwen3VL_4B_Instruct_orig_sr1.0_tr0.5_a1.0_fixed_rkl_"
                          "teacherQwen3VL_8B_Instruct_b16_rn4_full5k-e1")
+        report = MODULE.render([], [], False, Path("/missing"))
+        self.assertEqual(report.count("| 2B |"), 5)
+        self.assertEqual(report.count("| 4B |"), 4)
+        self.assertIn("tr=0.75 四组改为 tr=0.50", report)
+        self.assertIn("TEACHER_MODE", report)
+        self.assertIn("fixed-rkl-teacherQwen3VL", fixed.experiment)
 
     def test_untrained_and_checkpoint_not_reinferred_are_separate(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -50,12 +56,57 @@ class TeacherScaleTr05Test(unittest.TestCase):
                 rows, issues, mounted = MODULE.collect(oss)
             self.assertTrue(mounted)
             self.assertEqual([row["status"] for row in rows], [
-                "有 checkpoint，待新版 CHAIR 推理", "未训练（规范名称下无 checkpoint）",
+                "有 checkpoint，待新版 CHAIR 推理", "待训练（OSS 无匹配 checkpoint）",
             ])
             self.assertIn(fixed.oss_name, rows[1]["checkpoint"])
             report = MODULE.render(rows, issues, mounted, oss)
             self.assertIn("global_step_50", report)
-            self.assertIn("## 待补清单", report)
+            self.assertIn("## 待训练", report)
+            self.assertIn("## 待推理或补评测", report)
+
+    def test_incomplete_upload_is_not_called_untrained(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            oss = root / "oss"
+            fixed = MODULE.experiment_spec("2B", "4B", "0.5")
+            checkpoint = oss / fixed.oss_name / "global_step_50"
+            checkpoint.mkdir(parents=True)
+            (checkpoint / "config.json").write_text("{}")
+            with patch.object(MODULE.inventory, "ROOT", root), \
+                 patch.object(MODULE, "table_specs", return_value=[
+                     ("2B", "4B fixed", "tr=0.5", fixed),
+                 ]):
+                rows, issues, mounted = MODULE.collect(oss)
+            self.assertEqual(rows[0]["status"], "checkpoint 上传不完整，待核实")
+            self.assertIn(checkpoint, rows[0]["incomplete"])
+
+    def test_possible_alternate_name_is_not_called_untrained(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            oss = root / "oss"
+            fixed = MODULE.experiment_spec("4B", "8B", "0.5")
+            alias = oss / (fixed.oss_name + "_run2")
+            alias.mkdir(parents=True)
+            with patch.object(MODULE.inventory, "ROOT", root), \
+                 patch.object(MODULE, "table_specs", return_value=[
+                     ("4B", "8B fixed", "tr=0.5", fixed),
+                 ]):
+                rows, issues, mounted = MODULE.collect(oss)
+            self.assertEqual(rows[0]["status"], "疑似其他命名，待人工核对")
+            self.assertEqual(rows[0]["aliases"], [alias])
+
+    def test_existing_empty_training_directory_is_not_called_untrained(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            oss = root / "oss"
+            fixed = MODULE.experiment_spec("2B", "4B", "0.5")
+            (oss / fixed.oss_name).mkdir(parents=True)
+            with patch.object(MODULE.inventory, "ROOT", root), \
+                 patch.object(MODULE, "table_specs", return_value=[
+                     ("2B", "4B fixed", "tr=0.5", fixed),
+                 ]):
+                rows, issues, mounted = MODULE.collect(oss)
+            self.assertEqual(rows[0]["status"], "训练目录存在，尚无完整 checkpoint，待核实")
 
     def test_missing_checkpoint_is_not_marked_complete(self):
         spec = MODULE.experiment_spec("2B", "4B", "0.5")
