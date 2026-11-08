@@ -187,15 +187,20 @@ def stage_checkpoint(task, args):
             raise RuntimeError(f"Staged checkpoint size mismatch: {local_weight}")
         sidecar = staged / "model.safetensors.sha256"
         if sidecar.is_file():
-            expected = sidecar.read_text(encoding="utf-8").split()[0].lower()
-            if not re.fullmatch(r"[0-9a-f]{64}", expected):
-                raise RuntimeError(f"Invalid checkpoint SHA256 sidecar: {sidecar}")
-            digest = hashlib.sha256()
-            with local_weight.open("rb") as handle:
-                for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
-                    digest.update(chunk)
-            if digest.hexdigest() != expected:
-                raise RuntimeError(f"Staged checkpoint SHA256 mismatch: {local_weight}")
+            parts = sidecar.read_text(encoding="utf-8").split()
+            if not parts:
+                print(f"WARN {task.key}: empty SHA256 sidecar; checkpoint verified by size only: {sidecar}",
+                      flush=True)
+            else:
+                expected = parts[0].lower()
+                if not re.fullmatch(r"[0-9a-f]{64}", expected):
+                    raise RuntimeError(f"Invalid checkpoint SHA256 sidecar: {sidecar}")
+                digest = hashlib.sha256()
+                with local_weight.open("rb") as handle:
+                    for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+                        digest.update(chunk)
+                if digest.hexdigest() != expected:
+                    raise RuntimeError(f"Staged checkpoint SHA256 mismatch: {local_weight}")
         print(f"STAGE=PASS {task.key}: local checkpoint ready", flush=True)
         yield staged
 

@@ -162,6 +162,28 @@ class ThreeTablesFillResourcesTest(unittest.TestCase):
                 self.assertFalse(staged.exists())
             self.assertEqual(run.call_count, 1)
 
+    def test_empty_sha256_sidecar_does_not_crash_after_size_check(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            task = MODULE.Task("T028", "8B", "0.75", 30, 300, ("pope", "amber"))
+            source = task.checkpoint(root)
+            source.mkdir(parents=True)
+            (source / "model.safetensors").write_bytes(b"checkpoint-contents")
+            (source / "model.safetensors.sha256").write_text("\n")
+            (source / "config.json").write_text("{}")
+            args = SimpleNamespace(oss_mount=root, stage_dir=root)
+
+            def download(command, **_kwargs):
+                Path(command[3]).write_bytes(b"checkpoint-contents")
+
+            with patch.object(MODULE.shutil, "disk_usage", return_value=SimpleNamespace(free=100 * 1024**3)), \
+                 patch.object(MODULE.shutil, "which", return_value="/usr/bin/ossutil"), \
+                 patch.object(MODULE.subprocess, "run", side_effect=download), \
+                 patch("builtins.print") as printed:
+                with MODULE.stage_checkpoint(task, args) as staged:
+                    self.assertEqual((staged / "model.safetensors").read_bytes(), b"checkpoint-contents")
+            self.assertTrue(any("empty SHA256 sidecar" in call.args[0] for call in printed.call_args_list))
+
 
 if __name__ == "__main__":
     unittest.main()
