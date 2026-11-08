@@ -231,6 +231,7 @@ def parser():
     result.add_argument("--data-root", type=Path, default=Path("/data/oss_bucket_0/yanlin"))
     result.add_argument("--output-suffix", default=SUFFIX)
     result.add_argument("--gpu-list", default="0,1,2,3,4,5,6,7")
+    result.add_argument("--eval-shard-count", type=int, default=8)
     result.add_argument("--base-port", type=int, default=8600)
     result.add_argument("--startup-timeout", type=int, default=3600)
     result.add_argument("--transition-wait-seconds", type=int, default=300)
@@ -242,8 +243,8 @@ def preflight(args, tasks, python):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", args.output_suffix):
         raise ValueError("Unsafe output suffix")
     gpus = [value.strip() for value in args.gpu_list.split(",")]
-    if len(gpus) != 8 or len(set(gpus)) != 8:
-        raise ValueError("Exactly eight distinct GPU IDs are required")
+    if args.eval_shard_count < 1 or len(gpus) != args.eval_shard_count or len(set(gpus)) != len(gpus):
+        raise ValueError("--gpu-list must contain exactly --eval-shard-count distinct GPU IDs")
     if not python.is_file() or not shutil.which("tmux"):
         raise RuntimeError("Activate vision-opd and ensure tmux is installed")
     if any(task.scale == "8B" and not complete(task.output(args.output_suffix), task.modes)
@@ -286,7 +287,7 @@ def preflight(args, tasks, python):
         print(f"{task.key} {status}: {checkpoint} -> {output}", flush=True)
         if status == "BLOCK partial":
             raise RuntimeError(f"Inspect existing partial output before rerun: {output}")
-    ports = [args.base_port + index * 10 for index in range(8)]
+    ports = [args.base_port + index * 10 for index in range(args.eval_shard_count)]
     wait_for_release(gpus, ports, args.transition_wait_seconds)
     return gpus, ports
 
@@ -328,7 +329,7 @@ def run_one(args, task, python):
         "VISION_BENCHMARK_OUTPUT_SUFFIX": "",
         "RULE_ONLY_JUDGE": "True",
         "MCQ_EXTRACT_MODE": "official",
-        "EVAL_SHARD_COUNT": "8",
+        "EVAL_SHARD_COUNT": str(args.eval_shard_count),
         "GPU_LIST": args.gpu_list,
         "VLLM_BASE_PORT": str(args.base_port),
         "VLLM_PORT_CLEANUP": "False",

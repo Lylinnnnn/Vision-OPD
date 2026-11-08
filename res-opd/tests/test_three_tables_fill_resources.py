@@ -47,15 +47,15 @@ class ThreeTablesFillResourcesTest(unittest.TestCase):
             for path in (data / "mmstar.json", data / "cv_bench.json"):
                 path.touch()
             args = SimpleNamespace(output_suffix="three_tables_fill_official_v2",
-                                   gpu_list="0,1,2,3,4,5,6,7", data_root=data,
+                                   gpu_list="1,3,5,7", eval_shard_count=4, data_root=data,
                                    transition_wait_seconds=300, startup_timeout=3600, base_port=8600)
             with patch.object(MODULE, "ROOT", root), patch.object(MODULE.shutil, "which", return_value="/bin/tmux"):
                 with patch.object(MODULE.subprocess, "run", return_value=SimpleNamespace(returncode=0)):
                     with patch.object(MODULE, "wait_for_release") as wait:
                         MODULE.preflight(args, [], Path(sys.executable))
             wait.assert_called_once_with(
-                [str(index) for index in range(8)],
-                [8600 + index * 10 for index in range(8)], 300)
+                ["1", "3", "5", "7"],
+                [8600 + index * 10 for index in range(4)], 300)
 
     def test_startup_only_output_is_safe_to_retry(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -81,7 +81,7 @@ class ThreeTablesFillResourcesTest(unittest.TestCase):
             task = MODULE.Task("T014", "8B", "0.25", 30, 50, ("chair",))
             args = SimpleNamespace(output_suffix="three_tables_fill_official_v2",
                                    oss_mount=root, data_root=root,
-                                   gpu_list="0,1,2,3,4,5,6,7", base_port=8600,
+                                   gpu_list="1,3,5,7", eval_shard_count=4, base_port=8600,
                                    startup_timeout=3600)
             output = root / "res-opd/eval_results/instruct/full" / \
                 f"{task.experiment}_global_step_50" / MODULE.DATASET / args.output_suffix
@@ -96,6 +96,8 @@ class ThreeTablesFillResourcesTest(unittest.TestCase):
             self.assertEqual(env["VLLM_ENFORCE_EAGER"], "True")
             self.assertEqual(env["VLLM_MAX_NUM_SEQS"], "8")
             self.assertEqual(env["VLLM_PORT_CLEANUP"], "False")
+            self.assertEqual(env["EVAL_SHARD_COUNT"], "4")
+            self.assertEqual(env["GPU_LIST"], "1,3,5,7")
 
     def test_8b_checkpoint_staged_once_and_cleaned(self):
         with tempfile.TemporaryDirectory() as temporary:
