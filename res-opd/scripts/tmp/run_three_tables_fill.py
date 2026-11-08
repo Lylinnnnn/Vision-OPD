@@ -125,7 +125,10 @@ def complete(output, modes):
         for bench, expected in (("mmstar", 1500), ("cv-bench", 2638)):
             if bench in modes:
                 paths = list((output / bench / "judge").glob("*_answer.jsonl"))
-                if len(paths) != 1 or count_jsonl(paths[0]) != expected:
+                if len(paths) != 1:
+                    return False
+                judged = read_json(paths[0])
+                if not isinstance(judged, list) or len(judged) != expected:
                     return False
         return True
     except (OSError, ValueError, TypeError, KeyError):
@@ -145,6 +148,12 @@ def existing_official_chair(task):
         except (OSError, ValueError, TypeError):
             continue
     return None
+
+
+def retryable_startup_output(output):
+    if not output.is_dir():
+        return False
+    return all(path.name == ".shards" for path in output.iterdir())
 
 
 def resource_state(gpus, ports):
@@ -178,6 +187,7 @@ def parser():
     result.add_argument("--output-suffix", default=SUFFIX)
     result.add_argument("--gpu-list", default="0,1,2,3,4,5,6,7")
     result.add_argument("--base-port", type=int, default=8600)
+    result.add_argument("--startup-timeout", type=int, default=3600)
     result.add_argument("--transition-wait-seconds", type=int, default=300)
     result.add_argument("--preflight-only", action="store_true")
     return result
@@ -191,8 +201,8 @@ def preflight(args, tasks, python):
         raise ValueError("Exactly eight distinct GPU IDs are required")
     if not python.is_file() or not shutil.which("tmux"):
         raise RuntimeError("Activate vision-opd and ensure tmux is installed")
-    if args.transition_wait_seconds < 1:
-        raise ValueError("--transition-wait-seconds must be positive")
+    if args.transition_wait_seconds < 1 or args.startup_timeout < 1:
+        raise ValueError("Wait and startup timeouts must be positive")
     required = (ROOT / "res-opd/data/test_1000.json",
                 ROOT / "res-opd/data/train_5k.parquet",
                 args.data_root / "AMBER",
@@ -221,7 +231,9 @@ def preflight(args, tasks, python):
         if "chair" not in task.modes and not existing_official_chair(task):
             raise RuntimeError(f"{task.key}: matching official CHAIR output not found")
         output = task.output(args.output_suffix)
-        status = "SKIP complete" if complete(output, task.modes) else "NEW" if not output.exists() else "BLOCK partial"
+        status = ("SKIP complete" if complete(output, task.modes) else
+                  "NEW" if not output.exists() else
+                  "RETRY startup-only" if retryable_startup_output(output) else "BLOCK partial")
         print(f"{task.key} {status}: {checkpoint} -> {output}", flush=True)
         if status == "BLOCK partial":
             raise RuntimeError(f"Inspect existing partial output before rerun: {output}")
@@ -235,7 +247,7 @@ def run_one(args, task, python):
     if complete(output, task.modes):
         print(f"SKIP {task.key}: complete", flush=True)
         return
-    if output.exists():
+    if output.exists() and not retryable_startup_output(output):
         raise RuntimeError(f"Partial output requires inspection: {output}")
     free_gib = shutil.disk_usage(ROOT).free / (1024 ** 3)
     if free_gib < 20:
@@ -271,9 +283,15 @@ def run_one(args, task, python):
         "GPU_LIST": args.gpu_list,
         "VLLM_BASE_PORT": str(args.base_port),
         "VLLM_PORT_CLEANUP": "False",
-        "VLLM_STARTUP_TIMEOUT": "1800",
+        "VLLM_STARTUP_TIMEOUT": str(args.startup_timeout),
         "CLEANUP_LOCAL_CKPT": "False",
     })
+    if task.scale == "8B":
+        env.update({
+            "VLLM_ENFORCE_EAGER": "True",
+            "VLLM_MAX_NUM_SEQS": "8",
+            "VLLM_GPU_MEMORY_UTILIZATION": "0.75",
+        })
     command = ["bash", str(ROOT / "res-opd/scripts/eval_after_merge_sharded_8gpu.sh"),
                str(task.checkpoint(args.oss_mount)), "instruct", ",".join(task.modes)]
     print(f"RUN {task.key}: {' '.join(command)}", flush=True)

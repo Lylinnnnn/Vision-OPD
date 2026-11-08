@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -45,7 +46,7 @@ class ThreeTablesFillResourcesTest(unittest.TestCase):
                 path.touch()
             args = SimpleNamespace(output_suffix="three_tables_fill_official_v2",
                                    gpu_list="0,1,2,3,4,5,6,7", data_root=data,
-                                   transition_wait_seconds=300, base_port=8600)
+                                   transition_wait_seconds=300, startup_timeout=3600, base_port=8600)
             with patch.object(MODULE, "ROOT", root), patch.object(MODULE.shutil, "which", return_value="/bin/tmux"):
                 with patch.object(MODULE.subprocess, "run", return_value=SimpleNamespace(returncode=0)):
                     with patch.object(MODULE, "wait_for_release") as wait:
@@ -53,6 +54,45 @@ class ThreeTablesFillResourcesTest(unittest.TestCase):
             wait.assert_called_once_with(
                 [str(index) for index in range(8)],
                 [8600 + index * 10 for index in range(8)], 300)
+
+    def test_startup_only_output_is_safe_to_retry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "eval"
+            output.mkdir()
+            self.assertTrue(MODULE.retryable_startup_output(output))
+            (output / ".shards").mkdir()
+            self.assertTrue(MODULE.retryable_startup_output(output))
+            (output / "chair_metrics.json").touch()
+            self.assertFalse(MODULE.retryable_startup_output(output))
+
+    def test_vision_completion_reads_judge_json_array(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            judge = output / "mmstar/judge/example_answer.jsonl"
+            judge.parent.mkdir(parents=True)
+            judge.write_text(json.dumps([{"judge": "Yes"}] * 1500))
+            self.assertTrue(MODULE.complete(output, ("mmstar",)))
+
+    def test_8b_retry_uses_eager_without_touching_other_jobs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            task = MODULE.Task("T014", "8B", "0.25", 30, 50, ("chair",))
+            args = SimpleNamespace(output_suffix="three_tables_fill_official_v2",
+                                   oss_mount=root, data_root=root,
+                                   gpu_list="0,1,2,3,4,5,6,7", base_port=8600,
+                                   startup_timeout=3600)
+            output = root / "res-opd/eval_results/instruct/full" / \
+                f"{task.experiment}_global_step_50" / MODULE.DATASET / args.output_suffix
+            (output / ".shards").mkdir(parents=True)
+            with patch.object(MODULE, "ROOT", root), \
+                 patch.object(MODULE, "complete", side_effect=[False, True]), \
+                 patch.object(MODULE.shutil, "disk_usage", return_value=SimpleNamespace(free=100 * 1024**3)), \
+                 patch.object(MODULE.subprocess, "run") as run:
+                MODULE.run_one(args, task, Path(sys.executable))
+            env = run.call_args.kwargs["env"]
+            self.assertEqual(env["VLLM_ENFORCE_EAGER"], "True")
+            self.assertEqual(env["VLLM_MAX_NUM_SEQS"], "8")
+            self.assertEqual(env["VLLM_PORT_CLEANUP"], "False")
 
 
 if __name__ == "__main__":
