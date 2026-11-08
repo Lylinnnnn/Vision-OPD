@@ -338,12 +338,13 @@ def render(rows, externals, issues, mounted, oss_root):
              "CHAIR 仅收录 `Describe the image.`、1000 张图、official caption/mention 口径；",
              "POPE 为三个 split 的 macro F1；AMBER 为官方 generative A-CHAIR/A-HAL；",
              "MMStar/CV-Bench 为完整 judge 输出。CHAIR/POPE/MMStar/CV-Bench 显示百分数，AMBER 保留点数。",
+             "Words/img 和 Chars/img 来自最终 `generated_caption`，不是 tokenizer token 数；correct/hall mentions 均包含重复 mention。",
              "`--` 表示未找到可核实的结果，不是零。每个指标均有独立来源，不把旧 CHAIR 与新 CHAIR 混用。",
              "同一指标若有多个不同的有效结果，使用表中来源列所列的优先结果，同时在末尾报告冲突。", "",
              f"OSS 挂载检查：`{oss_root}` {'可用' if mounted else '不可用；不能据此断言缺少训练'}。", "",
              "## 逐 checkpoint 主表", "",
-             "| ID | 家族 | 尺寸 | 方法 | Step | CHAIRi↓ | CHAIRs↓ | ObjF1↑ | POPE F1↑ | A-CHAIR↓ | A-HAL↓ | MMStar↑ | CV-Bench↑ | 状态 |",
-             "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
+             "| ID | 家族 | 尺寸 | 方法 | Step | CHAIRi↓ | CHAIRs↓ | ObjF1↑ | Words/img | Chars/img | Correct mentions | Hall mentions | POPE F1↑ | A-CHAIR↓ | A-HAL↓ | MMStar↑ | CV-Bench↑ | 状态 |",
+             "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
     indexed = []
     for index, row in enumerate(rows + externals, 1):
         row_id = f"M{index:03d}"
@@ -351,16 +352,11 @@ def render(rows, externals, issues, mounted, oss_root):
         spec, values = row["spec"], row["values"]
         cells = [row_id, spec.family, spec.size, spec.method,
                  "--" if row["step"] is None else str(row["step"])]
-        cells += [fmt(values.get(key), key not in ("A-CHAIR", "A-HAL")) for key in METRICS]
+        cells += [fmt(values.get(key), True) for key in METRICS[:3]]
+        cells += [fmt(values.get("words_per_image")), fmt(values.get("chars_per_image")),
+                  str(values.get("correct_mentions", "--")), str(values.get("hall_mentions", "--"))]
+        cells += [fmt(values.get(key), key not in ("A-CHAIR", "A-HAL")) for key in METRICS[3:]]
         lines.append("| " + " | ".join(cells + [row["status"]]) + " |")
-    lines += ["", "## CHAIR 回答长度与对象计数", "",
-              "Words/img 和 Chars/img 来自最终 `generated_caption`，不是 tokenizer token 数；correct/hall mentions 均包含重复 mention。", "",
-              "| ID | Words/img | Chars/img | Correct mentions | Hall mentions |",
-              "| --- | ---: | ---: | ---: | ---: |"]
-    for row_id, row in indexed:
-        values = row["values"]
-        lines.append(f"| {row_id} | {fmt(values.get('words_per_image'))} | {fmt(values.get('chars_per_image'))} | "
-                     f"{values.get('correct_mentions', '--')} | {values.get('hall_mentions', '--')} |")
     lines += ["", "## 待补任务", ""]
     for status, title in (("待训练", "无 checkpoint：待训练"),
                           ("待补推理", "有 checkpoint 或 Base：待补推理"),
