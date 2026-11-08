@@ -284,6 +284,7 @@ def parser():
     result.add_argument("--share-gpus", action="store_true")
     result.add_argument("--shared-gpu-memory-utilization", type=float, default=0.35)
     result.add_argument("--shared-headroom-gib", type=float, default=6.0)
+    result.add_argument("--shared-kv-cache-gib", type=float, default=8.0)
     result.add_argument("--preflight-only", action="store_true")
     return result
 
@@ -302,8 +303,9 @@ def preflight(args, tasks, python):
             raise RuntimeError("8B local staging requires an existing --stage-dir and ossutil")
     if args.transition_wait_seconds < 1 or args.startup_timeout < 1:
         raise ValueError("Wait and startup timeouts must be positive")
-    if args.share_gpus and not (0 < args.shared_gpu_memory_utilization < 1 and args.shared_headroom_gib >= 0):
-        raise ValueError("Shared GPU utilization must be in (0, 1) and headroom must be nonnegative")
+    if args.share_gpus and not (0 < args.shared_gpu_memory_utilization < 1
+                               and args.shared_headroom_gib >= 0 and args.shared_kv_cache_gib > 0):
+        raise ValueError("Shared GPU utilization must be in (0, 1), headroom nonnegative, and KV cache positive")
     required = (ROOT / "res-opd/data/test_1000.json",
                 ROOT / "res-opd/data/train_5k.parquet",
                 args.data_root / "AMBER",
@@ -395,6 +397,7 @@ def run_one(args, task, python):
         })
     if args.share_gpus:
         env["VLLM_GPU_MEMORY_UTILIZATION"] = str(args.shared_gpu_memory_utilization)
+        env["VLLM_KV_CACHE_MEMORY_BYTES"] = str(int(args.shared_kv_cache_gib * 1024**3))
         env["VLLM_ENFORCE_EAGER"] = "True"
         env["VLLM_MAX_NUM_SEQS"] = "8"
     with stage_checkpoint(task, args) as checkpoint:

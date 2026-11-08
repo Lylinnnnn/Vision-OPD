@@ -122,7 +122,8 @@ class ThreeTablesFillResourcesTest(unittest.TestCase):
             args = SimpleNamespace(output_suffix="three_tables_fill_official_v2",
                                    oss_mount=root, data_root=root, gpu_list="0,1,2,3,4,5,6,7",
                                    eval_shard_count=8, base_port=25100, startup_timeout=3600,
-                                   share_gpus=True, shared_gpu_memory_utilization=0.35)
+                                   share_gpus=True, shared_gpu_memory_utilization=0.35,
+                                   shared_kv_cache_gib=8.0)
             task = MODULE.Task("T046", "2B", "0.5", 10, 50, ("chair",))
             with patch.object(MODULE, "ROOT", root), \
                  patch.object(MODULE, "complete", side_effect=[False, True]), \
@@ -132,6 +133,7 @@ class ThreeTablesFillResourcesTest(unittest.TestCase):
                 MODULE.run_one(args, task, Path(sys.executable))
             env = run.call_args.kwargs["env"]
             self.assertEqual(env["VLLM_GPU_MEMORY_UTILIZATION"], "0.35")
+            self.assertEqual(env["VLLM_KV_CACHE_MEMORY_BYTES"], str(8 * 1024**3))
             self.assertEqual(env["VLLM_ENFORCE_EAGER"], "True")
             self.assertEqual(env["VLLM_MAX_NUM_SEQS"], "8")
 
