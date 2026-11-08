@@ -62,6 +62,11 @@ PY
         --benchmark-data-dir "$BENCHMARK_DATA_DIR" >/dev/null || return 1
 }
 
+if [[ "${2:-}" == "--check-complete" ]]; then
+    results_complete
+    exit $?
+fi
+
 if results_complete; then
     echo "Complete evaluation already exists for global_step_$step: $output_dir"
     exit 0
@@ -77,10 +82,10 @@ command -v ossutil >/dev/null || { echo "ossutil is required for local staging" 
 command -v flock >/dev/null || { echo "flock is required for step locking" >&2; exit 1; }
 command -v sha256sum >/dev/null || { echo "sha256sum is required for checkpoint verification" >&2; exit 1; }
 
-stage_root=/tmp/resopd_internvl3_tr05_control_eval
+stage_root="${INTERNVL_STAGE_ROOT:-/tmp/resopd_internvl3_tr05_control_eval}"
 stage_dir="$stage_root/$experiment/global_step_$step"
 mkdir -p "$stage_dir"
-exec 9>"$stage_root/step_$step.lock"
+exec 9>"$stage_root/${experiment}_step_$step.lock"
 flock -n 9 || { echo "This step is already running on this machine" >&2; exit 1; }
 
 for file in "$source_dir"/*; do
