@@ -1,0 +1,8 @@
+# Table 5 teacher-scale controls; only the six requested tr=1.0 CHAIR steps.
+# index|label|source_type|local_experiment|oss_experiment|step|student_ratio
+1|2b/frozen_rkl/tr10/s100|oss_checkpoint|Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr1.0-a1.0-frozen-rkl-b32-rn4-full5k-e1|ResOPD_orig_sr1.0_tr1.0_a1.0_frozen_rkl_b32_rn4_full5k-e1|global_step_100|1.0
+2|2b/frozen_rkl/tr10/s156|oss_checkpoint|Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr1.0-a1.0-frozen-rkl-b32-rn4-full5k-e1|ResOPD_orig_sr1.0_tr1.0_a1.0_frozen_rkl_b32_rn4_full5k-e1|global_step_156|1.0
+3|2b/fixed4b/tr10/s50|oss_checkpoint|Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr1.0-a1.0-fixed-rkl-teacherQwen3VL-4B-Instruct-b32-rn4-full5k-e1|ResOPD_orig_sr1.0_tr1.0_a1.0_fixed_rkl_teacherQwen3VL_4B_Instruct_b32_rn4_full5k-e1|global_step_50|1.0
+4|2b/fixed4b/tr10/s150|oss_checkpoint|Res-OPD-Qwen3VL-2B-Instruct-orig-sr1.0-tr1.0-a1.0-fixed-rkl-teacherQwen3VL-4B-Instruct-b32-rn4-full5k-e1|ResOPD_orig_sr1.0_tr1.0_a1.0_fixed_rkl_teacherQwen3VL_4B_Instruct_b32_rn4_full5k-e1|global_step_150|1.0
+5|4b/fixed8b/tr10/s100|oss_checkpoint|Res-OPD-Qwen3VL-4B-Instruct-orig-sr1.0-tr1.0-a1.0-fixed-rkl-teacherQwen3VL-8B-Instruct-b16-rn4-full5k-e1|ResOPD_Qwen3VL_4B_Instruct_orig_sr1.0_tr1.0_a1.0_fixed_rkl_teacherQwen3VL_8B_Instruct_b16_rn4_full5k-e1|global_step_100|1.0
+6|4b/fixed8b/tr10/s150|oss_checkpoint|Res-OPD-Qwen3VL-4B-Instruct-orig-sr1.0-tr1.0-a1.0-fixed-rkl-teacherQwen3VL-8B-Instruct-b16-rn4-full5k-e1|ResOPD_Qwen3VL_4B_Instruct_orig_sr1.0_tr1.0_a1.0_fixed_rkl_teacherQwen3VL_8B_Instruct_b16_rn4_full5k-e1|global_step_150|1.0
