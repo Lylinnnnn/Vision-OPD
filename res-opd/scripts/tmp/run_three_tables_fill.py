@@ -155,12 +155,18 @@ def resource_state(gpus, ports):
 
 def wait_for_release(gpus, ports, seconds):
     deadline = time.monotonic() + seconds
+    reported_busy = False
     while True:
         busy_ports, busy_gpus = resource_state(gpus, ports)
         if not busy_ports and not busy_gpus:
+            if reported_busy:
+                print("Evaluation resources released; continuing", flush=True)
             return
         if time.monotonic() >= deadline:
-            raise RuntimeError(f"Previous evaluation has not released resources: ports={busy_ports}, GPUs={busy_gpus}")
+            raise RuntimeError(f"Evaluation resources remained busy for {seconds}s: ports={busy_ports}, GPUs={busy_gpus}")
+        if not reported_busy:
+            print(f"Waiting for evaluation resources: ports={busy_ports}, GPUs={busy_gpus}", flush=True)
+            reported_busy = True
         time.sleep(5)
 
 
@@ -220,9 +226,7 @@ def preflight(args, tasks, python):
         if status == "BLOCK partial":
             raise RuntimeError(f"Inspect existing partial output before rerun: {output}")
     ports = [args.base_port + index * 10 for index in range(8)]
-    busy_ports, busy_gpus = resource_state(gpus, ports)
-    if busy_ports or busy_gpus:
-        raise RuntimeError(f"Machine is not idle: ports={busy_ports}, GPUs={busy_gpus}")
+    wait_for_release(gpus, ports, args.transition_wait_seconds)
     return gpus, ports
 
 
