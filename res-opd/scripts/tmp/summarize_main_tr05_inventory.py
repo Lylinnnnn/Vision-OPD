@@ -90,6 +90,14 @@ def jsonl(path):
                 yield json.loads(raw)
 
 
+def read_judge_rows(path):
+    try:
+        rows = read_json(path)
+    except json.JSONDecodeError:
+        rows = list(jsonl(path))
+    return rows if isinstance(rows, list) else []
+
+
 def chair_result(directory):
     metrics_path = directory / "chair_metrics.json"
     rows_path = directory / "eval_results.jsonl"
@@ -161,7 +169,7 @@ def vision_result(directory, benchmark):
     paths += list((directory / "vision_opd/judge" / benchmark).glob("*_answer.jsonl"))
     if len(paths) != 1:
         return None
-    rows = list(jsonl(paths[0]))
+    rows = read_judge_rows(paths[0])
     expected = 1500 if benchmark == "mmstar" else 2638
     if len(rows) != expected or any(str(row.get("judge", "")).strip().lower() not in ("yes", "no") for row in rows):
         return None

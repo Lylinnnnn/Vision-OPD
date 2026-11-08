@@ -59,6 +59,16 @@ class ThreeTableSummaryTests(unittest.TestCase):
             self.assertIn("Response chars/img", md)
             self.assertIn("Hall mentions", md)
 
+    def test_judge_json_array_and_recent_output_priority(self):
+        with tempfile.TemporaryDirectory() as temp:
+            dataset = Path(temp)
+            output = dataset / "three_tables_fill_official_v2"
+            judge = output / "mmstar/judge/model_answer.jsonl"
+            judge.parent.mkdir(parents=True)
+            judge.write_text(json.dumps([{"judge": "Yes"}, {"judge": "No"}]), encoding="utf-8")
+            self.assertEqual(MODULE.result_dirs(dataset)[0], output)
+            self.assertEqual(MODULE.judge_accuracy(output, "mmstar")[0], 0.5)
+
 
 if __name__ == "__main__":
     unittest.main()

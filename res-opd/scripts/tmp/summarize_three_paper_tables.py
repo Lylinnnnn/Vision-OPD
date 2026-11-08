@@ -11,7 +11,7 @@ SCHEMA = "official_chair_caption_and_mention_v1"
 PROMPT = "Describe the image."
 RATIOS = ("0.25", "0.5", "0.75")
 SUFFIXES = (
-    "chair_native_sweep_official_v2", "chair_official_v2",
+    "three_tables_fill_official_v2", "chair_native_sweep_official_v2", "chair_official_v2",
     "chair_describe_image_official", "native_base_official_v2", "official_v2",
 )
 STEP_RE = re.compile(r"^global_step_(\d+)$")
@@ -26,6 +26,14 @@ def read_json(path):
 def read_jsonl(path):
     with path.open(encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
+
+
+def read_judge_rows(path):
+    try:
+        rows = read_json(path)
+    except json.JSONDecodeError:
+        rows = read_jsonl(path)
+    return rows if isinstance(rows, list) else []
 
 
 def final_text(row):
@@ -111,7 +119,7 @@ def judge_accuracy(directory, benchmark):
     paths += sorted(directory.glob(f"vision_opd/judge/{benchmark}/*_answer.jsonl"))
     if len(paths) != 1:
         return None
-    records = read_jsonl(paths[0])
+    records = read_judge_rows(paths[0])
     if not records or any(str(row.get("judge", "")).strip().lower() not in ("yes", "no") for row in records):
         return None
     if benchmark == "cv-bench":

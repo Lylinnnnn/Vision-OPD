@@ -1,4 +1,6 @@
 import runpy
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -8,6 +10,15 @@ MODULE = runpy.run_path(str(SCRIPT))
 
 
 class MainTr05InventoryTest(unittest.TestCase):
+    def test_vision_judge_json_array(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            judge = directory / "mmstar/judge/model_answer.jsonl"
+            judge.parent.mkdir(parents=True)
+            judge.write_text(json.dumps([{"judge": "Yes"}] * 1500), encoding="utf-8")
+            result = MODULE["vision_result"](directory, "mmstar")
+            self.assertEqual(result[0]["MMStar"], 1.0)
+
     def test_chair_accounting_shares_main_table(self):
         row = {
             "spec": MODULE["Spec"]("Qwen3VL", "2B", "Base", "Qwen3VL-2B-Instruct"),
