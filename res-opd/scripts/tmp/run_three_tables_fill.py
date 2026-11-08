@@ -223,6 +223,52 @@ def wait_for_release(gpus, ports, seconds):
         time.sleep(5)
 
 
+def gpu_memory_mib(gpus):
+    result = subprocess.run(
+        ["nvidia-smi", "--query-gpu=index,memory.free,memory.total", "--format=csv,noheader,nounits"],
+        capture_output=True, text=True, check=True,
+    )
+    available = {}
+    for line in result.stdout.splitlines():
+        index, free, total = (part.strip() for part in line.split(","))
+        available[index] = (int(free), int(total))
+    missing = set(gpus) - available.keys()
+    if missing:
+        raise RuntimeError(f"Cannot inspect GPU memory for: {sorted(missing)}")
+    return {gpu: available[gpu] for gpu in gpus}
+
+
+def wait_for_capacity(gpus, ports, seconds, fraction, headroom_gib):
+    deadline = time.monotonic() + seconds
+    reported_busy = False
+    while True:
+        busy_ports = {port: sorted(pids) for port in ports if (pids := listening_pids(port))}
+        memory = gpu_memory_mib(gpus)
+        shortfall = {gpu: {"free_mib": free, "required_mib": int(fraction * total + headroom_gib * 1024)}
+                     for gpu, (free, total) in memory.items()
+                     if free < fraction * total + headroom_gib * 1024}
+        if not busy_ports and not shortfall:
+            if reported_busy:
+                print("Evaluation ports and GPU memory available; continuing", flush=True)
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"Evaluation resources remained busy for {seconds}s: "
+                               f"ports={busy_ports}, GPU memory shortfall={shortfall}")
+        if not reported_busy:
+            print(f"Waiting for evaluation capacity: ports={busy_ports}, "
+                  f"GPU memory shortfall={shortfall}", flush=True)
+            reported_busy = True
+        time.sleep(5)
+
+
+def wait_for_task_resources(args, gpus, ports):
+    if args.share_gpus:
+        wait_for_capacity(gpus, ports, args.transition_wait_seconds,
+                          args.shared_gpu_memory_utilization, args.shared_headroom_gib)
+    else:
+        wait_for_release(gpus, ports, args.transition_wait_seconds)
+
+
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--worker", type=int, choices=(0, 1), required=True)
@@ -235,6 +281,9 @@ def parser():
     result.add_argument("--base-port", type=int, default=8600)
     result.add_argument("--startup-timeout", type=int, default=3600)
     result.add_argument("--transition-wait-seconds", type=int, default=300)
+    result.add_argument("--share-gpus", action="store_true")
+    result.add_argument("--shared-gpu-memory-utilization", type=float, default=0.35)
+    result.add_argument("--shared-headroom-gib", type=float, default=6.0)
     result.add_argument("--preflight-only", action="store_true")
     return result
 
@@ -253,6 +302,8 @@ def preflight(args, tasks, python):
             raise RuntimeError("8B local staging requires an existing --stage-dir and ossutil")
     if args.transition_wait_seconds < 1 or args.startup_timeout < 1:
         raise ValueError("Wait and startup timeouts must be positive")
+    if args.share_gpus and not (0 < args.shared_gpu_memory_utilization < 1 and args.shared_headroom_gib >= 0):
+        raise ValueError("Shared GPU utilization must be in (0, 1) and headroom must be nonnegative")
     required = (ROOT / "res-opd/data/test_1000.json",
                 ROOT / "res-opd/data/train_5k.parquet",
                 args.data_root / "AMBER",
@@ -288,7 +339,7 @@ def preflight(args, tasks, python):
         if status == "BLOCK partial":
             raise RuntimeError(f"Inspect existing partial output before rerun: {output}")
     ports = [args.base_port + index * 10 for index in range(args.eval_shard_count)]
-    wait_for_release(gpus, ports, args.transition_wait_seconds)
+    wait_for_task_resources(args, gpus, ports)
     return gpus, ports
 
 
@@ -342,6 +393,10 @@ def run_one(args, task, python):
             "VLLM_MAX_NUM_SEQS": "8",
             "VLLM_GPU_MEMORY_UTILIZATION": "0.75",
         })
+    if args.share_gpus:
+        env["VLLM_GPU_MEMORY_UTILIZATION"] = str(args.shared_gpu_memory_utilization)
+        env["VLLM_ENFORCE_EAGER"] = "True"
+        env["VLLM_MAX_NUM_SEQS"] = "8"
     with stage_checkpoint(task, args) as checkpoint:
         command = ["bash", str(ROOT / "res-opd/scripts/eval_after_merge_sharded_8gpu.sh"),
                    str(checkpoint), "instruct", ",".join(task.modes)]
@@ -369,7 +424,7 @@ def main():
         raise RuntimeError(f"This shared-filesystem worker queue is already running: {lock}") from error
     try:
         for task in tasks:
-            wait_for_release(gpus, ports, args.transition_wait_seconds)
+            wait_for_task_resources(args, gpus, ports)
             run_one(args, task, python)
         print(f"WORKER_{args.worker}=PASS", flush=True)
     finally:
