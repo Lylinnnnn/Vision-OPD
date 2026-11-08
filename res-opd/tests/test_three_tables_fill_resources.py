@@ -1,8 +1,10 @@
 import importlib.util
+import hashlib
 import json
 import sys
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -86,6 +88,7 @@ class ThreeTablesFillResourcesTest(unittest.TestCase):
             (output / ".shards").mkdir(parents=True)
             with patch.object(MODULE, "ROOT", root), \
                  patch.object(MODULE, "complete", side_effect=[False, True]), \
+                 patch.object(MODULE, "stage_checkpoint", return_value=nullcontext(root / "staged")), \
                  patch.object(MODULE.shutil, "disk_usage", return_value=SimpleNamespace(free=100 * 1024**3)), \
                  patch.object(MODULE.subprocess, "run") as run:
                 MODULE.run_one(args, task, Path(sys.executable))
@@ -93,6 +96,31 @@ class ThreeTablesFillResourcesTest(unittest.TestCase):
             self.assertEqual(env["VLLM_ENFORCE_EAGER"], "True")
             self.assertEqual(env["VLLM_MAX_NUM_SEQS"], "8")
             self.assertEqual(env["VLLM_PORT_CLEANUP"], "False")
+
+    def test_8b_checkpoint_staged_once_and_cleaned(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            task = MODULE.Task("T014", "8B", "0.25", 30, 50, ("chair",))
+            source = task.checkpoint(root)
+            source.mkdir(parents=True)
+            payload = b"checkpoint-contents"
+            (source / "model.safetensors").write_bytes(payload)
+            (source / "model.safetensors.sha256").write_text(hashlib.sha256(payload).hexdigest())
+            (source / "config.json").write_text("{}")
+            args = SimpleNamespace(oss_mount=root, stage_dir=root)
+
+            def download(command, **_kwargs):
+                self.assertEqual(command[:2], ["ossutil", "cp"])
+                Path(command[3]).write_bytes(payload)
+
+            with patch.object(MODULE.shutil, "disk_usage", return_value=SimpleNamespace(free=100 * 1024**3)), \
+                 patch.object(MODULE.shutil, "which", return_value="/usr/bin/ossutil"), \
+                 patch.object(MODULE.subprocess, "run", side_effect=download) as run:
+                with MODULE.stage_checkpoint(task, args) as staged:
+                    self.assertEqual((staged / "model.safetensors").read_bytes(), payload)
+                    self.assertEqual((staged / "config.json").read_text(), "{}")
+                self.assertFalse(staged.exists())
+            self.assertEqual(run.call_count, 1)
 
 
 if __name__ == "__main__":

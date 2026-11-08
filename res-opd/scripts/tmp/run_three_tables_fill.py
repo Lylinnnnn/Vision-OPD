@@ -2,13 +2,16 @@
 """Fill missing evaluations for the three paper control tables, two serial queues."""
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -156,6 +159,47 @@ def retryable_startup_output(output):
     return all(path.name == ".shards" for path in output.iterdir())
 
 
+@contextmanager
+def stage_checkpoint(task, args):
+    source = task.checkpoint(args.oss_mount)
+    if task.scale != "8B":
+        yield source
+        return
+    weight = source / "model.safetensors"
+    size = weight.stat().st_size
+    free = shutil.disk_usage(args.stage_dir).free
+    if free < size + 8 * 1024**3:
+        raise RuntimeError(f"Local stage has only {free / 1024**3:.1f} GiB free; "
+                           f"need {(size + 8 * 1024**3) / 1024**3:.1f} GiB: {args.stage_dir}")
+    if not shutil.which("ossutil"):
+        raise RuntimeError("ossutil is required to stage 8B checkpoints locally")
+    with tempfile.TemporaryDirectory(prefix="resopd_three_tables_8b_", dir=args.stage_dir) as temporary:
+        staged = Path(temporary)
+        for item in source.iterdir():
+            if item.is_file() and item.name != weight.name:
+                shutil.copy2(item, staged / item.name)
+        uri = (f"oss://industry-algo/yanlin/ckpt/OPD/v4/{task.oss_name}/"
+               f"global_step_{task.step}/model.safetensors")
+        print(f"STAGE {task.key}: {uri} -> {staged}", flush=True)
+        subprocess.run(["ossutil", "cp", uri, str(staged / weight.name), "-f"], check=True)
+        local_weight = staged / weight.name
+        if local_weight.stat().st_size != size:
+            raise RuntimeError(f"Staged checkpoint size mismatch: {local_weight}")
+        sidecar = staged / "model.safetensors.sha256"
+        if sidecar.is_file():
+            expected = sidecar.read_text(encoding="utf-8").split()[0].lower()
+            if not re.fullmatch(r"[0-9a-f]{64}", expected):
+                raise RuntimeError(f"Invalid checkpoint SHA256 sidecar: {sidecar}")
+            digest = hashlib.sha256()
+            with local_weight.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != expected:
+                raise RuntimeError(f"Staged checkpoint SHA256 mismatch: {local_weight}")
+        print(f"STAGE=PASS {task.key}: local checkpoint ready", flush=True)
+        yield staged
+
+
 def resource_state(gpus, ports):
     busy_ports = {port: sorted(pids) for port in ports if (pids := listening_pids(port))}
     busy_gpus = gpu_processes(gpus)
@@ -183,6 +227,7 @@ def parser():
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--worker", type=int, choices=(0, 1), required=True)
     result.add_argument("--oss-mount", type=Path, default=Path("/data/oss_bucket_0"))
+    result.add_argument("--stage-dir", type=Path, default=Path("/tmp"))
     result.add_argument("--data-root", type=Path, default=Path("/data/oss_bucket_0/yanlin"))
     result.add_argument("--output-suffix", default=SUFFIX)
     result.add_argument("--gpu-list", default="0,1,2,3,4,5,6,7")
@@ -201,6 +246,10 @@ def preflight(args, tasks, python):
         raise ValueError("Exactly eight distinct GPU IDs are required")
     if not python.is_file() or not shutil.which("tmux"):
         raise RuntimeError("Activate vision-opd and ensure tmux is installed")
+    if any(task.scale == "8B" and not complete(task.output(args.output_suffix), task.modes)
+           for task in tasks):
+        if not args.stage_dir.is_dir() or not shutil.which("ossutil"):
+            raise RuntimeError("8B local staging requires an existing --stage-dir and ossutil")
     if args.transition_wait_seconds < 1 or args.startup_timeout < 1:
         raise ValueError("Wait and startup timeouts must be positive")
     required = (ROOT / "res-opd/data/test_1000.json",
@@ -292,10 +341,11 @@ def run_one(args, task, python):
             "VLLM_MAX_NUM_SEQS": "8",
             "VLLM_GPU_MEMORY_UTILIZATION": "0.75",
         })
-    command = ["bash", str(ROOT / "res-opd/scripts/eval_after_merge_sharded_8gpu.sh"),
-               str(task.checkpoint(args.oss_mount)), "instruct", ",".join(task.modes)]
-    print(f"RUN {task.key}: {' '.join(command)}", flush=True)
-    subprocess.run(command, cwd=ROOT, env=env, check=True)
+    with stage_checkpoint(task, args) as checkpoint:
+        command = ["bash", str(ROOT / "res-opd/scripts/eval_after_merge_sharded_8gpu.sh"),
+                   str(checkpoint), "instruct", ",".join(task.modes)]
+        print(f"RUN {task.key}: {' '.join(command)}", flush=True)
+        subprocess.run(command, cwd=ROOT, env=env, check=True)
     if not complete(output, task.modes):
         raise RuntimeError(f"Evaluation returned success but output is incomplete: {output}")
     print(f"PASS {task.key}", flush=True)
