@@ -24,12 +24,13 @@ from run_three_tables_fill import wait_for_capacity
 
 INTERNVL_VISION = "InternVL3-Base-vision"
 QUEUES = {
-    0: ("M088", "Base-2B", "M021", "M032"),
-    1: ("M005", "M006", "Base-4B", "M041", "M039"),
-    2: ("M014", "M024", "M020", "Base-8B", "M055"),
+    0: ("Base-2B", "M021", "Base-8B", "M032"),
+    1: ("M005", "Base-4B", "M041", "M039"),
+    2: ("M006", "M014", "M024", "M020", "M055"),
     3: ("M018", "M025", "M028", "M064", INTERNVL_VISION),
 }
-TARGET_BY_ID = {target.row_id: target for target in TARGETS if target.method != "OPERA"}
+TARGET_BY_ID = {target.row_id: target for target in TARGETS
+                if target.method not in ("OPERA", "HALC")}
 SPECS = {(spec.size, spec.method): spec for spec in build_specs() if spec.family == "Qwen3VL"}
 DEFAULT_MODEL_ROOT = Path("/home/liuyanlin.lyl/notebook/model")
 DEFAULT_OSS_ROOT = Path("/data/oss_bucket_0/yanlin/ckpt/OPD/v4")
@@ -65,33 +66,11 @@ def output_dir(target_id, eval_root):
     if target_id == INTERNVL_VISION:
         return (eval_root / "internvl3/full/InternVL3-2B-hf" / DATASET /
                 "main_tr05_base_vision_official_v2")
-    if target_id == "M088":
-        return (halc_anchor(target_id, eval_root) or
-                eval_root / "external_baselines/full/Qwen3VL-2B-Instruct" / DATASET /
-                "chair_external_halc_qwen3vl_adapted_official")
     target = TARGET_BY_ID[target_id]
     spec = SPECS[(target.size, target.method)]
     experiment = spec.experiment if target.step is None else f"{spec.experiment}_global_step_{target.step}"
     return (eval_root / "instruct/full" / experiment / DATASET /
             "main_tr05_aux_official_v2")
-
-
-def halc_anchor(target_id, eval_root):
-    return next((directory for directory in target_dirs(TARGET_BY_ID[target_id], eval_root)
-                 if (directory / "halc_config.json").is_file()), None)
-
-
-def halc_command(args, modes, preflight_only=False):
-    anchor = halc_anchor("M088", args.eval_root)
-    if anchor is None:
-        raise FileNotFoundError("HALC official CHAIR anchor/config not found; cannot reuse decoder settings")
-    command = [str(args.python), str(ROOT / "res-opd/baselines/run_external_aux_benchmarks.py"),
-               "--model-path", str(model_path("M088", args.model_root)), "--methods", "halc",
-               "--benchmarks", ",".join(modes), "--halc-dir", str(anchor),
-               "--gpu-list", args.gpu_list, "--base-port", str(args.base_port),
-               "--data-root", str(args.data_root), "--min-free-mib", str(args.halc_min_free_mib),
-               "--wait-seconds", str(args.wait_seconds)]
-    return command + (["--preflight-only"] if preflight_only else [])
 
 
 def preflight(args, jobs):
@@ -121,8 +100,6 @@ def preflight(args, jobs):
                 "model.safetensors", "model.safetensors.index.json",
                 "pytorch_model.bin", "pytorch_model.bin.index.json")):
             raise FileNotFoundError(f"Base model metadata or weights missing: {path}")
-        if target_id == "M088":
-            subprocess.run(halc_command(args, modes, preflight_only=True), cwd=ROOT, check=True)
         if ckpt is not None:
             for name in ("model.safetensors", "config.json"):
                 file = ckpt / name
@@ -192,42 +169,36 @@ def run_one(args, target_id, gpus):
     print(f"WAIT {target_id}: GPUs={','.join(gpus)} ports={ports[0]}..{ports[-1]}", flush=True)
     wait_for_capacity(gpus, ports, args.wait_seconds, args.gpu_memory_utilization, 6.0)
     output = output_dir(target_id, args.eval_root)
-    model = model_path(target_id, args.model_root)
-    if target_id == "M088":
-        command = halc_command(args, modes)
-        print(f"RUN {target_id}: {' '.join(command)}", flush=True)
-        subprocess.run(command, cwd=ROOT, check=True)
-    else:
-        target = TARGET_BY_ID.get(target_id)
-        spec = SPECS[(target.size, target.method)] if target else None
-        experiment = spec.experiment if spec else "InternVL3-2B-hf"
-        if target and target.step is not None:
-            experiment += f"_global_step_{target.step}"
-        env = os.environ.copy()
-        env.update({
-            "PYTHON_BIN": str(args.python), "RES_OPD_DATA_ROOT": str(args.data_root),
-            "BENCHMARK_DATA_DIR": str(args.data_root), "VISION_BENCHMARK_DATA_DIR": str(args.data_root),
-            "AMBER_ROOT": str(args.data_root / "AMBER"), "DATASET_VERSION": "full",
-            "MODEL_PROFILE": "qwen3vl_instruct" if target else "default",
-            "RESULT_VERSION_TAG": "instruct" if target else "internvl3",
-            "EXPERIMENT_NAME_OVERRIDE": experiment, "EVAL_OUTPUT_DIR": str(output),
-            "DEGRADATION_MODE": "original", "STUDENT_RATIO": "1.0",
-            "CHAIR_PROMPT": "Describe the image.", "POPE_SOURCE": "res-opd-test",
-            "POPE_BENCHMARK": "pope_adv,pope_pop,pope_random", "POPE_MAX_SAMPLES": "0",
-            "AMBER_EVAL_TYPE": "a", "AMBER_MAX_SAMPLES": "0",
-            "VISION_BENCHMARK": "mmstar,cv-bench", "VISION_BENCHMARK_AUTO_DOWNLOAD": "False",
-            "VISION_BENCHMARK_REFRESH_PROMPTS": "False", "RULE_ONLY_JUDGE": "True",
-            "MCQ_EXTRACT_MODE": "official", "EVAL_SHARD_COUNT": "8", "GPU_LIST": args.gpu_list,
-            "VLLM_BASE_PORT": str(args.base_port), "VLLM_PORT_CLEANUP": "False",
-            "VLLM_STARTUP_TIMEOUT": str(args.startup_timeout), "VLLM_ENFORCE_EAGER": "True",
-            "VLLM_MAX_NUM_SEQS": "8", "VLLM_GPU_MEMORY_UTILIZATION": str(args.gpu_memory_utilization),
-            "VLLM_KV_CACHE_MEMORY_BYTES": str(8 * 1024**3), "CLEANUP_LOCAL_CKPT": "False",
-        })
-        with staged_checkpoint(target_id, args) as inference_model:
-            command = ["bash", str(ROOT / "res-opd/scripts/eval_after_merge_sharded_8gpu.sh"),
-                       str(inference_model), "instruct" if target else "internvl3", ",".join(modes)]
-            print(f"RUN {target_id}: {' '.join(command)} -> {output}", flush=True)
-            subprocess.run(command, cwd=ROOT, env=env, check=True)
+    target = TARGET_BY_ID.get(target_id)
+    spec = SPECS[(target.size, target.method)] if target else None
+    experiment = spec.experiment if spec else "InternVL3-2B-hf"
+    if target and target.step is not None:
+        experiment += f"_global_step_{target.step}"
+    env = os.environ.copy()
+    env.update({
+        "PYTHON_BIN": str(args.python), "RES_OPD_DATA_ROOT": str(args.data_root),
+        "BENCHMARK_DATA_DIR": str(args.data_root), "VISION_BENCHMARK_DATA_DIR": str(args.data_root),
+        "AMBER_ROOT": str(args.data_root / "AMBER"), "DATASET_VERSION": "full",
+        "MODEL_PROFILE": "qwen3vl_instruct" if target else "default",
+        "RESULT_VERSION_TAG": "instruct" if target else "internvl3",
+        "EXPERIMENT_NAME_OVERRIDE": experiment, "EVAL_OUTPUT_DIR": str(output),
+        "DEGRADATION_MODE": "original", "STUDENT_RATIO": "1.0",
+        "CHAIR_PROMPT": "Describe the image.", "POPE_SOURCE": "res-opd-test",
+        "POPE_BENCHMARK": "pope_adv,pope_pop,pope_random", "POPE_MAX_SAMPLES": "0",
+        "AMBER_EVAL_TYPE": "a", "AMBER_MAX_SAMPLES": "0",
+        "VISION_BENCHMARK": "mmstar,cv-bench", "VISION_BENCHMARK_AUTO_DOWNLOAD": "False",
+        "VISION_BENCHMARK_REFRESH_PROMPTS": "False", "RULE_ONLY_JUDGE": "True",
+        "MCQ_EXTRACT_MODE": "official", "EVAL_SHARD_COUNT": "8", "GPU_LIST": args.gpu_list,
+        "VLLM_BASE_PORT": str(args.base_port), "VLLM_PORT_CLEANUP": "False",
+        "VLLM_STARTUP_TIMEOUT": str(args.startup_timeout), "VLLM_ENFORCE_EAGER": "True",
+        "VLLM_MAX_NUM_SEQS": "8", "VLLM_GPU_MEMORY_UTILIZATION": str(args.gpu_memory_utilization),
+        "VLLM_KV_CACHE_MEMORY_BYTES": str(8 * 1024**3), "CLEANUP_LOCAL_CKPT": "False",
+    })
+    with staged_checkpoint(target_id, args) as inference_model:
+        command = ["bash", str(ROOT / "res-opd/scripts/eval_after_merge_sharded_8gpu.sh"),
+                   str(inference_model), "instruct" if target else "internvl3", ",".join(modes)]
+        print(f"RUN {target_id}: {' '.join(command)} -> {output}", flush=True)
+        subprocess.run(command, cwd=ROOT, env=env, check=True)
     still_missing = pending(target_id, args.eval_root)
     if still_missing:
         raise RuntimeError(f"{target_id} returned success but outputs are still incomplete: {still_missing}")
@@ -250,7 +221,6 @@ def parser():
     result.add_argument("--startup-timeout", type=int, default=2400)
     result.add_argument("--wait-seconds", type=int, default=43200)
     result.add_argument("--gpu-memory-utilization", type=float, default=0.65)
-    result.add_argument("--halc-min-free-mib", type=int, default=50000)
     result.add_argument("--preflight-only", action="store_true")
     return result
 

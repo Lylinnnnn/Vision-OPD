@@ -13,10 +13,15 @@ import run_main_tr05_missing_aux_4machines as batch  # noqa: E402
 class FourMachineAuxTest(unittest.TestCase):
     def test_queue_covers_all_requested_once_excluding_opera(self):
         assigned = [job for queue in batch.QUEUES.values() for job in queue]
-        self.assertEqual([len(queue) for queue in batch.QUEUES.values()], [4, 5, 5, 5])
+        self.assertEqual([len(queue) for queue in batch.QUEUES.values()], [4, 4, 5, 5])
         self.assertEqual(len(assigned), len(set(assigned)))
         self.assertEqual(set(assigned), set(batch.TARGET_BY_ID) | {batch.INTERNVL_VISION})
         self.assertNotIn("OPERA-2B", assigned)
+        self.assertNotIn("M088", assigned)
+        self.assertEqual(len(assigned), 18)
+        workload = lambda job: 2 if job == batch.INTERNVL_VISION else int(batch.TARGET_BY_ID[job].size[0])
+        self.assertEqual([sum(workload(job) for job in queue) for queue in batch.QUEUES.values()],
+                         [22, 22, 20, 20])
 
     def test_checkpoint_and_output_are_exact_for_8b_step(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -30,8 +35,6 @@ class FourMachineAuxTest(unittest.TestCase):
             self.assertIn("global_step_250", str(output))
             self.assertEqual(batch.output_dir(batch.INTERNVL_VISION, root / "eval").name,
                              "main_tr05_base_vision_official_v2")
-            self.assertEqual(batch.output_dir("M088", root / "eval").name,
-                             "chair_external_halc_qwen3vl_adapted_official")
 
     def test_pending_checks_each_benchmark_independently(self):
         with tempfile.TemporaryDirectory() as temporary:
