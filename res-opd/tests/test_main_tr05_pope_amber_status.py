@@ -88,6 +88,39 @@ class PopeAmberStatusTest(unittest.TestCase):
         self.assertEqual(len({target.row_id for target in audit.TARGETS}), 19)
         self.assertIn(audit.Target("M064", "8B", "EntropyMask", 250), audit.TARGETS)
 
+    def test_internvl_base_vision_statuses_and_legacy_directory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            legacy = root / "internvl/full/InternVL3-2B-hf/base_chair_original_1000_8gpu"
+            legacy.mkdir(parents=True)
+            directories = audit.internvl_base_dirs(root)
+            self.assertIn(legacy, directories)
+            self.assertEqual(audit.inspect_vision_all(directories, "mmstar", 2).state, "未推理")
+            answer = legacy / "vision_opd/model_answer/mmstar/base_seed42_answer.jsonl"
+            write_rows(answer, [{"question_id": 1, "model_answer": "A"},
+                                {"question_id": 2, "model_answer": "B"}])
+            result = audit.inspect_vision_all(directories, "mmstar", 2)
+            self.assertEqual(result.state, "已推理待计算")
+            judge = legacy / "vision_opd/judge/mmstar/base_seed42_answer.jsonl"
+            write_rows(judge, [{"judge": "yes"}, {"judge": "no"}])
+            result = audit.inspect_vision_all(directories, "mmstar", 2)
+            self.assertEqual(result.state, "已推理有结果")
+            self.assertEqual(result.values, ("50.00",))
+            self.assertIn("MMStar", audit.render([], [("mmstar", result)]))
+
+    def test_internvl_base_vision_shard_answers_are_not_missing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            canonical = root / "internvl3/full/InternVL3-2B-hf" / audit.DATASET / "official_v2"
+            write_rows(canonical / ".shards/run/shard_00/out/cv-bench/model_answer/base_answer.jsonl",
+                       [{"question_id": 1, "model_answer": "A"}])
+            result = audit.inspect_vision_all(audit.internvl_base_dirs(root), "cv-bench", 2)
+            self.assertEqual(result.state, "推理未完成")
+            write_rows(canonical / ".shards/run/shard_01/out/cv-bench/model_answer/base_answer.jsonl",
+                       [{"question_id": 2, "model_answer": "B"}])
+            result = audit.inspect_vision_all(audit.internvl_base_dirs(root), "cv-bench", 2)
+            self.assertEqual(result.state, "已推理待合并计算")
+
 
 if __name__ == "__main__":
     unittest.main()

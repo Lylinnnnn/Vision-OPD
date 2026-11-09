@@ -15,6 +15,7 @@ from summarize_main_tr05_inventory import DATASET, ROOT, build_specs
 SPLITS = ("pope_adv", "pope_pop", "pope_random")
 EXPECTED_POPE = 5223
 EXPECTED_AMBER = 15220
+VISION_EXPECTED = {"mmstar": 1500, "cv-bench": 2638}
 BAD_PREFIXES = ("[ERROR]", "[API_ERROR]", "[FUTURE_ERROR]")
 EXTERNAL_SUFFIX = {
     "HALC": "chair_external_halc_qwen3vl_adapted_official",
@@ -266,6 +267,85 @@ def inspect_all(directories, benchmark, expected):
         ("--",) if benchmark == "pope" else ("--", "--")))
 
 
+def vision_rows(path):
+    try:
+        rows = read_json(path)
+    except json.JSONDecodeError:
+        with path.open(encoding="utf-8") as stream:
+            rows = [json.loads(line) for line in stream if line.strip()]
+    if isinstance(rows, dict):
+        return [rows]
+    return rows if isinstance(rows, list) else []
+
+
+def vision_files(directory, benchmark, stage):
+    return sorted(set((directory / benchmark / stage).glob("*_answer.jsonl")) |
+                  set((directory / "vision_opd" / stage / benchmark).glob("*_answer.jsonl")))
+
+
+def inspect_vision(directory, benchmark, expected):
+    answers = vision_files(directory, benchmark, "model_answer")
+    judges = vision_files(directory, benchmark, "judge")
+    if len(answers) > 1 or len(judges) > 1:
+        return Inspection("结果冲突需核验", "--/--", ("--",), directory,
+                          "同一目录下有多个原始回答或 judge 文件")
+    raw_rows = vision_rows(answers[0]) if answers else []
+    judge_rows = vision_rows(judges[0]) if judges else []
+    raw_ids = [next((f"{key}:{row[key]}" for key in ("sample_uid", "uid", "index", "question_id", "id")
+                    if row.get(key) is not None), None) for row in raw_rows if isinstance(row, dict)]
+    raw_good = len(raw_rows) == expected and all(
+        isinstance(row, dict) and
+        str(row.get("model_answer") or "").strip() and
+        not str(row["model_answer"]).startswith(BAD_PREFIXES)
+        for row in raw_rows
+    ) and (not all(raw_ids) or len(set(raw_ids)) == expected)
+    judge_good = len(judge_rows) == expected and all(
+        isinstance(row, dict) and str(row.get("judge", "")).strip().lower() in ("yes", "no")
+        for row in judge_rows
+    )
+    count = f"{len(raw_rows)}/{len(judge_rows)}"
+    if raw_good and judge_good:
+        accuracy = sum(str(row["judge"]).strip().lower() == "yes" for row in judge_rows) / expected
+        return Inspection("已推理有结果", count, (f"{accuracy * 100:.2f}",), judges[0])
+    if raw_good:
+        return Inspection("已推理待计算", count, ("--",), answers[0], "原始回答齐全，judge 缺失或无效")
+    if raw_rows or judge_rows:
+        return Inspection("推理未完成" if raw_rows else "指标孤立需核验", count, ("--",),
+                          answers[0] if answers else judges[0], "原始回答或 judge 未齐全")
+    return Inspection("未推理", count, ("--",), directory)
+
+
+def internvl_base_dirs(eval_root):
+    canonical = eval_root / "internvl3/full/InternVL3-2B-hf" / DATASET
+    legacy = eval_root / "internvl/full/InternVL3-2B-hf/base_chair_original_1000_8gpu"
+    return (output_dirs(canonical) or [canonical]) + (output_dirs(legacy) or [legacy])
+
+
+def inspect_vision_all(directories, benchmark, expected):
+    priority = {"已推理有结果": 6, "已推理待计算": 5, "已推理待合并计算": 4,
+                "推理未完成": 3,
+                "指标孤立需核验": 2, "结果冲突需核验": 1, "未推理": 0}
+    candidates = []
+    for directory in directories:
+        try:
+            result = inspect_vision(directory, benchmark, expected)
+            candidates.append(result)
+            if result.state not in ("已推理有结果", "已推理待计算"):
+                for run, outputs in shard_outputs(directory):
+                    rows = []
+                    for output in outputs:
+                        for path in vision_files(output, benchmark, "model_answer"):
+                            rows.extend(vision_rows(path))
+                    if rows:
+                        state = "已推理待合并计算" if len(rows) == expected else "推理未完成"
+                        candidates.append(Inspection(state, f"{len(rows)}/0", ("--",), run,
+                                                     "仅发现 shard 原始回答"))
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            candidates.append(Inspection("读取失败", "--/--", ("--",), directory, str(error)))
+    return max(candidates, key=lambda item: priority.get(item.state, -1), default=Inspection(
+        "未推理", "0/0", ("--",)))
+
+
 def output_dirs(dataset):
     if not dataset.is_dir():
         return []
@@ -317,7 +397,7 @@ def checkpoint(target, oss_root):
     return f"未找到完整 checkpoint: {path}"
 
 
-def render(rows):
+def render(rows, vision_results=()):
     lines = ["# tr=0.50 主表指定行：POPE / AMBER 状态核查", "",
              "仅检查原图 student 评测；Base 和 external 使用原始 Base 模型。",
              "POPE 原始结果需三个 split 各 5223 条；AMBER(a) 需 15220 条原始回答与官方响应。",
@@ -335,6 +415,14 @@ def render(rows):
     for target, _, pope, amber in rows:
         lines.append(f"- {target.row_id} POPE: `{pope.source or '--'}`; {pope.detail or pope.state}; "
                      f"AMBER: `{amber.source or '--'}`; {amber.detail or amber.state}")
+    lines += ["", "## InternVL3-2B Base：MMStar / CV-Bench", "",
+              "Base 使用原图；Raw/Judge 为各自完整 benchmark 的回答与判分条数。", "",
+              "| Benchmark | 状态 | Raw/Judge | Acc. (%) | 证据路径 |",
+              "| --- | --- | ---: | ---: | --- |"]
+    for benchmark, result in vision_results:
+        label = "MMStar" if benchmark == "mmstar" else "CV-Bench"
+        lines.append(f"| {label} | {result.state} | {result.count} | {result.values[0]} | "
+                     f"`{result.source or '--'}` |")
     return "\n".join(lines) + "\n"
 
 
@@ -357,8 +445,13 @@ def main():
         counts[("AMBER", amber.state)] += 1
         print(f"{target.row_id:9} {target.size:2} {target.method:12} step={target.step or '--':>3} "
               f"POPE={pope.state}({pope.count}) AMBER={amber.state}({amber.count})")
+    vision_results = []
+    for benchmark, expected in VISION_EXPECTED.items():
+        result = inspect_vision_all(internvl_base_dirs(args.eval_root), benchmark, expected)
+        vision_results.append((benchmark, result))
+        print(f"InternVL3-2B Base {benchmark}: {result.state} ({result.count}); Acc={result.values[0]}")
     args.output_md.parent.mkdir(parents=True, exist_ok=True)
-    args.output_md.write_text(render(rows), encoding="utf-8")
+    args.output_md.write_text(render(rows, vision_results), encoding="utf-8")
     print(f"WROTE {args.output_md}")
     for (benchmark, state), count in sorted(counts.items()):
         print(f"{benchmark}: {state}={count}")
