@@ -147,6 +147,8 @@ def preflight(args, jobs):
         raise ValueError("--gpu-memory-utilization must be between zero and one")
     if args.gpu_headroom_gib < 0:
         raise ValueError("--gpu-headroom-gib must be nonnegative")
+    if args.kv_cache_gib <= 0:
+        raise ValueError("--kv-cache-gib must be positive")
     for required in (ROOT / "res-opd/data/train_5k.parquet", ROOT / "res-opd/data/test_1000.json"):
         if not required.is_file():
             raise FileNotFoundError(required)
@@ -298,7 +300,8 @@ def run_one(args, target_id, candidates):
                 "VLLM_BASE_PORT": str(args.base_port), "VLLM_PORT_CLEANUP": "False",
                 "VLLM_STARTUP_TIMEOUT": str(args.startup_timeout), "VLLM_ENFORCE_EAGER": "True",
                 "VLLM_MAX_NUM_SEQS": "8", "VLLM_GPU_MEMORY_UTILIZATION": str(utilization),
-                "VLLM_KV_CACHE_MEMORY_BYTES": str(8 * 1024**3), "CLEANUP_LOCAL_CKPT": "False",
+                "VLLM_KV_CACHE_MEMORY_BYTES": str(args.kv_cache_gib * 1024**3),
+                "CLEANUP_LOCAL_CKPT": "False",
             })
             print(f"RUN {target_id}: {' '.join(command)} -> {output}", flush=True)
             started = time.time()
@@ -341,6 +344,8 @@ def parser():
     result.add_argument("--startup-timeout", type=int, default=2400)
     result.add_argument("--gpu-memory-utilization", type=float, default=0.65)
     result.add_argument("--gpu-headroom-gib", type=float, default=6.0)
+    result.add_argument("--kv-cache-gib", type=int, default=8,
+                        help="Per-shard vLLM KV cache in GiB; default preserves prior runs")
     result.add_argument("--accept-amber-error-rows", action="store_true",
                         help="Accept scored legacy AMBER outputs with logged error rows as provisional")
     result.add_argument("--preflight-only", action="store_true")

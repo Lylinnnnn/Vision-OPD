@@ -139,6 +139,7 @@ class FourMachineAuxTest(unittest.TestCase):
             args = SimpleNamespace(eval_root=Path(temporary), model_root=Path(temporary),
                                    data_root=Path(temporary), python=Path("/tmp/python3"),
                                    base_port=28100, startup_timeout=2400,
+                                   kv_cache_gib=6,
                                    accept_amber_error_rows=False)
             with mock.patch.object(batch, "pending", side_effect=[("pope",), ()]), \
                     mock.patch.object(batch, "staged_checkpoint", side_effect=staged), \
@@ -148,6 +149,8 @@ class FourMachineAuxTest(unittest.TestCase):
         self.assertEqual(events, ["staged", "scanned"])
         self.assertEqual(run.call_args.kwargs["env"]["GPU_LIST"], "0,2")
         self.assertEqual(run.call_args.kwargs["env"]["EVAL_SHARD_COUNT"], "2")
+        self.assertEqual(run.call_args.kwargs["env"]["VLLM_KV_CACHE_MEMORY_BYTES"],
+                         str(6 * 1024**3))
 
 
 if __name__ == "__main__":
