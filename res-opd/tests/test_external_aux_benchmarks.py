@@ -4,6 +4,7 @@ import io
 import json
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +27,33 @@ AUX = load_module("run_external_aux_benchmarks_test", BASELINES / "run_external_
 
 
 class ExternalAuxBenchmarksTest(unittest.TestCase):
+    def test_benchmark_selection(self):
+        self.assertEqual(AUX.parse_benchmarks("pope,amber"), ("pope", "amber"))
+        for value in ("", "pope,pope", "chair"):
+            with self.assertRaises(ValueError):
+                AUX.parse_benchmarks(value)
+
+    def test_qwen_4b_8b_preflight_for_pope_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data = root / "data"
+            (data / "COCO/coco2017val").mkdir(parents=True)
+            repo = root / "repo"
+            (repo / "data").mkdir(parents=True)
+            (repo / "data/test_1000.json").write_text("[]")
+            for size in ("4B", "8B"):
+                model = root / f"Qwen3VL-{size}-Instruct"
+                model.mkdir()
+                (model / "config.json").write_text("{}")
+                (model / "model.safetensors.index.json").write_text("{}")
+                args = SimpleNamespace(model_path=model, data_root=data,
+                                       detector_config=root / "unused")
+                with patch.object(AUX, "RES_OPD", repo), \
+                     patch.object(AUX, "result_dir", return_value=root / "chair"), \
+                     patch.object(AUX, "validate_chair_anchor", return_value=({}, 128)):
+                    result = AUX.validate_inputs(args, ["opera"], ("pope",))
+                self.assertEqual(result["opera"][2], 128)
+
     def test_parse_multimodal_request(self):
         image = b"test-image"
         payload = {
@@ -143,6 +171,40 @@ class ExternalAuxBenchmarksTest(unittest.TestCase):
                               15220 if "amber" in str(path) else
                               5223 if "pope" in str(path) else 1):
                 AUX.validate_merged(root, model_id)
+
+    def test_selected_benchmarks_do_not_require_vision_results(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "pope").mkdir()
+            (root / "pope/pope_summary.json").write_text(json.dumps({
+                "benchmarks": {name: {} for name in AUX.POPE_SPLITS},
+            }))
+            (root / "amber").mkdir()
+            (root / "amber/amber_metrics.json").write_text(json.dumps({
+                "official_returncode": 0, "evaluation_type": "a",
+            }))
+            with patch.object(AUX, "count_jsonl", side_effect=lambda path, _field=None:
+                             15220 if "amber" in str(path) else 5223):
+                AUX.validate_merged(root, "external-opera-Qwen3VL-4B-Instruct",
+                                    ("pope", "amber"))
+
+    def test_pope_amber_selection_does_not_launch_vision_eval(self):
+        class FinishedProcess:
+            def wait(self):
+                return 0
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "shard_00").mkdir()
+            args = SimpleNamespace(base_port=24100, data_root=root)
+            with patch.object(AUX.subprocess, "Popen", return_value=FinishedProcess()) as popen:
+                AUX.evaluate_shard(args, "opera", root, 0, 8,
+                                   "external-opera-Qwen3VL-4B-Instruct", 8192,
+                                   set(), threading.Lock(), ("pope", "amber"))
+            commands = [call.args[0] for call in popen.call_args_list]
+            self.assertEqual(len(commands), 2)
+            self.assertTrue(commands[0][1].endswith("eval_pope.py"))
+            self.assertTrue(commands[1][1].endswith("eval_amber.py"))
 
     def test_capacity_wait_does_not_kill_busy_jobs(self):
         capacity = sys.modules["wait_eval_capacity"]

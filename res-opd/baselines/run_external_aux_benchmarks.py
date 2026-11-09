@@ -30,6 +30,15 @@ METHOD_SUFFIX = {
 }
 POPE_SPLITS = ("pope_adv", "pope_pop", "pope_random")
 VISION_COUNTS = {"mmstar": 1500, "cv-bench": 2638}
+BENCHMARKS = ("pope", "amber", "mmstar", "cv-bench")
+SUPPORTED_MODELS = {f"Qwen3VL-{size}-Instruct" for size in ("2B", "4B", "8B")}
+
+
+def parse_benchmarks(value):
+    names = tuple(item.strip() for item in value.split(","))
+    if not names or len(names) != len(set(names)) or any(name not in BENCHMARKS for name in names):
+        raise ValueError(f"--benchmarks must be distinct names from {', '.join(BENCHMARKS)}")
+    return names
 
 
 def read_json(path):
@@ -102,25 +111,34 @@ def validate_chair_anchor(directory, method, model_path):
     return config, max_tokens
 
 
-def validate_inputs(args, methods):
-    if args.model_path.name != "Qwen3VL-2B-Instruct":
-        raise ValueError("This run is pinned to Qwen3VL-2B-Instruct")
+def validate_inputs(args, methods, benchmarks=BENCHMARKS):
+    if args.model_path.name not in SUPPORTED_MODELS:
+        raise ValueError(f"Unsupported model: {args.model_path.name}")
     if not (args.model_path / "config.json").is_file():
         raise FileNotFoundError(args.model_path / "config.json")
     if not any((args.model_path / name).is_file() for name in (
             "model.safetensors", "model.safetensors.index.json", "pytorch_model.bin", "pytorch_model.bin.index.json")):
         raise FileNotFoundError(f"Model weights not found under {args.model_path}")
-    for path in (RES_OPD / "data/test_1000.json", args.data_root / "AMBER/data/query/query_all.json",
-                 args.data_root / "mmstar.json", args.data_root / "cv_bench.json"):
+    required = []
+    if "pope" in benchmarks:
+        required.append(RES_OPD / "data/test_1000.json")
+    if "amber" in benchmarks:
+        required.append(args.data_root / "AMBER/data/query/query_all.json")
+    if "mmstar" in benchmarks:
+        required.append(args.data_root / "mmstar.json")
+    if "cv-bench" in benchmarks:
+        required.append(args.data_root / "cv_bench.json")
+    for path in required:
         if not path.is_file():
             raise FileNotFoundError(path)
-    if not (args.data_root / "COCO/coco2017val").is_dir():
+    if "pope" in benchmarks and not (args.data_root / "COCO/coco2017val").is_dir():
         raise FileNotFoundError(args.data_root / "COCO/coco2017val")
-    import nltk
-    from nltk.stem import WordNetLemmatizer
-    nltk.word_tokenize("A dog runs.")
-    nltk.pos_tag(["A", "dog", "runs"])
-    WordNetLemmatizer().lemmatize("dogs")
+    if "amber" in benchmarks:
+        import nltk
+        from nltk.stem import WordNetLemmatizer
+        nltk.word_tokenize("A dog runs.")
+        nltk.pos_tag(["A", "dog", "runs"])
+        WordNetLemmatizer().lemmatize("dogs")
     if "halc" in methods and not args.detector_config.is_file():
         raise FileNotFoundError(args.detector_config)
     configs = {}
@@ -188,31 +206,34 @@ def stop_servers(processes):
 
 
 def evaluate_shard(args, method, shard_root, index, count, model_id, max_tokens,
-                   active_processes, active_lock):
+                   active_processes, active_lock, benchmarks):
     shard = shard_root / f"shard_{index:02d}"
     output = shard / "out"
     port = args.base_port + index * 10
     api = f"http://127.0.0.1:{port}/v1/"
     log_path = shard / "eval.log"
-    commands = [
-        [sys.executable, str(RES_OPD / "eval/eval_pope.py"),
-         "--api-base", api, "--model-name", model_id,
-         "--test-json", str(RES_OPD / "data/test_1000.json"),
-         "--benchmark", ",".join(POPE_SPLITS), "--pope-source", "res-opd-test",
-         "--output-dir", str(output), "--parallel-workers", "1",
-         "--max-new-tokens", str(max_tokens), "--shard-count", str(count),
-         "--shard-index", str(index), "--max-retries", "1"],
-        [sys.executable, str(RES_OPD / "eval/eval_amber.py"),
-         "--api-base", api, "--model-name", model_id,
-         "--amber-root", str(args.data_root / "AMBER"),
-         "--output-dir", str(output), "--evaluation-type", "a",
-         "--parallel-workers", "1", "--max-retries", "1",
-         "--max-new-tokens-generative", str(max_tokens),
-         "--max-new-tokens-discriminative", str(max_tokens),
-         "--shard-count", str(count), "--shard-index", str(index),
-         "--skip-official-eval"],
-        ["bash", str(ROOT / "eval/run_eval.sh")],
-    ]
+    commands = []
+    if "pope" in benchmarks:
+        commands.append([sys.executable, str(RES_OPD / "eval/eval_pope.py"),
+                         "--api-base", api, "--model-name", model_id,
+                         "--test-json", str(RES_OPD / "data/test_1000.json"),
+                         "--benchmark", ",".join(POPE_SPLITS), "--pope-source", "res-opd-test",
+                         "--output-dir", str(output), "--parallel-workers", "1",
+                         "--max-new-tokens", str(max_tokens), "--shard-count", str(count),
+                         "--shard-index", str(index), "--max-retries", "1"])
+    if "amber" in benchmarks:
+        commands.append([sys.executable, str(RES_OPD / "eval/eval_amber.py"),
+                         "--api-base", api, "--model-name", model_id,
+                         "--amber-root", str(args.data_root / "AMBER"),
+                         "--output-dir", str(output), "--evaluation-type", "a",
+                         "--parallel-workers", "1", "--max-retries", "1",
+                         "--max-new-tokens-generative", str(max_tokens),
+                         "--max-new-tokens-discriminative", str(max_tokens),
+                         "--shard-count", str(count), "--shard-index", str(index),
+                         "--skip-official-eval"])
+    vision_benches = [bench for bench in VISION_COUNTS if bench in benchmarks]
+    if vision_benches:
+        commands.append(["bash", str(ROOT / "eval/run_eval.sh")])
     env = os.environ.copy()
     env.update({
         "PYTHON_BIN": sys.executable, "RES_OPD_DATA_ROOT": str(args.data_root),
@@ -221,7 +242,7 @@ def evaluate_shard(args, method, shard_root, index, count, model_id, max_tokens,
         "BENCHMARK_REFRESH_PROMPTS": "False", "BENCHMARK_SKIP_JUDGE": "True",
         "BENCHMARK_OUTPUT_SUFFIX": "", "SEED": "42",
         "API_BASE": api, "OPENAI_MODEL_ID": model_id, "MODEL_NAME": model_id,
-        "BENCHMARK": "mmstar,cv-bench", "BENCHMARK_OUTPUT_LAYOUT": "per_benchmark",
+        "BENCHMARK": ",".join(vision_benches), "BENCHMARK_OUTPUT_LAYOUT": "per_benchmark",
         "OUT_DIR": str(output), "JUDGE_DIR": str(output),
         "RULE_ONLY_JUDGE": "True", "MCQ_EXTRACT_MODE": "official",
         "MAX_TOKENS": str(max_tokens), "MAX_RETRIES": "1", "PARALLEL_WORKERS": "1",
@@ -246,18 +267,22 @@ def evaluate_shard(args, method, shard_root, index, count, model_id, max_tokens,
     return index
 
 
-def validate_merged(directory, model_id):
-    pope = read_json(directory / "pope/pope_summary.json")
-    for split in POPE_SPLITS:
-        if split not in pope.get("benchmarks", {}) or count_jsonl(
-                directory / "pope" / split / "eval_results.jsonl", "model_answer") != 5223:
-            raise RuntimeError(f"Incomplete POPE {split}: {directory}")
-    amber = read_json(directory / "amber/amber_metrics.json")
-    if amber.get("official_returncode") != 0 or amber.get("evaluation_type") != "a":
-        raise RuntimeError(f"Incomplete official AMBER: {directory}")
-    if count_jsonl(directory / "amber/raw_results.jsonl", "model_answer") != 15220:
-        raise RuntimeError(f"Incomplete AMBER raw results: {directory}")
+def validate_merged(directory, model_id, benchmarks=BENCHMARKS):
+    if "pope" in benchmarks:
+        pope = read_json(directory / "pope/pope_summary.json")
+        for split in POPE_SPLITS:
+            if split not in pope.get("benchmarks", {}) or count_jsonl(
+                    directory / "pope" / split / "eval_results.jsonl", "model_answer") != 5223:
+                raise RuntimeError(f"Incomplete POPE {split}: {directory}")
+    if "amber" in benchmarks:
+        amber = read_json(directory / "amber/amber_metrics.json")
+        if amber.get("official_returncode") != 0 or amber.get("evaluation_type") != "a":
+            raise RuntimeError(f"Incomplete official AMBER: {directory}")
+        if count_jsonl(directory / "amber/raw_results.jsonl", "model_answer") != 15220:
+            raise RuntimeError(f"Incomplete AMBER raw results: {directory}")
     for bench, expected in VISION_COUNTS.items():
+        if bench not in benchmarks:
+            continue
         answer = directory / bench / "model_answer" / f"{model_id}_seed42_answer.jsonl"
         judge = directory / bench / "judge" / f"{model_id}_seed42_answer.jsonl"
         judged = read_json(judge)
@@ -267,18 +292,19 @@ def validate_merged(directory, model_id):
             raise RuntimeError(f"Invalid judge output for {bench}: {judge}")
 
 
-def run_method(args, method, directory, max_tokens, gpus):
+def run_method(args, method, directory, max_tokens, gpus, benchmarks):
     model_id = f"external-{method}-{args.model_path.name}"
     try:
-        validate_merged(directory, model_id)
+        validate_merged(directory, model_id, benchmarks)
     except (OSError, ValueError, RuntimeError, KeyError):
         pass
     else:
-        print(f"SKIP method={method}: all four auxiliary benchmarks complete", flush=True)
+        print(f"SKIP method={method}: {','.join(benchmarks)} complete", flush=True)
         return
     ports = [args.base_port + index * 10 for index in range(len(gpus))]
     wait_for_capacity(gpus, ports, args.min_free_mib, args.wait_seconds)
-    shard_root = directory / ".aux_shards" / "external_aux_v1"
+    shard_name = "external_aux_v1" if tuple(benchmarks) == BENCHMARKS else "external_aux_" + "_".join(benchmarks)
+    shard_root = directory / ".aux_shards" / shard_name
     shard_root.mkdir(parents=True, exist_ok=True)
     lock_file = (shard_root / "run.lock").open("a")
     try:
@@ -287,12 +313,12 @@ def run_method(args, method, directory, max_tokens, gpus):
         lock_file.close()
         raise RuntimeError(f"Auxiliary evaluation already running: {shard_root}") from error
     try:
-        run_method_locked(args, method, directory, max_tokens, gpus, shard_root)
+        run_method_locked(args, method, directory, max_tokens, gpus, shard_root, benchmarks)
     finally:
         lock_file.close()
 
 
-def run_method_locked(args, method, directory, max_tokens, gpus, shard_root):
+def run_method_locked(args, method, directory, max_tokens, gpus, shard_root, benchmarks):
     model_id = f"external-{method}-{args.model_path.name}"
     config_path = shard_root / "run_config.json"
     chair_config = directory / f"{method}_config.json"
@@ -300,6 +326,8 @@ def run_method_locked(args, method, directory, max_tokens, gpus, shard_root):
                   "max_tokens": max_tokens, "data_root": str(args.data_root),
                   "model_path": str(args.model_path.resolve()),
                   "chair_config_sha256": hashlib.sha256(chair_config.read_bytes()).hexdigest()}
+    if tuple(benchmarks) != BENCHMARKS:
+        run_config["benchmarks"] = list(benchmarks)
     if config_path.is_file() and read_json(config_path) != run_config:
         raise RuntimeError(f"Existing shard run has a different configuration: {config_path}")
     config_path.write_text(json.dumps(run_config, indent=2), encoding="utf-8")
@@ -310,7 +338,7 @@ def run_method_locked(args, method, directory, max_tokens, gpus, shard_root):
     try:
         futures = [executor.submit(evaluate_shard, args, method, shard_root, index,
                                    len(gpus), model_id, max_tokens,
-                                   active_processes, active_lock)
+                                   active_processes, active_lock, benchmarks)
                    for index in range(len(gpus))]
         for future in futures:
             future.result()
@@ -322,17 +350,18 @@ def run_method_locked(args, method, directory, max_tokens, gpus, shard_root):
     finally:
         executor.shutdown(wait=True)
         stop_servers(processes)
+    vision_benches = [bench for bench in VISION_COUNTS if bench in benchmarks]
     merge = [sys.executable, str(RES_OPD / "eval/merge_sharded_eval.py"),
              "--final-output-dir", str(directory), "--shard-root", str(shard_root),
-             "--eval-mode", "pope,amber,vision", "--pope-benchmark", ",".join(POPE_SPLITS),
-             "--pope-source", "res-opd-test", "--vision-benchmark", "mmstar,cv-bench",
+             "--eval-mode", ",".join(benchmarks), "--pope-benchmark", ",".join(POPE_SPLITS),
+             "--pope-source", "res-opd-test", "--vision-benchmark", ",".join(vision_benches),
              "--vision-benchmark-data-dir", str(args.data_root),
              "--experiment-name", model_id, "--seed", "42",
              "--amber-root", str(args.data_root / "AMBER"),
              "--amber-eval-type", "a", "--amber-official-eval-workers", "8",
              "--rule-only-judge", "--mcq-extract-mode", "official"]
     subprocess.run(merge, cwd=ROOT, check=True)
-    validate_merged(directory, model_id)
+    validate_merged(directory, model_id, benchmarks)
     print(f"EXTERNAL_AUX=PASS method={method} dir={directory}", flush=True)
 
 
@@ -352,6 +381,7 @@ def main():
     parser.add_argument("--detector-config", type=Path,
                         default=RES_OPD / "third_party/baselines/HALC/decoder_zoo/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py")
     parser.add_argument("--methods", default="vcd,opera,halc")
+    parser.add_argument("--benchmarks", default=",".join(BENCHMARKS))
     parser.add_argument("--gpu-list", default="0,2,4,6")
     parser.add_argument("--base-port", type=int, default=24100)
     parser.add_argument("--min-free-mib", type=int, default=36000)
@@ -365,18 +395,22 @@ def main():
     methods = [method.strip() for method in args.methods.split(",")]
     if not methods or len(methods) != len(set(methods)) or any(method not in METHOD_SUFFIX for method in methods):
         parser.error("--methods must be unique names from vcd,opera,halc")
+    try:
+        benchmarks = parse_benchmarks(args.benchmarks)
+    except ValueError as error:
+        parser.error(str(error))
     gpus = [gpu.strip() for gpu in args.gpu_list.split(",")]
     if not gpus or len(gpus) != len(set(gpus)) or any(not gpu.isdigit() for gpu in gpus):
         parser.error("--gpu-list must contain distinct GPU indices")
     if not 1024 <= args.base_port <= 65535 - 10 * (len(gpus) - 1):
         parser.error("Invalid --base-port")
-    configs = validate_inputs(args, methods)
+    configs = validate_inputs(args, methods, benchmarks)
     if args.preflight_only:
         print("EXTERNAL_AUX_PREFLIGHT=PASS", flush=True)
         return
     for method in methods:
         directory, _, max_tokens = configs[method]
-        run_method(args, method, directory, max_tokens, gpus)
+        run_method(args, method, directory, max_tokens, gpus, benchmarks)
     print("EXTERNAL_AUX_ALL=PASS", flush=True)
 
 
