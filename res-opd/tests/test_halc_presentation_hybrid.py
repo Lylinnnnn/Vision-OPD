@@ -4,6 +4,8 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "baselines/run_halc_presentation_hybrid.py"
@@ -97,6 +99,58 @@ class HALCPresentationHybridTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "configuration mismatch"):
             hybrid.collect_new_rows([[{"image_id": 10}]], output_dir, self.model,
                                     "Describe the image.", 2048, old_config)
+
+    def test_output_stays_under_formal_halc_directory(self):
+        official = (self.root / "eval_results/external_baselines/full" /
+                    "Qwen3VL-8B-Instruct/train5000_test1000_original_sr1p0" /
+                    "chair_external_halc_qwen3vl_adapted_official")
+        old_root = official / ".shards/run_01"
+        self.assertEqual(
+            hybrid.presentation_output_dir(old_root, 2048),
+            official / "presentation_mixed_8192_2048",
+        )
+        with self.assertRaisesRegex(ValueError, "inside eval_results"):
+            hybrid.presentation_output_dir(self.old_root, 2048)
+
+    def test_aux_config_marks_mixed_chair_and_uniform_aux(self):
+        original = {"model_path": str(self.model), "parameters": {"max_new_tokens": 8192,
+                    "beam_size": 3}, "shard_count": 8, "shard_index": 5}
+        config = hybrid.build_aux_config(original, 2048, 4, 928, 72)
+        self.assertEqual(original["parameters"]["max_new_tokens"], 8192)
+        self.assertEqual(config["parameters"]["max_new_tokens"], 2048)
+        self.assertEqual(config["chair_decode_caps"], {"8192": 928, "2048": 72})
+        self.assertEqual(config["aux_decode_max_new_tokens"], 2048)
+        self.assertTrue(config["not_for_paper"])
+
+    def test_aux_runs_pope_and_amber_in_hybrid_directory(self):
+        output = self.root / "eval_results" / "presentation_mixed_8192_2048"
+        args = SimpleNamespace(python_bin=Path(sys.executable), model_path=self.model,
+                               detector_config=self.root / "dino.py", gpu_list="0,1",
+                               aux_base_port=28100, aux_min_free_mib=36000,
+                               aux_wait_seconds=7200, aux_startup_timeout=1200)
+        with patch.object(hybrid.subprocess, "run") as run:
+            hybrid.run_aux(args, output)
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--benchmarks") + 1], "pope,amber")
+        self.assertEqual(command[command.index("--halc-dir") + 1], str(output))
+        self.assertNotIn("--standalone", command)
+        self.assertTrue(run.call_args.kwargs["check"])
+
+    def test_complete_continuation_worker_is_not_restarted(self):
+        output = self.root / "eval_results/presentation_mixed_8192_2048"
+        group = [{"image_id": 10}]
+        old_config = {"model_path": str(self.model), "prompt": "Describe the image.",
+                      "seed": 42, "source_commit": "pinned", "adapter_revision": "v2",
+                      "parameters": {"max_new_tokens": 8192, "beam_size": 3}}
+        row = {"image_id": 10, "generated_caption": "complete caption",
+               "halc_config": {**old_config, "parameters": {"max_new_tokens": 2048,
+                                                             "beam_size": 3}}}
+        hybrid.write_jsonl(output / ".new_shards/worker_00/out/eval_results.jsonl", [row])
+        args = SimpleNamespace(model_path=self.model, prompt="Describe the image.",
+                               new_max_tokens=2048)
+        with patch.object(hybrid.subprocess, "Popen") as start:
+            hybrid.launch_missing(args, [group], ["0"], output, old_config)
+        start.assert_not_called()
 
 
 if __name__ == "__main__":
