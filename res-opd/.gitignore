@@ -5,6 +5,7 @@ eval_ckpts/
 # Evaluation results
 eval_results/
 eval_results_v4/
+presentation_only/
 
 # Training logs
 logs/
