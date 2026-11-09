@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import unittest
@@ -13,6 +14,43 @@ import run_main_tr05_missing_aux_4machines as batch  # noqa: E402
 
 
 class FourMachineAuxTest(unittest.TestCase):
+    def test_legacy_amber_requires_scored_complete_rows_with_explicit_opt_in(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            amber = root / "amber"
+            amber.mkdir()
+            (amber / "raw_results.jsonl").write_text(
+                json.dumps({"id": 1, "model_answer": "Yes"}) + "\n" +
+                json.dumps({"id": 2, "model_answer": "[ERROR] context too long"}) + "\n")
+            (amber / "amber_a_responses.json").write_text(json.dumps([
+                {"id": 1, "response": "Yes"}, {"id": 2, "response": "No"}]))
+            with mock.patch.object(batch, "amber_metrics", return_value=((1.0, 2.0), amber)):
+                self.assertEqual(batch.legacy_amber_errors([root], expected=2), (1, root))
+                with mock.patch.object(batch, "legacy_amber_errors", return_value=(1, root)), \
+                        mock.patch.object(batch, "target_dirs", return_value=[root]), \
+                        mock.patch.object(batch, "inspect_all", side_effect=[
+                            mock.Mock(state="已推理有结果"), mock.Mock(state="推理未完成")]):
+                    self.assertEqual(batch.pending("M005", root, accept_amber_error_rows=True), ())
+                with mock.patch.object(batch, "target_dirs", return_value=[root]), \
+                        mock.patch.object(batch, "inspect_all", side_effect=[
+                            mock.Mock(state="已推理有结果"), mock.Mock(state="推理未完成")]):
+                    self.assertEqual(batch.pending("M005", root), ("amber",))
+                (amber / "raw_results.jsonl").write_text(
+                    json.dumps({"id": 1, "model_answer": "Yes"}) + "\n" +
+                    json.dumps({"id": 1, "model_answer": "[ERROR] context too long"}) + "\n")
+                self.assertIsNone(batch.legacy_amber_errors([root], expected=2))
+
+    def test_startup_memory_retry_marker_must_be_new_and_specific(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            summary = root / ".shards" / "run1" / "failure_summary.txt"
+            summary.parent.mkdir(parents=True)
+            summary.write_text("Free memory on device cuda:0 is less than desired GPU memory utilization")
+            self.assertTrue(batch.startup_memory_failure(root, summary.stat().st_mtime - 1))
+            self.assertFalse(batch.startup_memory_failure(root, summary.stat().st_mtime + 1))
+            summary.write_text("AMBER evaluator failed")
+            self.assertFalse(batch.startup_memory_failure(root, 0))
+
     def test_queue_covers_all_requested_once_excluding_opera(self):
         assigned = [job for queue in batch.QUEUES.values() for job in queue]
         self.assertEqual([len(queue) for queue in batch.QUEUES.values()], [4, 4, 5, 5])
@@ -100,7 +138,8 @@ class FourMachineAuxTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             args = SimpleNamespace(eval_root=Path(temporary), model_root=Path(temporary),
                                    data_root=Path(temporary), python=Path("/tmp/python3"),
-                                   base_port=28100, startup_timeout=2400)
+                                   base_port=28100, startup_timeout=2400,
+                                   accept_amber_error_rows=False)
             with mock.patch.object(batch, "pending", side_effect=[("pope",), ()]), \
                     mock.patch.object(batch, "staged_checkpoint", side_effect=staged), \
                     mock.patch.object(batch, "select_gpus", side_effect=select), \
