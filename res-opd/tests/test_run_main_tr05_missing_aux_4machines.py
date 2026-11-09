@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -48,7 +49,7 @@ class FourMachineAuxTest(unittest.TestCase):
                 self.assertEqual(batch.pending(batch.INTERNVL_VISION, root), ("cv-bench",))
 
     def test_selects_busy_machine_subset_without_waiting(self):
-        args = SimpleNamespace(gpu_memory_utilization=None, gpu_headroom_gib=4.0, base_port=28100)
+        args = SimpleNamespace(gpu_memory_utilization=0.65, gpu_headroom_gib=6.0, base_port=28100)
         candidates = [str(index) for index in range(8)]
         memory = {gpu: (80000, 97871) for gpu in candidates}
         memory["7"] = (6162, 97871)
@@ -56,19 +57,21 @@ class FourMachineAuxTest(unittest.TestCase):
                 mock.patch.object(batch, "port_is_free", return_value=True) as ports:
             selected, utilization = batch.select_gpus(args, "Base-2B", candidates)
         self.assertEqual(selected, candidates[:7])
-        self.assertEqual(utilization, 0.35)
+        self.assertEqual(utilization, 0.65)
         self.assertEqual(ports.call_count, 7)
 
-    def test_scale_specific_memory_fraction(self):
-        args = SimpleNamespace(gpu_memory_utilization=None, gpu_headroom_gib=4.0, base_port=28100)
-        with mock.patch.object(batch, "gpu_memory_mib", return_value={"0": (50000, 97871)}), \
+    def test_rescans_before_each_experiment(self):
+        args = SimpleNamespace(gpu_memory_utilization=0.65, gpu_headroom_gib=6.0, base_port=28100)
+        snapshots = [{"0": (80000, 97871), "7": (6162, 97871)},
+                     {"0": (80000, 97871), "7": (80000, 97871)}]
+        with mock.patch.object(batch, "gpu_memory_mib", side_effect=snapshots) as scan, \
                 mock.patch.object(batch, "port_is_free", return_value=True):
-            self.assertEqual(batch.select_gpus(args, "Base-4B", ["0"]), (["0"], 0.45))
-            with self.assertRaisesRegex(RuntimeError, "No GPU has enough free memory"):
-                batch.select_gpus(args, "Base-8B", ["0"])
+            self.assertEqual(batch.select_gpus(args, "Base-2B", ["0", "7"]), (["0"], 0.65))
+            self.assertEqual(batch.select_gpus(args, "Base-8B", ["0", "7"]), (["0", "7"], 0.65))
+        self.assertEqual(scan.call_count, 2)
 
     def test_no_eligible_gpu_fails_immediately(self):
-        args = SimpleNamespace(gpu_memory_utilization=None, gpu_headroom_gib=4.0, base_port=28100)
+        args = SimpleNamespace(gpu_memory_utilization=0.65, gpu_headroom_gib=6.0, base_port=28100)
         with mock.patch.object(batch, "gpu_memory_mib", return_value={"7": (6162, 97871)}), \
                 mock.patch.object(batch, "port_is_free") as ports:
             with self.assertRaisesRegex(RuntimeError, "no waiting"):
@@ -76,11 +79,36 @@ class FourMachineAuxTest(unittest.TestCase):
         ports.assert_not_called()
 
     def test_busy_port_fails_without_cleanup(self):
-        args = SimpleNamespace(gpu_memory_utilization=None, gpu_headroom_gib=4.0, base_port=28100)
+        args = SimpleNamespace(gpu_memory_utilization=0.65, gpu_headroom_gib=6.0, base_port=28100)
         with mock.patch.object(batch, "gpu_memory_mib", return_value={"0": (80000, 97871)}), \
                 mock.patch.object(batch, "port_is_free", return_value=False):
             with self.assertRaisesRegex(RuntimeError, "ports busy"):
                 batch.select_gpus(args, "Base-2B", ["0"])
+
+    def test_scan_after_staging_and_pass_selected_shards(self):
+        events = []
+
+        @contextmanager
+        def staged(*_):
+            events.append("staged")
+            yield Path("/tmp/staged-model")
+
+        def select(*_):
+            events.append("scanned")
+            return ["0", "2"], 0.65
+
+        with tempfile.TemporaryDirectory() as temporary:
+            args = SimpleNamespace(eval_root=Path(temporary), model_root=Path(temporary),
+                                   data_root=Path(temporary), python=Path("/tmp/python3"),
+                                   base_port=28100, startup_timeout=2400)
+            with mock.patch.object(batch, "pending", side_effect=[("pope",), ()]), \
+                    mock.patch.object(batch, "staged_checkpoint", side_effect=staged), \
+                    mock.patch.object(batch, "select_gpus", side_effect=select), \
+                    mock.patch.object(batch.subprocess, "run") as run:
+                batch.run_one(args, "Base-2B", ["0", "1", "2"])
+        self.assertEqual(events, ["staged", "scanned"])
+        self.assertEqual(run.call_args.kwargs["env"]["GPU_LIST"], "0,2")
+        self.assertEqual(run.call_args.kwargs["env"]["EVAL_SHARD_COUNT"], "2")
 
 
 if __name__ == "__main__":

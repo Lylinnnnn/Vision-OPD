@@ -36,7 +36,6 @@ SPECS = {(spec.size, spec.method): spec for spec in build_specs() if spec.family
 DEFAULT_MODEL_ROOT = Path("/home/liuyanlin.lyl/notebook/model")
 DEFAULT_OSS_ROOT = Path("/data/oss_bucket_0/yanlin/ckpt/OPD/v4")
 OSS_URI = "oss://industry-algo/yanlin/ckpt/OPD/v4"
-GPU_UTILIZATION_BY_SIZE = {"2B": 0.35, "4B": 0.45, "8B": 0.55}
 
 
 def pending(target_id, eval_root):
@@ -85,7 +84,7 @@ def preflight(args, jobs):
         raise ValueError("--gpu-list must contain 1-8 distinct GPU indices")
     if not 1024 <= args.base_port <= 65465:
         raise ValueError("--base-port leaves insufficient room for shard ports")
-    if args.gpu_memory_utilization is not None and not 0 < args.gpu_memory_utilization < 1:
+    if not 0 < args.gpu_memory_utilization < 1:
         raise ValueError("--gpu-memory-utilization must be between zero and one")
     if args.gpu_headroom_gib < 0:
         raise ValueError("--gpu-headroom-gib must be nonnegative")
@@ -165,8 +164,7 @@ def staged_checkpoint(target_id, args):
 
 
 def select_gpus(args, target_id, candidates):
-    size = "2B" if target_id == INTERNVL_VISION else TARGET_BY_ID[target_id].size
-    utilization = args.gpu_memory_utilization or GPU_UTILIZATION_BY_SIZE[size]
+    utilization = args.gpu_memory_utilization
     memory = gpu_memory_mib(candidates)
     required = {gpu: int(total * utilization + args.gpu_headroom_gib * 1024)
                 for gpu, (_, total) in memory.items()}
@@ -191,34 +189,34 @@ def run_one(args, target_id, candidates):
     if not modes:
         print(f"SKIP {target_id}: all requested benchmarks complete", flush=True)
         return
-    gpus, utilization = select_gpus(args, target_id, candidates)
     output = output_dir(target_id, args.eval_root)
     target = TARGET_BY_ID.get(target_id)
     spec = SPECS[(target.size, target.method)] if target else None
     experiment = spec.experiment if spec else "InternVL3-2B-hf"
     if target and target.step is not None:
         experiment += f"_global_step_{target.step}"
-    env = os.environ.copy()
-    env.update({
-        "PYTHON_BIN": str(args.python), "RES_OPD_DATA_ROOT": str(args.data_root),
-        "BENCHMARK_DATA_DIR": str(args.data_root), "VISION_BENCHMARK_DATA_DIR": str(args.data_root),
-        "AMBER_ROOT": str(args.data_root / "AMBER"), "DATASET_VERSION": "full",
-        "MODEL_PROFILE": "qwen3vl_instruct" if target else "default",
-        "RESULT_VERSION_TAG": "instruct" if target else "internvl3",
-        "EXPERIMENT_NAME_OVERRIDE": experiment, "EVAL_OUTPUT_DIR": str(output),
-        "DEGRADATION_MODE": "original", "STUDENT_RATIO": "1.0",
-        "CHAIR_PROMPT": "Describe the image.", "POPE_SOURCE": "res-opd-test",
-        "POPE_BENCHMARK": "pope_adv,pope_pop,pope_random", "POPE_MAX_SAMPLES": "0",
-        "AMBER_EVAL_TYPE": "a", "AMBER_MAX_SAMPLES": "0",
-        "VISION_BENCHMARK": "mmstar,cv-bench", "VISION_BENCHMARK_AUTO_DOWNLOAD": "False",
-        "VISION_BENCHMARK_REFRESH_PROMPTS": "False", "RULE_ONLY_JUDGE": "True",
-        "MCQ_EXTRACT_MODE": "official", "EVAL_SHARD_COUNT": str(len(gpus)), "GPU_LIST": ",".join(gpus),
-        "VLLM_BASE_PORT": str(args.base_port), "VLLM_PORT_CLEANUP": "False",
-        "VLLM_STARTUP_TIMEOUT": str(args.startup_timeout), "VLLM_ENFORCE_EAGER": "True",
-        "VLLM_MAX_NUM_SEQS": "8", "VLLM_GPU_MEMORY_UTILIZATION": str(utilization),
-        "VLLM_KV_CACHE_MEMORY_BYTES": str(8 * 1024**3), "CLEANUP_LOCAL_CKPT": "False",
-    })
     with staged_checkpoint(target_id, args) as inference_model:
+        gpus, utilization = select_gpus(args, target_id, candidates)
+        env = os.environ.copy()
+        env.update({
+            "PYTHON_BIN": str(args.python), "RES_OPD_DATA_ROOT": str(args.data_root),
+            "BENCHMARK_DATA_DIR": str(args.data_root), "VISION_BENCHMARK_DATA_DIR": str(args.data_root),
+            "AMBER_ROOT": str(args.data_root / "AMBER"), "DATASET_VERSION": "full",
+            "MODEL_PROFILE": "qwen3vl_instruct" if target else "default",
+            "RESULT_VERSION_TAG": "instruct" if target else "internvl3",
+            "EXPERIMENT_NAME_OVERRIDE": experiment, "EVAL_OUTPUT_DIR": str(output),
+            "DEGRADATION_MODE": "original", "STUDENT_RATIO": "1.0",
+            "CHAIR_PROMPT": "Describe the image.", "POPE_SOURCE": "res-opd-test",
+            "POPE_BENCHMARK": "pope_adv,pope_pop,pope_random", "POPE_MAX_SAMPLES": "0",
+            "AMBER_EVAL_TYPE": "a", "AMBER_MAX_SAMPLES": "0",
+            "VISION_BENCHMARK": "mmstar,cv-bench", "VISION_BENCHMARK_AUTO_DOWNLOAD": "False",
+            "VISION_BENCHMARK_REFRESH_PROMPTS": "False", "RULE_ONLY_JUDGE": "True",
+            "MCQ_EXTRACT_MODE": "official", "EVAL_SHARD_COUNT": str(len(gpus)), "GPU_LIST": ",".join(gpus),
+            "VLLM_BASE_PORT": str(args.base_port), "VLLM_PORT_CLEANUP": "False",
+            "VLLM_STARTUP_TIMEOUT": str(args.startup_timeout), "VLLM_ENFORCE_EAGER": "True",
+            "VLLM_MAX_NUM_SEQS": "8", "VLLM_GPU_MEMORY_UTILIZATION": str(utilization),
+            "VLLM_KV_CACHE_MEMORY_BYTES": str(8 * 1024**3), "CLEANUP_LOCAL_CKPT": "False",
+        })
         command = ["bash", str(ROOT / "res-opd/scripts/eval_after_merge_sharded_8gpu.sh"),
                    str(inference_model), "instruct" if target else "internvl3", ",".join(modes)]
         print(f"RUN {target_id}: {' '.join(command)} -> {output}", flush=True)
@@ -243,9 +241,8 @@ def parser():
     result.add_argument("--gpu-list", default="0,1,2,3,4,5,6,7")
     result.add_argument("--base-port", type=int)
     result.add_argument("--startup-timeout", type=int, default=2400)
-    result.add_argument("--gpu-memory-utilization", type=float,
-                        help="Override the scale-specific vLLM memory fraction (2B=.35, 4B=.45, 8B=.55)")
-    result.add_argument("--gpu-headroom-gib", type=float, default=4.0)
+    result.add_argument("--gpu-memory-utilization", type=float, default=0.65)
+    result.add_argument("--gpu-headroom-gib", type=float, default=6.0)
     result.add_argument("--preflight-only", action="store_true")
     return result
 
