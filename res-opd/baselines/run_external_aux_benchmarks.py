@@ -15,10 +15,12 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[2]
 RES_OPD = ROOT / "res-opd"
+sys.path.insert(0, str(RES_OPD / "baselines"))
 sys.path.insert(0, str(RES_OPD / "scripts/tmp"))
 from wait_eval_capacity import wait_for_capacity  # noqa: E402
 
@@ -111,7 +113,47 @@ def validate_chair_anchor(directory, method, model_path):
     return config, max_tokens
 
 
-def validate_inputs(args, methods, benchmarks=BENCHMARKS):
+def standalone_config(args, method, existing, shard_count):
+    if method == "opera":
+        from eval_opera_chair import opera_config
+
+        return opera_config(SimpleNamespace(
+            model_path=str(args.model_path), model_family="qwen3vl",
+            prompt="Describe the image.", max_new_tokens=args.max_new_tokens,
+            num_beams=5, scale_factor=50.0, threshold=15,
+            num_attn_candidates=5, penalty_weights=1.0, window_size=512,
+            torch_dtype="bfloat16",
+        ))
+    if method != "halc":
+        raise ValueError(f"Standalone mode is not available for {method}")
+
+    from eval_halc_chair import ADAPTER_REVISION
+    from halc_qwen3vl import HALCConfig
+
+    detector_weights = args.detector_weights or (existing or {}).get("detector_weights")
+    blip_model = args.blip_model_path or (existing or {}).get("blip_model_path")
+    if not detector_weights or not blip_model:
+        raise ValueError("Standalone HALC requires --detector-weights and --blip-model-path")
+    parameters = HALCConfig(max_new_tokens=args.max_new_tokens)
+    parameters.validate()
+    registry = read_json(RES_OPD / "baselines/registry.json")
+    return {
+        "method": "halc_qwen3vl_adaptation",
+        "adapter_revision": ADAPTER_REVISION,
+        "source_commit": registry["baselines"]["halc"]["commit"],
+        "model_path": str(args.model_path.resolve()),
+        "detector_weights": str(Path(detector_weights).resolve()),
+        "blip_model_path": str(Path(blip_model).resolve()),
+        "prompt": "Describe the image.",
+        "seed": 42,
+        "parameters": vars(parameters),
+        "shard_count": shard_count,
+        "shard_index": 0,
+    }
+
+
+def validate_inputs(args, methods, benchmarks=BENCHMARKS, shard_count=4):
+    standalone = getattr(args, "standalone", False)
     if args.model_path.name not in SUPPORTED_MODELS:
         raise ValueError(f"Unsupported model: {args.model_path.name}")
     if not (args.model_path / "config.json").is_file():
@@ -143,14 +185,27 @@ def validate_inputs(args, methods, benchmarks=BENCHMARKS):
         raise FileNotFoundError(args.detector_config)
     configs = {}
     for method in methods:
-        directory = result_dir(args, method)
-        config, max_tokens = validate_chair_anchor(directory, method, args.model_path)
+        if standalone:
+            directory = getattr(args, f"{method}_dir") or args.results_root / METHOD_SUFFIX[method]
+            config_path = directory / f"{method}_config.json"
+            existing = read_json(config_path) if config_path.is_file() else None
+            config = standalone_config(args, method, existing, shard_count)
+            if existing is not None and existing != config:
+                raise RuntimeError(f"Refusing to overwrite different decoder settings: {config_path}")
+            max_tokens = config.get("max_new_tokens") if method == "opera" else config["parameters"]["max_new_tokens"]
+        else:
+            directory = result_dir(args, method)
+            config, max_tokens = validate_chair_anchor(directory, method, args.model_path)
         if method == "halc":
             for key in ("detector_weights", "blip_model_path"):
                 if not Path(config[key]).exists():
                     raise FileNotFoundError(config[key])
+        if standalone and not args.preflight_only and existing is None:
+            directory.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
         configs[method] = (directory, config, max_tokens)
-        print(f"ANCHOR=PASS method={method} max_tokens={max_tokens} dir={directory}", flush=True)
+        label = "DECODER_CONFIG" if standalone else "ANCHOR"
+        print(f"{label}=PASS method={method} max_tokens={max_tokens} dir={directory}", flush=True)
     return configs
 
 
@@ -304,6 +359,8 @@ def run_method(args, method, directory, max_tokens, gpus, benchmarks):
     ports = [args.base_port + index * 10 for index in range(len(gpus))]
     wait_for_capacity(gpus, ports, args.min_free_mib, args.wait_seconds)
     shard_name = "external_aux_v1" if tuple(benchmarks) == BENCHMARKS else "external_aux_" + "_".join(benchmarks)
+    if args.standalone:
+        shard_name += "_standalone"
     shard_root = directory / ".aux_shards" / shard_name
     shard_root.mkdir(parents=True, exist_ok=True)
     lock_file = (shard_root / "run.lock").open("a")
@@ -322,10 +379,11 @@ def run_method_locked(args, method, directory, max_tokens, gpus, shard_root, ben
     model_id = f"external-{method}-{args.model_path.name}"
     config_path = shard_root / "run_config.json"
     chair_config = directory / f"{method}_config.json"
+    config_digest_key = "decoder_config_sha256" if args.standalone else "chair_config_sha256"
     run_config = {"method": method, "gpus": gpus, "model_id": model_id,
                   "max_tokens": max_tokens, "data_root": str(args.data_root),
                   "model_path": str(args.model_path.resolve()),
-                  "chair_config_sha256": hashlib.sha256(chair_config.read_bytes()).hexdigest()}
+                  config_digest_key: hashlib.sha256(chair_config.read_bytes()).hexdigest()}
     if tuple(benchmarks) != BENCHMARKS:
         run_config["benchmarks"] = list(benchmarks)
     if config_path.is_file() and read_json(config_path) != run_config:
@@ -382,6 +440,11 @@ def main():
                         default=RES_OPD / "third_party/baselines/HALC/decoder_zoo/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py")
     parser.add_argument("--methods", default="vcd,opera,halc")
     parser.add_argument("--benchmarks", default=",".join(BENCHMARKS))
+    parser.add_argument("--standalone", action="store_true",
+                        help="Run without CHAIR output; pin decoder settings directly")
+    parser.add_argument("--max-new-tokens", type=int, default=8192)
+    parser.add_argument("--detector-weights", type=Path)
+    parser.add_argument("--blip-model-path", type=Path)
     parser.add_argument("--gpu-list", default="0,2,4,6")
     parser.add_argument("--base-port", type=int, default=24100)
     parser.add_argument("--min-free-mib", type=int, default=36000)
@@ -395,6 +458,10 @@ def main():
     methods = [method.strip() for method in args.methods.split(",")]
     if not methods or len(methods) != len(set(methods)) or any(method not in METHOD_SUFFIX for method in methods):
         parser.error("--methods must be unique names from vcd,opera,halc")
+    if args.standalone and any(method not in ("opera", "halc") for method in methods):
+        parser.error("--standalone currently supports opera and halc")
+    if not 1 <= args.max_new_tokens <= 8192:
+        parser.error("--max-new-tokens must be between 1 and 8192")
     try:
         benchmarks = parse_benchmarks(args.benchmarks)
     except ValueError as error:
@@ -404,7 +471,7 @@ def main():
         parser.error("--gpu-list must contain distinct GPU indices")
     if not 1024 <= args.base_port <= 65535 - 10 * (len(gpus) - 1):
         parser.error("Invalid --base-port")
-    configs = validate_inputs(args, methods, benchmarks)
+    configs = validate_inputs(args, methods, benchmarks, len(gpus))
     if args.preflight_only:
         print("EXTERNAL_AUX_PREFLIGHT=PASS", flush=True)
         return

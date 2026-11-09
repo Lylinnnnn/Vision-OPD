@@ -54,6 +54,53 @@ class ExternalAuxBenchmarksTest(unittest.TestCase):
                     result = AUX.validate_inputs(args, ["opera"], ("pope",))
                 self.assertEqual(result["opera"][2], 128)
 
+    def test_standalone_opera_does_not_need_chair_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            model = root / "Qwen3VL-4B-Instruct"
+            model.mkdir()
+            (model / "config.json").write_text("{}")
+            (model / "model.safetensors.index.json").write_text("{}")
+            data = root / "data"
+            (data / "COCO/coco2017val").mkdir(parents=True)
+            repo = root / "repo"
+            (repo / "data").mkdir(parents=True)
+            (repo / "data/test_1000.json").write_text("[]")
+            output = root / "results"
+            args = SimpleNamespace(model_path=model, data_root=data,
+                                   detector_config=root / "unused", detector_weights=None,
+                                   blip_model_path=None, standalone=True,
+                                   preflight_only=True, max_new_tokens=8192,
+                                   results_root=output, opera_dir=None)
+            with patch.object(AUX, "RES_OPD", repo):
+                configs = AUX.validate_inputs(args, ["opera"], ("pope",), 8)
+                self.assertEqual(configs["opera"][2], 8192)
+                self.assertFalse((output / AUX.METHOD_SUFFIX["opera"] / "opera_config.json").exists())
+                args.preflight_only = False
+                AUX.validate_inputs(args, ["opera"], ("pope",), 8)
+            config = json.loads((output / AUX.METHOD_SUFFIX["opera"] / "opera_config.json").read_text())
+            self.assertEqual(config["model_name"], model.name)
+            self.assertEqual(config["num_beams"], 5)
+            config["num_beams"] = 7
+            (output / AUX.METHOD_SUFFIX["opera"] / "opera_config.json").write_text(json.dumps(config))
+            with patch.object(AUX, "RES_OPD", repo), \
+                 self.assertRaisesRegex(RuntimeError, "Refusing to overwrite"):
+                AUX.validate_inputs(args, ["opera"], ("pope",), 8)
+
+    @unittest.skipUnless(importlib.util.find_spec("torch"), "HALC config needs torch")
+    def test_standalone_halc_matches_sharded_defaults(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = SimpleNamespace(model_path=root / "Qwen3VL-8B-Instruct",
+                                   detector_weights=root / "groundingdino_swint_ogc.pth",
+                                   blip_model_path=root / "blip-itm-base-coco",
+                                   max_new_tokens=8192)
+            config = AUX.standalone_config(args, "halc", None, 8)
+            self.assertEqual(config["method"], "halc_qwen3vl_adaptation")
+            self.assertEqual(config["parameters"]["max_new_tokens"], 8192)
+            self.assertEqual(config["parameters"]["beam_size"], 3)
+            self.assertEqual((config["shard_count"], config["shard_index"]), (8, 0))
+
     def test_parse_multimodal_request(self):
         image = b"test-image"
         payload = {

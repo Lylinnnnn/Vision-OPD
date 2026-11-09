@@ -107,6 +107,13 @@ Baseline outputs must use a dedicated result suffix such as
 `chair_external_vcd_official`. They must not write into an existing base-model,
 training, or paper-result directory.
 
+POPE and AMBER do not require a completed CHAIR run. For Qwen3VL OPERA or
+HALC, `run_external_aux_benchmarks.py --standalone --methods opera|halc
+--benchmarks pope,amber` creates a pinned decoder configuration in the
+method's dedicated result directory, then writes POPE and AMBER metrics there.
+HALC also needs `--detector-weights` and `--blip-model-path`. The runner
+rejects a different existing decoder configuration instead of mixing results.
+
 The Qwen3VL VCD adapter can be launched with:
 
 ```bash
