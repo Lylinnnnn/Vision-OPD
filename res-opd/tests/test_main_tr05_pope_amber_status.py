@@ -121,6 +121,29 @@ class PopeAmberStatusTest(unittest.TestCase):
             result = audit.inspect_vision_all(audit.internvl_base_dirs(root), "cv-bench", 2)
             self.assertEqual(result.state, "已推理待合并计算")
 
+    def test_fixed_teacher_audit_excludes_bases_and_uses_exact_tr05_checkpoint(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            oss = root / "oss"
+            oss.mkdir()
+            rows, issues = audit.collect_teacher_scale_rows(root / "eval", oss)
+            self.assertEqual(len(rows), 7)
+            self.assertFalse(issues)
+            self.assertTrue(all(row[1] != "--" for row in rows))
+            target = next(row for row in rows if row[0:3] == ("2B", "4B fixed", "tr=0.5"))
+            self.assertIsNone(target[3])
+            self.assertEqual(target[4], "无完整step，待训练/核实")
+
+            ckpt = oss / "ResOPD_orig_sr1.0_tr0.5_a1.0_fixed_rkl_teacherQwen3VL_4B_Instruct_b32_rn4_full5k-e1/global_step_50"
+            ckpt.mkdir(parents=True)
+            (ckpt / "config.json").write_text("{}")
+            (ckpt / "model.safetensors").write_text("weights")
+            rows, issues = audit.collect_teacher_scale_rows(root / "eval", oss)
+            target = next(row for row in rows if row[0:3] == ("2B", "4B fixed", "tr=0.5"))
+            self.assertEqual(target[3], 50)
+            self.assertEqual(target[4], "完整")
+            self.assertIn("Fixed-teacher", audit.render([], teacher_rows=rows))
+
 
 if __name__ == "__main__":
     unittest.main()

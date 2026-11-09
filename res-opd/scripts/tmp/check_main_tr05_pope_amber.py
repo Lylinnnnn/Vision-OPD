@@ -10,6 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from summarize_main_tr05_inventory import DATASET, ROOT, build_specs
+import audit_teacher_scale_tr05_chair as teacher_chair
+import summarize_main_tr05_inventory as inventory
+import summarize_teacher_scale_tr05 as teacher_scale
 
 
 SPLITS = ("pope_adv", "pope_pop", "pope_random")
@@ -397,7 +400,83 @@ def checkpoint(target, oss_root):
     return f"未找到完整 checkpoint: {path}"
 
 
-def render(rows, vision_results=()):
+def collect_teacher_scale_rows(eval_root, oss_root):
+    rows = []
+    issues = []
+    for student, teacher, view, spec in teacher_scale.table_specs():
+        if spec.method == "Base":
+            continue
+        oss_parent = oss_root / spec.oss_name
+        eval_parent = eval_root / "instruct/full"
+        checkpoint_steps = {int(path.name.split("_")[-1])
+                            for path in teacher_scale.checkpoint_dirs(spec, oss_root)}
+        eval_steps = set()
+        if eval_parent.is_dir():
+            for path in eval_parent.glob(f"{spec.experiment}_global_step_*"):
+                suffix = path.name.removeprefix(f"{spec.experiment}_global_step_")
+                if path.is_dir() and suffix.isdigit():
+                    eval_steps.add(int(suffix))
+        for step in sorted(checkpoint_steps | eval_steps) or [None]:
+            ckpt = oss_parent / f"global_step_{step}" if step is not None else oss_parent
+            if not oss_root.is_dir():
+                ckpt_state = "OSS未挂载，待核实"
+            elif step is None:
+                ckpt_state = "无完整step，待训练/核实"
+            elif all((ckpt / name).is_file() and (ckpt / name).stat().st_size > 0
+                     for name in ("config.json", "model.safetensors")):
+                ckpt_state = "完整"
+            else:
+                ckpt_state = "checkpoint不完整/缺失"
+            dataset = eval_parent / f"{spec.experiment}_global_step_{step}" / DATASET
+            directories = output_dirs(dataset) if step is not None else []
+            chair_state, chair_values, chair_evidence = teacher_chair.inspect_chair(
+                directories, dataset, issues, f"{student}/{teacher}/{view}/s{step}")
+            pope = inspect_all(directories, "pope", EXPECTED_POPE)
+            amber = inspect_all(directories, "amber", EXPECTED_AMBER)
+            mmstar = inspect_vision_all(directories, "mmstar", VISION_EXPECTED["mmstar"])
+            cvbench = inspect_vision_all(directories, "cv-bench", VISION_EXPECTED["cv-bench"])
+            rows.append((student, teacher, view, step, ckpt_state, ckpt,
+                         chair_state, chair_values, chair_evidence, pope, amber, mmstar, cvbench))
+    return rows, issues
+
+
+def render_teacher_scale(rows, issues):
+    lines = ["", "## Fixed-teacher 表缺口（两个 Base 除外）", "",
+             "只匹配表中的 7 组 uniform Frozen RKL：压缩视角 tr=0.50、原图视角 tr=1.0；逐 step 核查。",
+             "Resp Len 是最终回答的字符数/图，不是 token 数；Correct/Hall 为含重复对象的 mention 总数。",
+             "`--` 表示未取得合规结果，不能用旧 tr=0.75 数字填补。", "",
+             "| Student | Teacher | View | Step | CKPT | CHAIR 状态 | CHAIRi | CHAIRs | ObjF1 | Resp Len (chars/img) | Correct | Hall |",
+             "| --- | --- | --- | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    def value(values, key, percent=False):
+        found = values.get(key)
+        return "--" if found is None else f"{found * 100:.2f}" if percent else f"{found:.2f}" if isinstance(found, float) else str(found)
+
+    for student, teacher, view, step, ckpt_state, _, chair_state, values, _, *_ in rows:
+        cells = (student, teacher, view, str(step) if step is not None else "--", ckpt_state,
+                 chair_state, value(values, "CHAIRi", True), value(values, "CHAIRs", True),
+                 value(values, "ObjF1", True), value(values, "chars_per_image"),
+                 value(values, "correct_mentions"), value(values, "hall_mentions"))
+        lines.append("| " + " | ".join(cells) + " |")
+    lines += ["", "| Student | Teacher | View | Step | POPE 状态 | F1 (%) | AMBER 状态 | A-HAL | MMStar 状态 | Acc. (%) | CV-Bench 状态 | Acc. (%) |",
+              "| --- | --- | --- | ---: | --- | ---: | --- | ---: | --- | ---: | --- | ---: |"]
+    for student, teacher, view, step, _, _, _, _, _, pope, amber, mmstar, cvbench in rows:
+        cells = (student, teacher, view, str(step) if step is not None else "--",
+                 pope.state, pope.values[0], amber.state, amber.values[1],
+                 mmstar.state, mmstar.values[0], cvbench.state, cvbench.values[0])
+        lines.append("| " + " | ".join(cells) + " |")
+    lines += ["", "### Fixed-teacher 证据路径", ""]
+    for student, teacher, view, step, _, ckpt, _, _, chair_evidence, pope, amber, mmstar, cvbench in rows:
+        label = f"{student}/{teacher}/{view}/s{step if step is not None else '--'}"
+        lines.append(f"- {label}: ckpt=`{ckpt}`; CHAIR=`{chair_evidence}`; POPE=`{pope.source or '--'}`; "
+                     f"AMBER=`{amber.source or '--'}`; MMStar=`{mmstar.source or '--'}`; "
+                     f"CV-Bench=`{cvbench.source or '--'}`")
+    if issues:
+        lines += ["", "### 读取警告", ""]
+        lines += [f"- {issue}" for issue in sorted(set(issues))]
+    return "\n".join(lines) + "\n"
+
+
+def render(rows, vision_results=(), teacher_rows=(), teacher_issues=()):
     lines = ["# tr=0.50 主表指定行：POPE / AMBER 状态核查", "",
              "仅检查原图 student 评测；Base 和 external 使用原始 Base 模型。",
              "POPE 原始结果需三个 split 各 5223 条；AMBER(a) 需 15220 条原始回答与官方响应。",
@@ -423,7 +502,7 @@ def render(rows, vision_results=()):
         label = "MMStar" if benchmark == "mmstar" else "CV-Bench"
         lines.append(f"| {label} | {result.state} | {result.count} | {result.values[0]} | "
                      f"`{result.source or '--'}` |")
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n" + render_teacher_scale(teacher_rows, teacher_issues)
 
 
 def main():
@@ -450,8 +529,11 @@ def main():
         result = inspect_vision_all(internvl_base_dirs(args.eval_root), benchmark, expected)
         vision_results.append((benchmark, result))
         print(f"InternVL3-2B Base {benchmark}: {result.state} ({result.count}); Acc={result.values[0]}")
+    teacher_rows, teacher_issues = collect_teacher_scale_rows(args.eval_root, args.oss_root)
+    print(f"Fixed-teacher: {len(teacher_rows)} step rows across 7 non-Base configurations; "
+          f"warnings={len(teacher_issues)}")
     args.output_md.parent.mkdir(parents=True, exist_ok=True)
-    args.output_md.write_text(render(rows, vision_results), encoding="utf-8")
+    args.output_md.write_text(render(rows, vision_results, teacher_rows, teacher_issues), encoding="utf-8")
     print(f"WROTE {args.output_md}")
     for (benchmark, state), count in sorted(counts.items()):
         print(f"{benchmark}: {state}={count}")
