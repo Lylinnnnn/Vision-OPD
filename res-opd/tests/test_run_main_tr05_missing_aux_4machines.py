@@ -2,6 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -45,6 +46,41 @@ class FourMachineAuxTest(unittest.TestCase):
             with mock.patch.object(batch, "inspect_vision_all") as inspect:
                 inspect.side_effect = [mock.Mock(state="已推理有结果"), mock.Mock(state="未推理")]
                 self.assertEqual(batch.pending(batch.INTERNVL_VISION, root), ("cv-bench",))
+
+    def test_selects_busy_machine_subset_without_waiting(self):
+        args = SimpleNamespace(gpu_memory_utilization=None, gpu_headroom_gib=4.0, base_port=28100)
+        candidates = [str(index) for index in range(8)]
+        memory = {gpu: (80000, 97871) for gpu in candidates}
+        memory["7"] = (6162, 97871)
+        with mock.patch.object(batch, "gpu_memory_mib", return_value=memory), \
+                mock.patch.object(batch, "port_is_free", return_value=True) as ports:
+            selected, utilization = batch.select_gpus(args, "Base-2B", candidates)
+        self.assertEqual(selected, candidates[:7])
+        self.assertEqual(utilization, 0.35)
+        self.assertEqual(ports.call_count, 7)
+
+    def test_scale_specific_memory_fraction(self):
+        args = SimpleNamespace(gpu_memory_utilization=None, gpu_headroom_gib=4.0, base_port=28100)
+        with mock.patch.object(batch, "gpu_memory_mib", return_value={"0": (50000, 97871)}), \
+                mock.patch.object(batch, "port_is_free", return_value=True):
+            self.assertEqual(batch.select_gpus(args, "Base-4B", ["0"]), (["0"], 0.45))
+            with self.assertRaisesRegex(RuntimeError, "No GPU has enough free memory"):
+                batch.select_gpus(args, "Base-8B", ["0"])
+
+    def test_no_eligible_gpu_fails_immediately(self):
+        args = SimpleNamespace(gpu_memory_utilization=None, gpu_headroom_gib=4.0, base_port=28100)
+        with mock.patch.object(batch, "gpu_memory_mib", return_value={"7": (6162, 97871)}), \
+                mock.patch.object(batch, "port_is_free") as ports:
+            with self.assertRaisesRegex(RuntimeError, "no waiting"):
+                batch.select_gpus(args, "Base-2B", ["7"])
+        ports.assert_not_called()
+
+    def test_busy_port_fails_without_cleanup(self):
+        args = SimpleNamespace(gpu_memory_utilization=None, gpu_headroom_gib=4.0, base_port=28100)
+        with mock.patch.object(batch, "gpu_memory_mib", return_value={"0": (80000, 97871)}), \
+                mock.patch.object(batch, "port_is_free", return_value=False):
+            with self.assertRaisesRegex(RuntimeError, "ports busy"):
+                batch.select_gpus(args, "Base-2B", ["0"])
 
 
 if __name__ == "__main__":

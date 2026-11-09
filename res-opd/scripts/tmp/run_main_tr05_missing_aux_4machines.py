@@ -19,7 +19,8 @@ from check_main_tr05_pope_amber import (
     DATASET, EXPECTED_AMBER, EXPECTED_POPE, ROOT, TARGETS, VISION_EXPECTED,
     build_specs, inspect_all, inspect_vision_all, internvl_base_dirs, target_dirs,
 )
-from run_three_tables_fill import wait_for_capacity
+from run_three_tables_fill import gpu_memory_mib
+from wait_eval_capacity import port_is_free
 
 
 INTERNVL_VISION = "InternVL3-Base-vision"
@@ -35,6 +36,7 @@ SPECS = {(spec.size, spec.method): spec for spec in build_specs() if spec.family
 DEFAULT_MODEL_ROOT = Path("/home/liuyanlin.lyl/notebook/model")
 DEFAULT_OSS_ROOT = Path("/data/oss_bucket_0/yanlin/ckpt/OPD/v4")
 OSS_URI = "oss://industry-algo/yanlin/ckpt/OPD/v4"
+GPU_UTILIZATION_BY_SIZE = {"2B": 0.35, "4B": 0.45, "8B": 0.55}
 
 
 def pending(target_id, eval_root):
@@ -79,12 +81,14 @@ def preflight(args, jobs):
     if not shutil.which("tmux"):
         raise RuntimeError("tmux is required for sharded evaluation")
     gpus = [gpu.strip() for gpu in args.gpu_list.split(",")]
-    if len(gpus) != 8 or len(set(gpus)) != 8 or any(not gpu.isdigit() for gpu in gpus):
-        raise ValueError("--gpu-list must contain 8 distinct GPU indices")
+    if not 1 <= len(gpus) <= 8 or len(set(gpus)) != len(gpus) or any(not gpu.isdigit() for gpu in gpus):
+        raise ValueError("--gpu-list must contain 1-8 distinct GPU indices")
     if not 1024 <= args.base_port <= 65465:
-        raise ValueError("--base-port leaves insufficient room for eight shard ports")
-    if not 0 < args.gpu_memory_utilization < 1:
+        raise ValueError("--base-port leaves insufficient room for shard ports")
+    if args.gpu_memory_utilization is not None and not 0 < args.gpu_memory_utilization < 1:
         raise ValueError("--gpu-memory-utilization must be between zero and one")
+    if args.gpu_headroom_gib < 0:
+        raise ValueError("--gpu-headroom-gib must be nonnegative")
     for required in (ROOT / "res-opd/data/train_5k.parquet", ROOT / "res-opd/data/test_1000.json"):
         if not required.is_file():
             raise FileNotFoundError(required)
@@ -160,14 +164,34 @@ def staged_checkpoint(target_id, args):
         yield staged
 
 
-def run_one(args, target_id, gpus):
+def select_gpus(args, target_id, candidates):
+    size = "2B" if target_id == INTERNVL_VISION else TARGET_BY_ID[target_id].size
+    utilization = args.gpu_memory_utilization or GPU_UTILIZATION_BY_SIZE[size]
+    memory = gpu_memory_mib(candidates)
+    required = {gpu: int(total * utilization + args.gpu_headroom_gib * 1024)
+                for gpu, (_, total) in memory.items()}
+    selected = [gpu for gpu in candidates if memory[gpu][0] >= required[gpu]]
+    skipped = {gpu: {"free_mib": memory[gpu][0], "required_mib": required[gpu]}
+               for gpu in candidates if gpu not in selected}
+    if not selected:
+        raise RuntimeError(f"No GPU has enough free memory for {target_id}; no waiting. "
+                           f"GPU shortfall={skipped}")
+    ports = [args.base_port + index * 10 for index in range(len(selected))]
+    busy = [port for port in ports if not port_is_free(port)]
+    if busy:
+        raise RuntimeError(f"Evaluation ports busy for {target_id}; no waiting or process cleanup: {busy}")
+    print(f"START {target_id}: GPUs={','.join(selected)} shards={len(selected)} "
+          f"ports={ports[0]}..{ports[-1]} utilization={utilization:.2f} "
+          f"skipped={skipped}", flush=True)
+    return selected, utilization
+
+
+def run_one(args, target_id, candidates):
     modes = pending(target_id, args.eval_root)
     if not modes:
         print(f"SKIP {target_id}: all requested benchmarks complete", flush=True)
         return
-    ports = [args.base_port + index * 10 for index in range(len(gpus))]
-    print(f"WAIT {target_id}: GPUs={','.join(gpus)} ports={ports[0]}..{ports[-1]}", flush=True)
-    wait_for_capacity(gpus, ports, args.wait_seconds, args.gpu_memory_utilization, 6.0)
+    gpus, utilization = select_gpus(args, target_id, candidates)
     output = output_dir(target_id, args.eval_root)
     target = TARGET_BY_ID.get(target_id)
     spec = SPECS[(target.size, target.method)] if target else None
@@ -188,10 +212,10 @@ def run_one(args, target_id, gpus):
         "AMBER_EVAL_TYPE": "a", "AMBER_MAX_SAMPLES": "0",
         "VISION_BENCHMARK": "mmstar,cv-bench", "VISION_BENCHMARK_AUTO_DOWNLOAD": "False",
         "VISION_BENCHMARK_REFRESH_PROMPTS": "False", "RULE_ONLY_JUDGE": "True",
-        "MCQ_EXTRACT_MODE": "official", "EVAL_SHARD_COUNT": "8", "GPU_LIST": args.gpu_list,
+        "MCQ_EXTRACT_MODE": "official", "EVAL_SHARD_COUNT": str(len(gpus)), "GPU_LIST": ",".join(gpus),
         "VLLM_BASE_PORT": str(args.base_port), "VLLM_PORT_CLEANUP": "False",
         "VLLM_STARTUP_TIMEOUT": str(args.startup_timeout), "VLLM_ENFORCE_EAGER": "True",
-        "VLLM_MAX_NUM_SEQS": "8", "VLLM_GPU_MEMORY_UTILIZATION": str(args.gpu_memory_utilization),
+        "VLLM_MAX_NUM_SEQS": "8", "VLLM_GPU_MEMORY_UTILIZATION": str(utilization),
         "VLLM_KV_CACHE_MEMORY_BYTES": str(8 * 1024**3), "CLEANUP_LOCAL_CKPT": "False",
     })
     with staged_checkpoint(target_id, args) as inference_model:
@@ -219,8 +243,9 @@ def parser():
     result.add_argument("--gpu-list", default="0,1,2,3,4,5,6,7")
     result.add_argument("--base-port", type=int)
     result.add_argument("--startup-timeout", type=int, default=2400)
-    result.add_argument("--wait-seconds", type=int, default=43200)
-    result.add_argument("--gpu-memory-utilization", type=float, default=0.65)
+    result.add_argument("--gpu-memory-utilization", type=float,
+                        help="Override the scale-specific vLLM memory fraction (2B=.35, 4B=.45, 8B=.55)")
+    result.add_argument("--gpu-headroom-gib", type=float, default=4.0)
     result.add_argument("--preflight-only", action="store_true")
     return result
 
