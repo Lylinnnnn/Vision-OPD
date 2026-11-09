@@ -1,4 +1,6 @@
 import json
+import hashlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -51,6 +53,17 @@ class FourMachineAuxTest(unittest.TestCase):
             summary.write_text("AMBER evaluator failed")
             self.assertFalse(batch.startup_memory_failure(root, 0))
 
+    def test_startup_timeout_retry_marker_must_be_new_and_specific(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            summary = root / ".shards" / "run1" / "failure_summary.txt"
+            summary.parent.mkdir(parents=True)
+            summary.write_text("vLLM server failed to start within 5400s")
+            self.assertTrue(batch.startup_timeout_failure(root, summary.stat().st_mtime - 1))
+            self.assertFalse(batch.startup_timeout_failure(root, summary.stat().st_mtime + 1))
+            summary.write_text("AMBER evaluator failed")
+            self.assertFalse(batch.startup_timeout_failure(root, 0))
+
     def test_queue_covers_all_requested_once_excluding_opera(self):
         assigned = [job for queue in batch.QUEUES.values() for job in queue]
         self.assertEqual([len(queue) for queue in batch.QUEUES.values()], [4, 4, 5, 5])
@@ -59,6 +72,8 @@ class FourMachineAuxTest(unittest.TestCase):
         self.assertNotIn("OPERA-2B", assigned)
         self.assertNotIn("M088", assigned)
         self.assertEqual(len(assigned), 18)
+        self.assertEqual(batch.SERIAL_JOBS, tuple(assigned))
+        self.assertEqual(set(batch.JOB_MACHINE), set(assigned))
         workload = lambda job: 2 if job == batch.INTERNVL_VISION else int(batch.TARGET_BY_ID[job].size[0])
         self.assertEqual([sum(workload(job) for job in queue) for queue in batch.QUEUES.values()],
                          [22, 22, 20, 20])
@@ -122,6 +137,127 @@ class FourMachineAuxTest(unittest.TestCase):
                 mock.patch.object(batch, "port_is_free", return_value=False):
             with self.assertRaisesRegex(RuntimeError, "ports busy"):
                 batch.select_gpus(args, "Base-2B", ["0"])
+
+    def test_serial_eight_gpus_do_not_scan_memory(self):
+        args = SimpleNamespace(base_port=32100, gpu_memory_utilization=0.65)
+        gpus = [str(index) for index in range(8)]
+        with mock.patch.object(batch, "gpu_memory_mib") as memory, \
+                mock.patch.object(batch, "port_is_free", return_value=True) as ports:
+            self.assertEqual(batch.serial_gpus(args, gpus), (gpus, 0.65))
+        memory.assert_not_called()
+        self.assertEqual(ports.call_count, 8)
+
+    def test_serial_continues_after_failed_job(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            args = SimpleNamespace(eval_root=Path(temporary), gpu_list="0,1,2,3,4,5,6,7",
+                                   preflight_only=False)
+            seen = []
+
+            def run(_args, target_id, gpus):
+                seen.append((target_id, gpus))
+                if target_id == batch.SERIAL_JOBS[0]:
+                    raise RuntimeError("synthetic failure")
+
+            with mock.patch.object(batch, "preflight"), mock.patch.object(batch, "run_one", side_effect=run):
+                with self.assertRaisesRegex(RuntimeError, "finished with failed jobs"):
+                    batch.run_serial(args)
+            self.assertEqual([target_id for target_id, _ in seen], list(batch.SERIAL_JOBS))
+            self.assertTrue(all(len(gpus) == 8 for _, gpus in seen))
+            args.gpu_list = "0,1,2,3"
+            with self.assertRaisesRegex(ValueError, "exactly eight"):
+                batch.run_serial(args)
+
+    def test_staging_download_retries_without_using_oss_mount_for_weights(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "model.safetensors").write_bytes(b"weight")
+            (source / "config.json").write_text("{}")
+            args = SimpleNamespace(oss_root=root, stage_dir=root, oss_uri="oss://bucket/ckpt",
+                                   stage_retries=1, stage_timeout=100)
+            calls = []
+
+            def download(command, **kwargs):
+                calls.append(command)
+                if len(calls) == 1:
+                    raise subprocess.TimeoutExpired(command, 100)
+                Path(command[3]).write_bytes(b"weight")
+
+            with mock.patch.object(batch, "checkpoint_path", return_value=source), \
+                    mock.patch.object(batch.subprocess, "run", side_effect=download), \
+                    mock.patch.object(batch.time, "sleep"):
+                with batch.staged_checkpoint("M005", args) as staged:
+                    self.assertEqual((staged / "model.safetensors").read_bytes(), b"weight")
+            self.assertEqual(len(calls), 2)
+
+    def test_staging_retries_same_size_bad_checksum(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "model.safetensors").write_bytes(b"weight")
+            (source / "model.safetensors.sha256").write_text(
+                hashlib.sha256(b"weight").hexdigest() + "  model.safetensors\n")
+            args = SimpleNamespace(oss_root=root, stage_dir=root, oss_uri="oss://bucket/ckpt",
+                                   stage_retries=1, stage_timeout=100)
+            calls = []
+
+            def download(command, **kwargs):
+                calls.append(command)
+                Path(command[3]).write_bytes(b"badbad" if len(calls) == 1 else b"weight")
+
+            with mock.patch.object(batch, "checkpoint_path", return_value=source), \
+                    mock.patch.object(batch.subprocess, "run", side_effect=download), \
+                    mock.patch.object(batch.time, "sleep"):
+                with batch.staged_checkpoint("M005", args) as staged:
+                    self.assertEqual((staged / "model.safetensors").read_bytes(), b"weight")
+            self.assertEqual(len(calls), 2)
+
+    def test_serial_retries_only_startup_timeout(self):
+        @contextmanager
+        def staged(*_):
+            yield Path("/tmp/staged-model")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            args = SimpleNamespace(eval_root=Path(temporary), model_root=Path(temporary),
+                                   data_root=Path(temporary), python=Path("/tmp/python3"),
+                                   base_port=32100, startup_timeout=5400, kv_cache_gib=8,
+                                   startup_retries=1, all_serial=True,
+                                   accept_amber_error_rows=False)
+            failed = subprocess.CalledProcessError(1, ["eval"])
+            with mock.patch.object(batch, "pending", side_effect=[("pope",), ()]), \
+                    mock.patch.object(batch, "staged_checkpoint", side_effect=staged), \
+                    mock.patch.object(batch, "serial_gpus", return_value=([str(i) for i in range(8)], 0.65)), \
+                    mock.patch.object(batch, "startup_timeout_failure", return_value=True), \
+                    mock.patch.object(batch.time, "sleep"), \
+                    mock.patch.object(batch.subprocess, "run", side_effect=[failed, None]) as run:
+                batch.run_one(args, "Base-2B", [str(i) for i in range(8)])
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(run.call_args.kwargs["env"]["EVAL_SHARD_COUNT"], "8")
+            self.assertEqual(run.call_args.kwargs["env"]["VLLM_STARTUP_TIMEOUT"], "5400")
+            self.assertEqual(run.call_args.kwargs["env"]["VLLM_PORT_CLEANUP"], "True")
+
+    def test_serial_does_not_retry_non_startup_failure(self):
+        @contextmanager
+        def staged(*_):
+            yield Path("/tmp/staged-model")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            args = SimpleNamespace(eval_root=Path(temporary), model_root=Path(temporary),
+                                   data_root=Path(temporary), python=Path("/tmp/python3"),
+                                   base_port=32100, startup_timeout=5400, kv_cache_gib=8,
+                                   startup_retries=2, all_serial=True,
+                                   accept_amber_error_rows=False)
+            with mock.patch.object(batch, "pending", return_value=("amber",)), \
+                    mock.patch.object(batch, "staged_checkpoint", side_effect=staged), \
+                    mock.patch.object(batch, "serial_gpus", return_value=([str(i) for i in range(8)], 0.65)), \
+                    mock.patch.object(batch, "startup_timeout_failure", return_value=False), \
+                    mock.patch.object(batch.subprocess, "run",
+                                      side_effect=subprocess.CalledProcessError(1, ["eval"])) as run:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    batch.run_one(args, "Base-2B", [str(i) for i in range(8)])
+            self.assertEqual(run.call_count, 1)
 
     def test_scan_after_staging_and_pass_selected_shards(self):
         events = []

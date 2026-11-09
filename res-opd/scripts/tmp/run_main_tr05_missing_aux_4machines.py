@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run missing main-table POPE/AMBER and InternVL Base vision jobs on four nodes."""
+"""Run missing main-table auxiliary jobs on four nodes or one serial eight-GPU node."""
 
 from __future__ import annotations
 
@@ -32,6 +32,8 @@ QUEUES = {
     2: ("M006", "M014", "M024", "M020", "M055"),
     3: ("M018", "M025", "M028", "M064", INTERNVL_VISION),
 }
+SERIAL_JOBS = tuple(job for machine in sorted(QUEUES) for job in QUEUES[machine])
+JOB_MACHINE = {job: machine for machine, jobs in QUEUES.items() for job in jobs}
 TARGET_BY_ID = {target.row_id: target for target in TARGETS
                 if target.method not in ("OPERA", "HALC")}
 SPECS = {(spec.size, spec.method): spec for spec in build_specs() if spec.family == "Qwen3VL"}
@@ -212,21 +214,33 @@ def staged_checkpoint(target_id, args):
         spec = SPECS[(TARGET_BY_ID[target_id].size, TARGET_BY_ID[target_id].method)]
         uri = f"{args.oss_uri.rstrip('/')}/{spec.oss_name}/global_step_{TARGET_BY_ID[target_id].step}/model.safetensors"
         print(f"STAGE {target_id}: {uri} -> {staged}", flush=True)
-        subprocess.run(["ossutil", "cp", uri, str(staged / weight.name), "-f"], check=True)
-        if (staged / weight.name).stat().st_size != weight.stat().st_size:
-            raise RuntimeError(f"Staged checkpoint size differs from OSS mount: {target_id}")
         sidecar = staged / "model.safetensors.sha256"
+        expected = ""
         if sidecar.is_file():
             parts = sidecar.read_text(encoding="utf-8").split()
             expected = parts[0].lower() if parts else ""
             if not re.fullmatch(r"[0-9a-f]{64}", expected):
                 raise RuntimeError(f"Malformed SHA256 sidecar: {sidecar}")
-            digest = hashlib.sha256()
-            with (staged / weight.name).open("rb") as stream:
-                for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
-                    digest.update(chunk)
-            if digest.hexdigest() != expected:
-                raise RuntimeError(f"Staged checkpoint SHA256 mismatch: {target_id}")
+        for attempt in range(getattr(args, "stage_retries", 0) + 1):
+            try:
+                subprocess.run(["ossutil", "cp", uri, str(staged / weight.name), "-f"],
+                               check=True, timeout=getattr(args, "stage_timeout", None))
+                downloaded = staged / weight.name
+                if not downloaded.is_file() or downloaded.stat().st_size != weight.stat().st_size:
+                    raise ValueError(f"Staged checkpoint size differs from OSS mount: {target_id}")
+                if expected:
+                    digest = hashlib.sha256()
+                    with downloaded.open("rb") as stream:
+                        for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+                            digest.update(chunk)
+                    if digest.hexdigest() != expected:
+                        raise ValueError(f"Staged checkpoint SHA256 mismatch: {target_id}")
+                break
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
+                if attempt >= getattr(args, "stage_retries", 0):
+                    raise
+                print(f"RETRY STAGE {target_id}: attempt {attempt + 2}", flush=True)
+                time.sleep(30)
         yield staged
 
 
@@ -264,6 +278,31 @@ def startup_memory_failure(output, started):
     return False
 
 
+def startup_timeout_failure(output, started):
+    shard_root = output / ".shards"
+    if not shard_root.is_dir():
+        return False
+    for summary in shard_root.glob("*/failure_summary.txt"):
+        if summary.stat().st_mtime < started:
+            continue
+        content = summary.read_text(encoding="utf-8", errors="replace")
+        if "vLLM server failed to start within" in content:
+            return True
+    return False
+
+
+def serial_gpus(args, candidates):
+    if len(candidates) != 8 or len(set(candidates)) != 8:
+        raise ValueError("Serial mode requires exactly eight distinct GPUs")
+    ports = [args.base_port + index * 10 for index in range(8)]
+    busy = [port for port in ports if not port_is_free(port)]
+    if busy:
+        print(f"SERIAL PORT CLEANUP: wrapper will inspect occupied ports {busy}", flush=True)
+    print(f"START SERIAL: GPUs={','.join(candidates)} shards=8 "
+          f"ports={ports[0]}..{ports[-1]} utilization={args.gpu_memory_utilization:.2f}", flush=True)
+    return candidates, args.gpu_memory_utilization
+
+
 def run_one(args, target_id, candidates):
     modes = pending(target_id, args.eval_root, args.accept_amber_error_rows)
     if not modes:
@@ -278,10 +317,12 @@ def run_one(args, target_id, candidates):
     if target and target.step is not None:
         experiment += f"_global_step_{target.step}"
     with staged_checkpoint(target_id, args) as inference_model:
-        gpus, utilization = select_gpus(args, target_id, candidates)
+        serial = getattr(args, "all_serial", False)
+        gpus, utilization = (serial_gpus(args, candidates) if serial else
+                             select_gpus(args, target_id, candidates))
         command = ["bash", str(ROOT / "res-opd/scripts/eval_after_merge_sharded_8gpu.sh"),
                    str(inference_model), "instruct" if target else "internvl3", ",".join(modes)]
-        for attempt in range(2):
+        for attempt in range(1 + (args.startup_retries if serial else 1)):
             env = os.environ.copy()
             env.update({
                 "PYTHON_BIN": str(args.python), "RES_OPD_DATA_ROOT": str(args.data_root),
@@ -297,7 +338,8 @@ def run_one(args, target_id, candidates):
                 "VISION_BENCHMARK": "mmstar,cv-bench", "VISION_BENCHMARK_AUTO_DOWNLOAD": "False",
                 "VISION_BENCHMARK_REFRESH_PROMPTS": "False", "RULE_ONLY_JUDGE": "True",
                 "MCQ_EXTRACT_MODE": "official", "EVAL_SHARD_COUNT": str(len(gpus)), "GPU_LIST": ",".join(gpus),
-                "VLLM_BASE_PORT": str(args.base_port), "VLLM_PORT_CLEANUP": "False",
+                "VLLM_BASE_PORT": str(args.base_port),
+                "VLLM_PORT_CLEANUP": "True" if serial else "False",
                 "VLLM_STARTUP_TIMEOUT": str(args.startup_timeout), "VLLM_ENFORCE_EAGER": "True",
                 "VLLM_MAX_NUM_SEQS": "8", "VLLM_GPU_MEMORY_UTILIZATION": str(utilization),
                 "VLLM_KV_CACHE_MEMORY_BYTES": str(args.kv_cache_gib * 1024**3),
@@ -309,6 +351,12 @@ def run_one(args, target_id, candidates):
                 subprocess.run(command, cwd=ROOT, env=env, check=True)
                 break
             except subprocess.CalledProcessError:
+                if serial:
+                    if attempt >= args.startup_retries or not startup_timeout_failure(output, started):
+                        raise
+                    print(f"RETRY STARTUP {target_id}: attempt {attempt + 2}", flush=True)
+                    time.sleep(30)
+                    continue
                 if attempt or not startup_memory_failure(output, started):
                     raise
                 retry_gpus, utilization = select_gpus(args, target_id, candidates)
@@ -330,7 +378,10 @@ def run_one(args, target_id, candidates):
 
 def parser():
     result = argparse.ArgumentParser(description=__doc__)
-    result.add_argument("--machine", type=int, choices=QUEUES, required=True)
+    selection = result.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--machine", type=int, choices=QUEUES)
+    selection.add_argument("--all-serial", action="store_true",
+                           help="Run all four main-table queues serially with exactly eight shards")
     result.add_argument("--python", type=Path, default=Path(os.environ.get(
         "PYTHON_BIN") or str(Path(os.environ.get("CONDA_PREFIX", "")) / "bin/python3")))
     result.add_argument("--eval-root", type=Path, default=ROOT / "res-opd/eval_results")
@@ -341,7 +392,10 @@ def parser():
     result.add_argument("--stage-dir", type=Path, default=Path("/tmp"))
     result.add_argument("--gpu-list", default="0,1,2,3,4,5,6,7")
     result.add_argument("--base-port", type=int)
-    result.add_argument("--startup-timeout", type=int, default=2400)
+    result.add_argument("--startup-timeout", type=int)
+    result.add_argument("--startup-retries", type=int)
+    result.add_argument("--stage-timeout", type=int)
+    result.add_argument("--stage-retries", type=int)
     result.add_argument("--gpu-memory-utilization", type=float, default=0.65)
     result.add_argument("--gpu-headroom-gib", type=float, default=6.0)
     result.add_argument("--kv-cache-gib", type=int, default=8,
@@ -352,10 +406,57 @@ def parser():
     return result
 
 
+def run_serial(args):
+    candidates = [gpu.strip() for gpu in args.gpu_list.split(",")]
+    if len(candidates) != 8 or len(set(candidates)) != 8:
+        raise ValueError("--all-serial requires exactly eight distinct GPUs")
+    args.eval_root.mkdir(parents=True, exist_ok=True)
+    with (args.eval_root / ".main_tr05_aux_all_serial.lock").open("a") as serial_lock:
+        try:
+            fcntl.flock(serial_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise RuntimeError("The all-serial queue is already running") from error
+        failures = []
+        for index, target_id in enumerate(SERIAL_JOBS, 1):
+            machine = JOB_MACHINE[target_id]
+            lock_path = args.eval_root / f".main_tr05_aux_machine{machine}.lock"
+            print(f"SERIAL {index}/{len(SERIAL_JOBS)} {target_id}: waiting for old machine-{machine} queue lock",
+                  flush=True)
+            with lock_path.open("a") as machine_lock:
+                fcntl.flock(machine_lock, fcntl.LOCK_EX)
+                try:
+                    preflight(args, (target_id,))
+                    if args.preflight_only:
+                        print(f"PREFLIGHT=PASS {target_id}", flush=True)
+                    else:
+                        run_one(args, target_id, candidates)
+                except Exception as error:
+                    print(f"FAIL {target_id}: {type(error).__name__}: {error}", flush=True)
+                    failures.append(target_id)
+        if failures:
+            raise RuntimeError(f"Serial queue finished with failed jobs: {', '.join(failures)}")
+    print(f"ALL_SERIAL={'PREFLIGHT_PASS' if args.preflight_only else 'PASS'}", flush=True)
+
+
 def main():
     args = parser().parse_args()
     if args.base_port is None:
-        args.base_port = 28100 + args.machine * 1000
+        args.base_port = 32100 if args.all_serial else 28100 + args.machine * 1000
+    if args.startup_timeout is None:
+        args.startup_timeout = 5400 if args.all_serial else 2400
+    if args.startup_retries is None:
+        args.startup_retries = 2 if args.all_serial else 0
+    if args.stage_retries is None:
+        args.stage_retries = 2 if args.all_serial else 0
+    if args.stage_timeout is None and args.all_serial:
+        args.stage_timeout = 7200
+    if (args.startup_retries < 0 or args.stage_retries < 0 or
+            args.stage_timeout is not None and args.stage_timeout <= 0):
+        raise ValueError("Retry counts must be nonnegative and --stage-timeout must be positive")
+    if args.all_serial:
+        print(f"ALL_SERIAL: {len(SERIAL_JOBS)} jobs, exactly 8 shards each", flush=True)
+        run_serial(args)
+        return
     jobs = QUEUES[args.machine]
     print(f"MACHINE {args.machine}: {len(jobs)} serial jobs: {', '.join(jobs)}", flush=True)
     preflight(args, jobs)
