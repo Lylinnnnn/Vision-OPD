@@ -27,6 +27,7 @@ def load_module(name, path):
 API = load_module("external_decode_api_test", BASELINES / "external_decode_api.py")
 AUX = load_module("run_external_aux_benchmarks_test", BASELINES / "run_external_aux_benchmarks.py")
 POPE = load_module("eval_pope_external_aux_test", EVAL / "eval_pope.py")
+SMOKE = load_module("smoke_halc_aux_test", BASELINES / "smoke_halc_aux.py")
 
 
 class ExternalAuxBenchmarksTest(unittest.TestCase):
@@ -198,6 +199,42 @@ class ExternalAuxBenchmarksTest(unittest.TestCase):
             with path.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps({"sample_uid": "failed", "model_answer": "No."}) + "\n")
             self.assertEqual(set(POPE.load_jsonl(path)), {"failed", "valid"})
+
+    def test_halc_aux_smoke_rejects_http_errors_even_when_eval_exits_zero(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for split in SMOKE.POPE_SPLITS:
+                path = root / "pope" / split / "eval_results.jsonl"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps({
+                    "sample_uid": "one", "model_answer": "[ERROR] HTTP 500",
+                    "pred_answer": "yes",
+                }) + "\n")
+            with self.assertRaisesRegex(RuntimeError, "invalid answers"):
+                SMOKE.check_pope(root, 1)
+
+    def test_halc_aux_smoke_checks_amber_raw_answers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "amber"
+            root.mkdir()
+            (root / "raw_results.jsonl").write_text(json.dumps({
+                "id": 1005, "model_answer": "[ERROR] HTTP 500", "is_discriminative": True,
+            }) + "\n")
+            (root / "amber_d_responses.json").write_text(
+                json.dumps([{"id": 1005, "response": "No"}]))
+            with self.assertRaisesRegex(RuntimeError, "invalid answers"):
+                SMOKE.check_amber(Path(temporary), 1, "d", True)
+
+    def test_halc_aux_smoke_accepts_valid_amber_answers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "amber"
+            root.mkdir()
+            (root / "raw_results.jsonl").write_text(json.dumps({
+                "id": 1005, "model_answer": "Yes.", "is_discriminative": True,
+            }) + "\n")
+            (root / "amber_d_responses.json").write_text(
+                json.dumps([{"id": 1005, "response": "Yes"}]))
+            SMOKE.check_amber(Path(temporary), 1, "d", True)
 
     def test_anchor_requires_complete_official_result(self):
         with tempfile.TemporaryDirectory() as temporary:
