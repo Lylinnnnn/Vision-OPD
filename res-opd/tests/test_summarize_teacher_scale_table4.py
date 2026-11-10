@@ -176,6 +176,23 @@ class TeacherScaleTable4Test(unittest.TestCase):
             state, _ = summary.chair_audit.inspect_raw(raw, metrics, 0.5)
             self.assertEqual(state, "已推理，待新版计分")
 
+    def test_reverse_vision_result_needs_view_metadata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            answer = directory / "mmstar/model_answer/run_answer.jsonl"
+            judge = directory / "mmstar/judge/run_answer.jsonl"
+            answer.parent.mkdir(parents=True)
+            judge.parent.mkdir(parents=True)
+            answer.write_text(json.dumps({"sample_uid": "one", "model_answer": "A"}) + "\n")
+            judge.write_text(json.dumps({"judge": "yes"}) + "\n")
+            result = summary.inspect_vision_for_view([directory], "mmstar", 1, 0.5)
+            self.assertEqual(result.state, "协议待核实")
+            answer.write_text(json.dumps({"sample_uid": "one", "model_answer": "A",
+                                          "degradation_mode": "original",
+                                          "student_ratio": 0.5}) + "\n")
+            result = summary.inspect_vision_for_view([directory], "mmstar", 1, 0.5)
+            self.assertEqual(result.state, "已推理有结果")
+
 
 if __name__ == "__main__":
     unittest.main()

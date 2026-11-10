@@ -115,6 +115,33 @@ def matched_aux(dataset, directories, benchmark, matched_suffix, expected_studen
     return aux_audit.Inspection("未匹配推理", old.count, empty, dataset / matched_suffix)
 
 
+def inspect_vision_for_view(directories, benchmark, expected, expected_student_ratio):
+    result = aux_audit.inspect_vision_all(directories, benchmark, expected)
+    if expected_student_ratio == 1.0 or result.state != "已推理有结果":
+        return result
+    for directory in directories:
+        if result.source is None or not result.source.is_relative_to(directory):
+            continue
+        files = aux_audit.vision_files(directory, benchmark, "model_answer")
+        if len(files) != 1:
+            continue
+        try:
+            rows = aux_audit.vision_rows(files[0])
+            if len(rows) == expected and all(
+                row.get("degradation_mode") == "original"
+                and row.get("student_ratio") == expected_student_ratio
+                for row in rows
+            ):
+                return result
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
+        break
+    return aux_audit.Inspection(
+        "协议待核实", result.count, ("--",), result.source,
+        f"{benchmark} raw answers do not verify student_ratio={expected_student_ratio}",
+    )
+
+
 def inspect_one(student, teacher, view, spec, step, oss_root, eval_root, issues,
                 matched_suffix, aliases=()):
     ckpt_state, checkpoint = checkpoint_state(oss_root, spec, step, aliases)
@@ -129,8 +156,8 @@ def inspect_one(student, teacher, view, spec, step, oss_root, eval_root, issues,
                        expected_student_ratio)
     amber = matched_aux(dataset, directories, "amber", matched_suffix,
                         expected_student_ratio)
-    mmstar = aux_audit.inspect_vision_all(directories, "mmstar", 1500)
-    cvbench = aux_audit.inspect_vision_all(directories, "cv-bench", 2638)
+    mmstar = inspect_vision_for_view(directories, "mmstar", 1500, expected_student_ratio)
+    cvbench = inspect_vision_for_view(directories, "cv-bench", 2638, expected_student_ratio)
     results = {"POPE": pope, "AMBER": amber, "MMStar": mmstar, "CV-Bench": cvbench}
     states = {"CHAIR": chair_state, **{name: result.state for name, result in results.items()}}
     return {
@@ -229,6 +256,7 @@ def render(groups, step_rows, issues, oss_root, matched_suffix):
         "POPE F1 为三个 5223 条 split 的 macro F1；AMBER A-HAL 为官方点数。百分数列均以百分数显示。",
         "有 `[ERROR]` 回答、缺少原始推理或只有孤立指标的目录不视为有效结果；`--` 不代表零。",
         f"两种视角的 POPE/A-HAL 均仅从 `{matched_suffix}` 读取匹配复评；其他目录仅作旧结果线索，不填表。",
+        "反向视角的 MMStar/CV-Bench 还要求原始回答显式记录 `student_ratio=0.5`；否则标协议待核实，不填表。",
         f"OSS checkpoint 根目录：`{oss_root}`（{'已挂载' if oss_root.is_dir() else '未挂载，不能断言未训练'}）。",
         "", "## 八组实验与 checkpoint", "",
         "| Student | Teacher | View | Method | 完整 checkpoint steps | 发现的评测/ckpt steps | 状态 | OSS 实验目录 |",
