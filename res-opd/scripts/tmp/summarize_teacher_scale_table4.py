@@ -25,6 +25,7 @@ def controls():
         ("2B", "4B", "0.5", "1.0"),
         ("4B", "4B", "1.0", "0.5"),
         ("4B", "8B", "1.0", "0.5"),
+        ("4B", "4B", "0.5", "1.0"),
         ("4B", "8B", "0.5", "1.0"),
     )
     return [
@@ -218,8 +219,8 @@ def group_status(group, oss_root):
 def render(groups, step_rows, issues, oss_root, matched_suffix):
     lines = [
         "# Table 4: two-direction teacher-scale uniform Frozen RKL", "",
-        "仅统计 7 组非 Base 控制：四组 `sr=1.0,tr=0.5` 为压缩教师→原图学生，"
-        "三组 `sr=0.5,tr=1.0` 为原图教师→压缩学生。",
+        "仅统计 8 组非 Base 控制：四组 `sr=1.0,tr=0.5` 为压缩教师→原图学生，"
+        "四组 `sr=0.5,tr=1.0` 为原图教师→压缩学生。",
         "同尺寸为 frozen 原模型教师，跨尺寸为 fixed 大模型教师；两组都不使用 RiskMask。",
         "评测输入只按学生视角：前组原图 `sr=1.0`，后组降采样再放大的模糊图 `sr=0.5`；推理不加载教师。",
         "原表并未统一选训练最终 step；本清单逐一展示实际发现的 step，不自动挑选论文代表 checkpoint。",
@@ -229,7 +230,7 @@ def render(groups, step_rows, issues, oss_root, matched_suffix):
         "有 `[ERROR]` 回答、缺少原始推理或只有孤立指标的目录不视为有效结果；`--` 不代表零。",
         f"两种视角的 POPE/A-HAL 均仅从 `{matched_suffix}` 读取匹配复评；其他目录仅作旧结果线索，不填表。",
         f"OSS checkpoint 根目录：`{oss_root}`（{'已挂载' if oss_root.is_dir() else '未挂载，不能断言未训练'}）。",
-        "", "## 七组实验与 checkpoint", "",
+        "", "## 八组实验与 checkpoint", "",
         "| Student | Teacher | View | Method | 完整 checkpoint steps | 发现的评测/ckpt steps | 状态 | OSS 实验目录 |",
         "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]

@@ -20,12 +20,14 @@ def checkpoint(root, spec, step, complete=True):
 
 
 class TeacherScaleTable4Test(unittest.TestCase):
-    def test_exact_seven_non_base_controls(self):
+    def test_exact_eight_non_base_controls(self):
         controls = summary.controls()
-        self.assertEqual(len(controls), 7)
+        self.assertEqual(len(controls), 8)
         self.assertTrue(all(spec.method != "Base" for *_, spec in controls))
         self.assertEqual(sum(view == "sr=1.0,tr=0.5" for _, _, view, _ in controls), 4)
-        self.assertEqual(sum(view == "sr=0.5,tr=1.0" for _, _, view, _ in controls), 3)
+        self.assertEqual(sum(view == "sr=0.5,tr=1.0" for _, _, view, _ in controls), 4)
+        self.assertIn(("4B", "4B frozen", "sr=0.5,tr=1.0"),
+                      [(student, teacher, view) for student, teacher, view, _ in controls])
         self.assertTrue(all("-sr0.5-tr1.0-" in spec.experiment
                             for _, _, view, spec in controls if view == "sr=0.5,tr=1.0"))
         self.assertTrue(all("_sr0.5_tr1.0_" in spec.oss_name
@@ -45,7 +47,7 @@ class TeacherScaleTable4Test(unittest.TestCase):
             spec = summary.teacher_scale.experiment_spec("2B", "2B", "0.5")
             checkpoint(oss, spec, 50)
             groups, step_rows, issues = summary.collect(oss, eval_root)
-            self.assertEqual(len(groups), 7)
+            self.assertEqual(len(groups), 8)
             self.assertFalse(issues)
             self.assertEqual(len(step_rows), 1)
             self.assertEqual(step_rows[0]["step"], 50)
