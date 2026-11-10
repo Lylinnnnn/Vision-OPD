@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the non-Base teacher-scale table from exact checkpoints and evaluated rows."""
+"""Build the two-direction non-Base teacher-scale table from evaluated rows."""
 
 from __future__ import annotations
 
@@ -18,9 +18,29 @@ METRICS = ("CHAIR", "POPE", "AMBER", "MMStar", "CV-Bench")
 
 
 def controls():
-    return [(student, teacher, view, spec)
-            for student, teacher, view, spec in teacher_scale.table_specs()
-            if spec.method != "Base"]
+    configs = (
+        ("2B", "2B", "1.0", "0.5"),
+        ("2B", "4B", "1.0", "0.5"),
+        ("2B", "2B", "0.5", "1.0"),
+        ("2B", "4B", "0.5", "1.0"),
+        ("4B", "4B", "1.0", "0.5"),
+        ("4B", "8B", "1.0", "0.5"),
+        ("4B", "8B", "0.5", "1.0"),
+    )
+    return [
+        (student, f"{teacher} {'frozen' if student == teacher else 'fixed'}",
+         f"sr={student_ratio},tr={teacher_ratio}",
+         teacher_scale.experiment_spec(student, teacher, teacher_ratio, student_ratio))
+        for student, teacher, student_ratio, teacher_ratio in configs
+    ]
+
+
+def student_ratio(view):
+    return float(view.split(",", 1)[0].split("=", 1)[1])
+
+
+def dataset_tag(view):
+    return f"train5000_test1000_original_sr{str(student_ratio(view)).replace('.', 'p')}"
 
 
 def observed_steps(spec, oss_root, eval_root):
@@ -49,7 +69,7 @@ def checkpoint_state(oss_root, spec, step, aliases):
     return "缺少 checkpoint", checkpoint
 
 
-def matched_protocol_error(directory, benchmark):
+def matched_protocol_error(directory, benchmark, expected_student_ratio=1.0):
     if benchmark == "pope":
         summary = inventory.read_json(directory / "pope/pope_summary.json")
         splits = ("pope_adv", "pope_pop", "pope_random")
@@ -59,23 +79,23 @@ def matched_protocol_error(directory, benchmark):
                 return f"{split} source is not res-opd-test"
             path = directory / "pope" / split / "eval_results.jsonl"
             if any(row.get("degradation_mode") != "original" or
-                   row.get("student_ratio") != 1.0 for row in inventory.jsonl(path)):
-                return f"{split} student view is not verified as original/sr=1.0"
+                   row.get("student_ratio") != expected_student_ratio for row in inventory.jsonl(path)):
+                return f"{split} student view is not verified as sr={expected_student_ratio}"
     else:
         path = directory / "amber/raw_results.jsonl"
         if any(row.get("degradation_mode") != "original" or
-               row.get("student_ratio") != 1.0 for row in inventory.jsonl(path)):
-            return "AMBER student view is not verified as original/sr=1.0"
+               row.get("student_ratio") != expected_student_ratio for row in inventory.jsonl(path)):
+            return f"AMBER student view is not verified as sr={expected_student_ratio}"
     return None
 
 
-def matched_aux(dataset, directories, benchmark, matched_suffix):
+def matched_aux(dataset, directories, benchmark, matched_suffix, expected_student_ratio):
     expected = aux_audit.EXPECTED_POPE if benchmark == "pope" else aux_audit.EXPECTED_AMBER
     matched_dir = dataset / matched_suffix
     matched = aux_audit.inspect_all([matched_dir], benchmark, expected)
     if matched.state == "已推理有结果":
         try:
-            error = matched_protocol_error(matched_dir, benchmark)
+            error = matched_protocol_error(matched_dir, benchmark, expected_student_ratio)
         except (OSError, ValueError, TypeError, KeyError) as exc:
             error = str(exc)
         if error:
@@ -97,17 +117,17 @@ def matched_aux(dataset, directories, benchmark, matched_suffix):
 def inspect_one(student, teacher, view, spec, step, oss_root, eval_root, issues,
                 matched_suffix, aliases=()):
     ckpt_state, checkpoint = checkpoint_state(oss_root, spec, step, aliases)
+    expected_student_ratio = student_ratio(view)
     dataset = (eval_root / "instruct/full" / f"{spec.experiment}_global_step_{step}"
-               / inventory.DATASET)
+               / dataset_tag(view))
     directories = aux_audit.output_dirs(dataset)
     chair_state, chair_values, chair_source = chair_audit.inspect_chair(
-        directories, dataset, issues, f"{student}/{teacher}/{view}/s{step}")
-    if view == "tr=0.5":
-        pope = matched_aux(dataset, directories, "pope", matched_suffix)
-        amber = matched_aux(dataset, directories, "amber", matched_suffix)
-    else:
-        pope = aux_audit.inspect_all(directories, "pope", aux_audit.EXPECTED_POPE)
-        amber = aux_audit.inspect_all(directories, "amber", aux_audit.EXPECTED_AMBER)
+        directories, dataset, issues, f"{student}/{teacher}/{view}/s{step}",
+        expected_student_ratio)
+    pope = matched_aux(dataset, directories, "pope", matched_suffix,
+                       expected_student_ratio)
+    amber = matched_aux(dataset, directories, "amber", matched_suffix,
+                        expected_student_ratio)
     mmstar = aux_audit.inspect_vision_all(directories, "mmstar", 1500)
     cvbench = aux_audit.inspect_vision_all(directories, "cv-bench", 2638)
     results = {"POPE": pope, "AMBER": amber, "MMStar": mmstar, "CV-Bench": cvbench}
@@ -127,7 +147,8 @@ def collect(oss_root, eval_root, matched_suffix="teacher_scale_matched_official_
     for student, teacher, view, spec in controls():
         ratio = view.split("=")[-1]
         aliases = teacher_scale.possible_aliases(
-            spec, student, teacher.split()[0], ratio, oss_root
+            spec, student, teacher.split()[0], ratio, oss_root,
+            str(student_ratio(view))
         ) if oss_root.is_dir() else []
         steps = observed_steps(spec, oss_root, eval_root)
         complete = [step for step in steps
@@ -196,15 +217,17 @@ def group_status(group, oss_root):
 
 def render(groups, step_rows, issues, oss_root, matched_suffix):
     lines = [
-        "# Table 4: teacher-scale uniform Frozen RKL (tr=0.50)", "",
-        "仅统计原表的 7 组非 Base 控制：四组压缩教师视图改为 `tr=0.50`，三组原图教师视图仍为 `tr=1.0`。",
-        "同尺寸为 frozen 原模型教师，跨尺寸为 fixed 大模型教师；学生始终用原图，且不使用 RiskMask。",
+        "# Table 4: two-direction teacher-scale uniform Frozen RKL", "",
+        "仅统计 7 组非 Base 控制：四组 `sr=1.0,tr=0.5` 为压缩教师→原图学生，"
+        "三组 `sr=0.5,tr=1.0` 为原图教师→压缩学生。",
+        "同尺寸为 frozen 原模型教师，跨尺寸为 fixed 大模型教师；两组都不使用 RiskMask。",
+        "评测输入只按学生视角：前组原图 `sr=1.0`，后组降采样再放大的模糊图 `sr=0.5`；推理不加载教师。",
         "原表并未统一选训练最终 step；本清单逐一展示实际发现的 step，不自动挑选论文代表 checkpoint。",
-        "CHAIR 必须是 1000 张、`Describe the image.`、original student、official caption/mention 口径。",
+        "CHAIR 必须是 1000 张、`Describe the image.`、与该行 `sr` 一致、official caption/mention 口径。",
         "Resp. Len. 为最终回答平均字符数/图，不是 token；Correct/Hall. 为含重复的对象 mention 总数。",
         "POPE F1 为三个 5223 条 split 的 macro F1；AMBER A-HAL 为官方点数。百分数列均以百分数显示。",
         "有 `[ERROR]` 回答、缺少原始推理或只有孤立指标的目录不视为有效结果；`--` 不代表零。",
-        f"压缩视角的 POPE/A-HAL 仅从 `{matched_suffix}` 读取匹配复评；其他目录仅作旧结果线索，不填表。",
+        f"两种视角的 POPE/A-HAL 均仅从 `{matched_suffix}` 读取匹配复评；其他目录仅作旧结果线索，不填表。",
         f"OSS checkpoint 根目录：`{oss_root}`（{'已挂载' if oss_root.is_dir() else '未挂载，不能断言未训练'}）。",
         "", "## 七组实验与 checkpoint", "",
         "| Student | Teacher | View | Method | 完整 checkpoint steps | 发现的评测/ckpt steps | 状态 | OSS 实验目录 |",

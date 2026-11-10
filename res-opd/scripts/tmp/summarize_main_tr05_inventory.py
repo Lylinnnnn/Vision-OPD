@@ -98,7 +98,7 @@ def read_judge_rows(path):
     return rows if isinstance(rows, list) else []
 
 
-def chair_result(directory):
+def chair_result(directory, expected_student_ratio=1.0):
     metrics_path = directory / "chair_metrics.json"
     rows_path = directory / "eval_results.jsonl"
     if not metrics_path.is_file() or not rows_path.is_file():
@@ -121,7 +121,7 @@ def chair_result(directory):
     if len(rows) != 1000 or len({row.get("image_id") for row in rows}) != 1000:
         return None
     if any(row.get("eval_prompt") not in (None, CHAIR_PROMPT) or
-           float(row.get("eval_student_ratio", 1.0)) != 1.0 for row in rows):
+           float(row.get("eval_student_ratio", 1.0)) != expected_student_ratio for row in rows):
         return None
     texts = [str(row.get("generated_caption") or "").rsplit("</think>", 1)[-1].strip() for row in rows]
     if any(not value for value in texts):

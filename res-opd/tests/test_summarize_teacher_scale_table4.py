@@ -21,8 +21,15 @@ def checkpoint(root, spec, step, complete=True):
 
 class TeacherScaleTable4Test(unittest.TestCase):
     def test_exact_seven_non_base_controls(self):
-        self.assertEqual(len(summary.controls()), 7)
-        self.assertTrue(all(spec.method != "Base" for *_, spec in summary.controls()))
+        controls = summary.controls()
+        self.assertEqual(len(controls), 7)
+        self.assertTrue(all(spec.method != "Base" for *_, spec in controls))
+        self.assertEqual(sum(view == "sr=1.0,tr=0.5" for _, _, view, _ in controls), 4)
+        self.assertEqual(sum(view == "sr=0.5,tr=1.0" for _, _, view, _ in controls), 3)
+        self.assertTrue(all("-sr0.5-tr1.0-" in spec.experiment
+                            for _, _, view, spec in controls if view == "sr=0.5,tr=1.0"))
+        self.assertTrue(all("_sr0.5_tr1.0_" in spec.oss_name
+                            for _, _, view, spec in controls if view == "sr=0.5,tr=1.0"))
 
     def test_unmounted_oss_is_not_reported_as_missing_training(self):
         group = {"complete": [], "aliases": [], "steps": []}
@@ -45,8 +52,8 @@ class TeacherScaleTable4Test(unittest.TestCase):
             self.assertEqual(step_rows[0]["ckpt_state"], "完整")
             report = summary.render(groups, step_rows, issues, oss,
                                     "teacher_scale_matched_official_v2")
-            self.assertIn("| 2B | 2B frozen | tr=0.5 | 50 |", report)
-            self.assertNotIn("| 2B | 2B frozen | tr=0.5 | 156 |", report)
+            self.assertIn("| 2B | 2B frozen | sr=1.0,tr=0.5 | 50 |", report)
+            self.assertNotIn("| 2B | 2B frozen | sr=1.0,tr=0.5 | 156 |", report)
             self.assertNotIn("| Base |", report)
 
     def test_complete_checkpoint_without_results_is_not_called_complete(self):
@@ -56,7 +63,7 @@ class TeacherScaleTable4Test(unittest.TestCase):
             oss.mkdir()
             spec = summary.teacher_scale.experiment_spec("4B", "8B", "0.5")
             checkpoint(oss, spec, 312)
-            row = summary.inspect_one("4B", "8B fixed", "tr=0.5", spec, 312,
+            row = summary.inspect_one("4B", "8B fixed", "sr=1.0,tr=0.5", spec, 312,
                                       oss, root / "eval", [], "teacher_scale_matched_official_v2")
             self.assertEqual(row["ckpt_state"], "完整")
             self.assertEqual(row["states"]["CHAIR"], "未推理")
@@ -92,7 +99,7 @@ class TeacherScaleTable4Test(unittest.TestCase):
             old_expected = summary.aux_audit.EXPECTED_AMBER
             try:
                 summary.aux_audit.EXPECTED_AMBER = 2
-                row = summary.inspect_one("2B", "4B fixed", "tr=0.5", spec, 156,
+                row = summary.inspect_one("2B", "4B fixed", "sr=1.0,tr=0.5", spec, 156,
                                           oss, root / "eval", [], "teacher_scale_matched_official_v2")
             finally:
                 summary.aux_audit.EXPECTED_AMBER = old_expected
@@ -126,6 +133,46 @@ class TeacherScaleTable4Test(unittest.TestCase):
             raw.write_text(json.dumps({"student_ratio": 0.5,
                                        "degradation_mode": "original"}) + "\n")
             self.assertIn("student view", summary.matched_protocol_error(directory, "amber"))
+            self.assertIsNone(summary.matched_protocol_error(directory, "amber", 0.5))
+
+    def test_reverse_view_does_not_reuse_original_student_results(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            oss = root / "oss"
+            oss.mkdir()
+            eval_root = root / "eval"
+            reverse = summary.teacher_scale.experiment_spec("2B", "4B", "1.0", "0.5")
+            original = summary.teacher_scale.experiment_spec("2B", "4B", "1.0")
+            checkpoint(oss, reverse, 50)
+            old = eval_root / "instruct/full" / f"{original.experiment}_global_step_50"
+            (old / summary.inventory.DATASET).mkdir(parents=True)
+            groups, rows, issues = summary.collect(oss, eval_root)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["view"], "sr=0.5,tr=1.0")
+            self.assertEqual(rows[0]["states"]["CHAIR"], "未推理")
+            self.assertFalse(issues)
+
+    def test_reverse_chair_raw_requires_compressed_inference(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            raw = directory / "eval_results.jsonl"
+            metrics = directory / "chair_metrics.json"
+            rows = [json.dumps({"image_id": index, "generated_caption": "A dog.",
+                                "gt_captions": ["A dog."],
+                                "eval_prompt": "Describe the image.",
+                                "eval_student_ratio": 1.0})
+                    for index in range(1000)]
+            raw.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            state, _ = summary.chair_audit.inspect_raw(raw, metrics, 0.5)
+            self.assertEqual(state, "已推理，协议待核实")
+            rows = [json.dumps({"image_id": index, "generated_caption": "A dog.",
+                                "gt_captions": ["A dog."],
+                                "eval_prompt": "Describe the image.",
+                                "eval_student_ratio": 0.5})
+                    for index in range(1000)]
+            raw.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            state, _ = summary.chair_audit.inspect_raw(raw, metrics, 0.5)
+            self.assertEqual(state, "已推理，待新版计分")
 
 
 if __name__ == "__main__":

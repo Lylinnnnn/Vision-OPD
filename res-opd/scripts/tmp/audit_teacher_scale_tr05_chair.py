@@ -9,7 +9,7 @@ import summarize_main_tr05_inventory as inventory
 import summarize_teacher_scale_tr05 as teacher_scale
 
 
-def inspect_raw(path, metrics_path):
+def inspect_raw(path, metrics_path, expected_student_ratio=1.0):
     rows = list(inventory.jsonl(path))
     if (len(rows) != 1000 or any(not isinstance(row, dict) for row in rows)
             or len({row.get("image_id") for row in rows}) != 1000
@@ -27,7 +27,7 @@ def inspect_raw(path, metrics_path):
     if not ratios and metrics.get("eval_student_ratio") is not None:
         ratios = {str(metrics["eval_student_ratio"])}
     try:
-        ratio_matches = bool(ratios) and all(float(value) == 1.0 for value in ratios)
+        ratio_matches = bool(ratios) and all(float(value) == expected_student_ratio for value in ratios)
     except ValueError:
         ratio_matches = False
     if prompts != {inventory.CHAIR_PROMPT} or not ratio_matches:
@@ -38,7 +38,7 @@ def inspect_raw(path, metrics_path):
     return "已推理，待新版计分", str(path)
 
 
-def inspect_chair(directories, dataset, issues, label):
+def inspect_chair(directories, dataset, issues, label, expected_student_ratio=1.0):
     raw_candidates = []
     metrics_only = []
     official_candidates = []
@@ -47,7 +47,7 @@ def inspect_chair(directories, dataset, issues, label):
         raw_path = directory / "eval_results.jsonl"
         official_candidates.extend(sorted(directory.glob("chair_metrics*official*.json")))
         try:
-            official = inventory.chair_result(directory)
+            official = inventory.chair_result(directory, expected_student_ratio)
         except (OSError, ValueError, TypeError, KeyError) as error:
             issues.append(f"{label}: {directory}: official CHAIR invalid: {error}")
             official = None
@@ -56,7 +56,7 @@ def inspect_chair(directories, dataset, issues, label):
             return "新版指标齐全", values, str(source)
         if raw_path.is_file():
             try:
-                raw_candidates.append(inspect_raw(raw_path, metrics_path))
+                raw_candidates.append(inspect_raw(raw_path, metrics_path, expected_student_ratio))
             except (OSError, ValueError, TypeError, KeyError) as error:
                 issues.append(f"{label}: {raw_path}: {error}")
                 raw_candidates.append(("推理不完整", f"{raw_path} (unreadable)"))

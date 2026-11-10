@@ -11,12 +11,12 @@ import summarize_main_tr05_inventory as inventory
 TABLE_METRICS = ("CHAIRi", "CHAIRs", "ObjF1", "POPE", "A-HAL", "MMStar", "CV-Bench")
 
 
-def experiment_spec(student, teacher, ratio):
+def experiment_spec(student, teacher, ratio, student_ratio="1.0"):
     model = f"Qwen3VL-{student}-Instruct"
     batch = "b16" if student == "4B" and teacher == "8B" else "b32"
-    local_prefix = f"Res-OPD-{model}-orig-sr1.0-tr{ratio}-a1.0-"
+    local_prefix = f"Res-OPD-{model}-orig-sr{student_ratio}-tr{ratio}-a1.0-"
     oss_prefix = "ResOPD_" + ("Qwen3VL_4B_Instruct_" if student == "4B" else "")
-    oss_prefix += f"orig_sr1.0_tr{ratio}_a1.0_"
+    oss_prefix += f"orig_sr{student_ratio}_tr{ratio}_a1.0_"
     if student == teacher:
         local_method, oss_method = "frozen-rkl", "frozen_rkl"
         method = "Frozen RKL"
@@ -54,7 +54,7 @@ def checkpoint_dirs(spec, oss_root):
                   key=lambda path: int(inventory.STEP_RE.fullmatch(path.name).group(1)))
 
 
-def possible_aliases(spec, student, teacher, ratio, oss_root):
+def possible_aliases(spec, student, teacher, ratio, oss_root, student_ratio="1.0"):
     if student == teacher or not oss_root.is_dir():
         return []
     prefix = "resopdorig" if student == "2B" else f"resopdqwen3vl{student.lower()}instructorig"
@@ -63,6 +63,7 @@ def possible_aliases(spec, student, teacher, ratio, oss_root):
     for path in oss_root.iterdir():
         name = re.sub(r"[^a-z0-9]", "", path.name.lower())
         if (path.is_dir() and path.name != spec.oss_name and name.startswith(prefix)
+                and f"sr{student_ratio.replace('.', '')}" in name
                 and f"tr{ratio.replace('.', '')}" in name
                 and "fixedrkl" in name and teacher_tag in name):
             aliases.append(path)
