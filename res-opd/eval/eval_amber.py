@@ -117,7 +117,28 @@ def build_prompt(query: str, is_discriminative: bool) -> str:
     return query
 
 
-def load_existing(path: Path) -> dict[int, dict]:
+def load_existing(path: Path, raw_path: Optional[Path] = None) -> dict[int, dict]:
+    if raw_path is not None:
+        # A failed discriminative request is serialized as "No" in the official file.
+        records = {}
+        if not raw_path.exists():
+            return records
+        with raw_path.open(encoding="utf-8") as stream:
+            for line in stream:
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(raw, dict):
+                    continue
+                answer = str(raw.get("model_answer") or "").strip()
+                official = str(raw.get("official_response") or "").strip()
+                if (raw.get("id") is not None and answer and official
+                        and not answer.startswith(("[ERROR]", "[API_ERROR]", "[FUTURE_ERROR]"))
+                        and not official.startswith(("[ERROR]", "[API_ERROR]", "[FUTURE_ERROR]"))):
+                    item_id = int(raw["id"])
+                    records[item_id] = {"id": item_id, "response": official}
+        return records
     records = {}
     if not path.exists():
         return records
@@ -282,7 +303,9 @@ def main():
     response_path = out_dir / f"amber_{args.evaluation_type}_responses.json"
     raw_path = out_dir / "raw_results.jsonl"
 
-    completed = load_existing(response_path)
+    query_ids = {int(item["id"]) for item in queries}
+    completed = {item_id: record for item_id, record in load_existing(response_path, raw_path).items()
+                 if item_id in query_ids}
     todo = [item for item in queries if int(item["id"]) not in completed]
     print(f"AMBER samples={len(queries)} completed={len(completed)} remaining={len(todo)}")
 
@@ -294,7 +317,8 @@ def main():
         if client is None:
             from openai import OpenAI
 
-            client = OpenAI(base_url=args.api_base, api_key=args.api_key, timeout=300)
+            client = OpenAI(base_url=args.api_base, api_key=args.api_key,
+                            timeout=float(os.environ.get("EVAL_API_REQUEST_TIMEOUT_SECONDS", "300")))
             thread_local.client = client
         return client
 

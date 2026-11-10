@@ -465,7 +465,8 @@ def run_single_benchmark(args, benchmark: str) -> dict:
         if client is None:
             from openai import OpenAI
 
-            client = OpenAI(base_url=args.api_base, api_key=args.api_key, timeout=300)
+            client = OpenAI(base_url=args.api_base, api_key=args.api_key,
+                            timeout=float(os.environ.get("EVAL_API_REQUEST_TIMEOUT_SECONDS", "300")))
             thread_local.client = client
         return client
 
