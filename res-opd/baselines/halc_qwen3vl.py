@@ -235,14 +235,18 @@ class HALCDecoder:
         return scores.float().softmax(dim=-1)[:, 1].tolist()
 
     @torch.inference_mode()
-    def generate(self, image_path, prompt="Describe the image.", seed=42):
+    def generate(self, image_path, prompt="Describe the image.", seed=42,
+                 max_new_tokens=None):
         image = Image.open(image_path).convert("RGB")
         original_inputs = self.input_builder(self.processor, image, prompt, self.device)
         rng = random.Random(seed)
         beams = [([], 0.0, False, 0)]
         grounding_cache = {}
         triggered = 0
-        for _ in range(self.config.max_new_tokens):
+        token_limit = self.config.max_new_tokens if max_new_tokens is None else max_new_tokens
+        if not 1 <= token_limit <= 8192:
+            raise ValueError("max_new_tokens must be between 1 and 8192")
+        for _ in range(token_limit):
             proposals = []
             corrected = False
             for tokens, score, finished, changed in beams:

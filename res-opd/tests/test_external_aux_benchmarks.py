@@ -1,4 +1,5 @@
 import base64
+from dataclasses import dataclass
 import importlib.util
 import io
 import json
@@ -12,6 +13,7 @@ from unittest.mock import patch
 
 
 BASELINES = Path(__file__).resolve().parents[1] / "baselines"
+EVAL = BASELINES.parent / "eval"
 
 
 def load_module(name, path):
@@ -24,6 +26,7 @@ def load_module(name, path):
 
 API = load_module("external_decode_api_test", BASELINES / "external_decode_api.py")
 AUX = load_module("run_external_aux_benchmarks_test", BASELINES / "run_external_aux_benchmarks.py")
+POPE = load_module("eval_pope_external_aux_test", EVAL / "eval_pope.py")
 
 
 class ExternalAuxBenchmarksTest(unittest.TestCase):
@@ -154,6 +157,47 @@ class ExternalAuxBenchmarksTest(unittest.TestCase):
         self.assertEqual(status, [200])
         self.assertEqual(result["choices"][0]["message"]["content"], "A dog.")
         self.assertEqual(result["usage"]["completion_tokens"], 3)
+
+    def test_halc_request_token_limit_does_not_mutate_frozen_config(self):
+        from PIL import Image
+
+        @dataclass(frozen=True)
+        class FrozenConfig:
+            max_new_tokens: int = 2048
+
+        class FakeHALC:
+            config = FrozenConfig()
+
+            def generate(self, path, prompt, seed, max_new_tokens):
+                self.received = (Path(path).is_file(), prompt, seed, max_new_tokens)
+                return {"generated_caption": "A dog.", "generated_token_count": 2}
+
+        image = io.BytesIO()
+        Image.new("RGB", (2, 2), "white").save(image, format="JPEG")
+        with tempfile.TemporaryDirectory() as temporary:
+            decoder = API.Decoder.__new__(API.Decoder)
+            decoder.method = "halc"
+            decoder.scratch = SimpleNamespace(name=temporary)
+            decoder.config = {"seed": 42}
+            decoder.halc = FakeHALC()
+            result = decoder.generate(image.getvalue(), "Is there a dog?", 16, 123)
+            self.assertEqual(result, ("A dog.", 2))
+            self.assertEqual(decoder.halc.received, (True, "Is there a dog?", 165, 16))
+            self.assertEqual(decoder.halc.config.max_new_tokens, 2048)
+            self.assertFalse((Path(temporary) / "123.jpg").exists())
+
+    def test_pope_resume_retries_http_errors_but_keeps_valid_rows(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "eval_results.jsonl"
+            path.write_text(
+                json.dumps({"sample_uid": "failed", "model_answer": "[ERROR] HTTP 500"}) + "\n"
+                + json.dumps({"sample_uid": "valid", "model_answer": "Yes."}) + "\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(set(POPE.load_jsonl(path)), {"valid"})
+            with path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({"sample_uid": "failed", "model_answer": "No."}) + "\n")
+            self.assertEqual(set(POPE.load_jsonl(path)), {"failed", "valid"})
 
     def test_anchor_requires_complete_official_result(self):
         with tempfile.TemporaryDirectory() as temporary:

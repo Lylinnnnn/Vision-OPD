@@ -101,9 +101,9 @@ class Decoder:
                 image.verify()
             path.write_bytes(image_bytes)
             try:
-                self.halc.config.max_new_tokens = max_tokens
                 result = self.halc.generate(
                     str(path), prompt=prompt, seed=int(self.config["seed"]) + stable_id,
+                    max_new_tokens=max_tokens,
                 )
             finally:
                 path.unlink(missing_ok=True)
