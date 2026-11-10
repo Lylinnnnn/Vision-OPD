@@ -20,14 +20,16 @@ def checkpoint(root, spec, step, complete=True):
 
 
 class TeacherScaleTable4Test(unittest.TestCase):
-    def test_exact_seven_non_base_controls_and_final_steps(self):
+    def test_exact_seven_non_base_controls(self):
         self.assertEqual(len(summary.controls()), 7)
         self.assertTrue(all(spec.method != "Base" for *_, spec in summary.controls()))
-        self.assertEqual(summary.final_step("2B", "4B fixed"), 156)
-        self.assertEqual(summary.final_step("4B", "8B fixed"), 312)
-        self.assertEqual(summary.final_step("4B", "4B frozen"), 156)
 
-    def test_missing_final_checkpoint_distinct_from_available_earlier_step(self):
+    def test_unmounted_oss_is_not_reported_as_missing_training(self):
+        group = {"complete": [], "aliases": [], "steps": []}
+        self.assertEqual(summary.group_status(group, Path("/path/that/is/not/mounted")),
+                         "OSS 未挂载，无法核验")
+
+    def test_report_does_not_invent_a_final_checkpoint(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             oss = root / "oss"
@@ -35,20 +37,16 @@ class TeacherScaleTable4Test(unittest.TestCase):
             eval_root = root / "eval"
             spec = summary.teacher_scale.experiment_spec("2B", "2B", "0.5")
             checkpoint(oss, spec, 50)
-            final_rows, step_rows, issues = summary.collect(oss, eval_root)
-            self.assertEqual(len(final_rows), 7)
+            groups, step_rows, issues = summary.collect(oss, eval_root)
+            self.assertEqual(len(groups), 7)
             self.assertFalse(issues)
-            selected = next(row for row in final_rows
-                            if row["student"] == "2B" and row["teacher"] == "2B frozen"
-                            and row["view"] == "tr=0.5")
-            self.assertEqual(selected["step"], 156)
-            self.assertEqual(selected["ckpt_state"], "缺少 checkpoint")
-            self.assertEqual(selected["observed_steps"], [50])
-            self.assertEqual(next(row for row in step_rows
-                                  if row["student"] == "2B" and row["teacher"] == "2B frozen"
-                                  and row["view"] == "tr=0.5")["ckpt_state"], "完整")
-            report = summary.render(final_rows, step_rows, issues, oss)
-            self.assertIn("发现 steps=[50]", report)
+            self.assertEqual(len(step_rows), 1)
+            self.assertEqual(step_rows[0]["step"], 50)
+            self.assertEqual(step_rows[0]["ckpt_state"], "完整")
+            report = summary.render(groups, step_rows, issues, oss,
+                                    "teacher_scale_matched_official_v2")
+            self.assertIn("| 2B | 2B frozen | tr=0.5 | 50 |", report)
+            self.assertNotIn("| 2B | 2B frozen | tr=0.5 | 156 |", report)
             self.assertNotIn("| Base |", report)
 
     def test_complete_checkpoint_without_results_is_not_called_complete(self):
@@ -59,13 +57,13 @@ class TeacherScaleTable4Test(unittest.TestCase):
             spec = summary.teacher_scale.experiment_spec("4B", "8B", "0.5")
             checkpoint(oss, spec, 312)
             row = summary.inspect_one("4B", "8B fixed", "tr=0.5", spec, 312,
-                                      oss, root / "eval", [])
+                                      oss, root / "eval", [], "teacher_scale_matched_official_v2")
             self.assertEqual(row["ckpt_state"], "完整")
             self.assertEqual(row["states"]["CHAIR"], "未推理")
-            self.assertEqual(row["states"]["POPE"], "未推理")
-            self.assertEqual(row["states"]["AMBER"], "未推理")
+            self.assertEqual(row["states"]["POPE"], "未匹配推理")
+            self.assertEqual(row["states"]["AMBER"], "未匹配推理")
             self.assertIn("CHAIR: 未推理", summary.gaps(row))
-            self.assertIn("POPE: 未推理", summary.gaps(row))
+            self.assertIn("POPE: 未匹配推理", summary.gaps(row))
 
     def test_partial_checkpoint_and_error_amber_are_flagged(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -77,7 +75,7 @@ class TeacherScaleTable4Test(unittest.TestCase):
             self.assertEqual(summary.checkpoint_state(oss, spec, 156, [])[0],
                              "checkpoint 不完整")
             output = (root / "eval/instruct/full" / f"{spec.experiment}_global_step_156"
-                      / summary.inventory.DATASET / "official_v2" / "amber")
+                      / summary.inventory.DATASET / "teacher_scale_matched_official_v2" / "amber")
             output.mkdir(parents=True)
             rows = [{"id": 1, "model_answer": "A dog."},
                     {"id": 2, "model_answer": "[ERROR] HTTP 500"}]
@@ -95,12 +93,39 @@ class TeacherScaleTable4Test(unittest.TestCase):
             try:
                 summary.aux_audit.EXPECTED_AMBER = 2
                 row = summary.inspect_one("2B", "4B fixed", "tr=0.5", spec, 156,
-                                          oss, root / "eval", [])
+                                          oss, root / "eval", [], "teacher_scale_matched_official_v2")
             finally:
                 summary.aux_audit.EXPECTED_AMBER = old_expected
             self.assertEqual(row["states"]["AMBER"], "推理未完成")
             self.assertEqual(row["results"]["AMBER"].values, ("--", "--"))
             self.assertIn("raw_bad", row["results"]["AMBER"].detail)
+
+    def test_matched_aux_requires_source_and_original_student_view(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            pope = directory / "pope"
+            for split in ("pope_adv", "pope_pop", "pope_random"):
+                path = pope / split / "eval_results.jsonl"
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps({"student_ratio": 1.0,
+                                            "degradation_mode": "original"}) + "\n")
+            summary_path = pope / "pope_summary.json"
+            summary_path.write_text(json.dumps({"benchmarks": {
+                split: {"pope_source": "other"}
+                for split in ("pope_adv", "pope_pop", "pope_random")
+            }}), encoding="utf-8")
+            self.assertIn("source", summary.matched_protocol_error(directory, "pope"))
+            summary_path.write_text(json.dumps({"benchmarks": {
+                split: {"pope_source": "res-opd-test"}
+                for split in ("pope_adv", "pope_pop", "pope_random")
+            }}), encoding="utf-8")
+            self.assertIsNone(summary.matched_protocol_error(directory, "pope"))
+            amber = directory / "amber"
+            amber.mkdir()
+            raw = amber / "raw_results.jsonl"
+            raw.write_text(json.dumps({"student_ratio": 0.5,
+                                       "degradation_mode": "original"}) + "\n")
+            self.assertIn("student view", summary.matched_protocol_error(directory, "amber"))
 
 
 if __name__ == "__main__":
