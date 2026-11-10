@@ -9,7 +9,10 @@ source "$RES_OPD_ROOT/scripts/path_utils.sh"
 
 PYTHON_BIN="${PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
 res_opd_validate_python_bin "$PYTHON_BIN"
-MODEL_PATH="${MODEL_PATH:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct}"
+if [[ -n "${MODEL_PATH:-}" ]]; then
+    echo "NOTE: Ignoring inherited MODEL_PATH=$MODEL_PATH; use HALC_QWEN3VL_MODEL_PATH to override" >&2
+fi
+MODEL_PATH="${HALC_QWEN3VL_MODEL_PATH:-/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct}"
 DINO_CONFIG="${DINO_CONFIG:-$RES_OPD_ROOT/third_party/baselines/HALC/decoder_zoo/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py}"
 DINO_WEIGHTS="${DINO_WEIGHTS:-/home/liuyanlin.lyl/notebook/model/groundingdino/groundingdino_swint_ogc.pth}"
 BLIP_MODEL="${BLIP_MODEL:-/home/liuyanlin.lyl/notebook/model/blip/blip-itm-base-coco}"

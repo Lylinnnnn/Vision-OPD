@@ -123,6 +123,34 @@ class HALCStaticContractTest(unittest.TestCase):
             self.assertIn("addict", str(caught.exception))
             self.assertIn("VLM model missing", str(caught.exception))
 
+    def test_preflight_rejects_wrong_model_family(self):
+        spec = importlib.util.spec_from_file_location(
+            "eval_halc_chair_model_type_test", MODULE_PATH.with_name("eval_halc_chair.py")
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with TemporaryDirectory() as directory:
+            source = Path(directory)
+            (source / "README.md").write_text("HALC")
+            model = source / "model"
+            model.mkdir()
+            (model / "config.json").write_text('{"model_type": "internvl"}')
+            (model / "model.safetensors").write_bytes(b"weight")
+            args = SimpleNamespace(
+                model_family="qwen3vl", model_path=str(model),
+                test_json=str(source / "test.json"),
+                detector_config=str(source / "dino.py"),
+                detector_weights=str(source / "dino.pth"),
+                blip_model_path=str(source / "blip"),
+            )
+            expected = "c757ced4f1f26d992e6e7200a44d3b899bb000af\n"
+            with mock.patch.object(module, "HALC_SOURCE", source), \
+                 mock.patch("subprocess.check_output", return_value=expected), \
+                 mock.patch("importlib.util.find_spec", return_value=None):
+                with self.assertRaisesRegex(RuntimeError, "VLM model type mismatch") as caught:
+                    module.preflight(args)
+            self.assertIn("expected 'qwen3_vl', got 'internvl'", str(caught.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -95,6 +95,17 @@ def preflight(args):
         if root.is_dir():
             if not (root / "config.json").is_file():
                 errors.append(f"{label} has no config.json: {root}")
+            elif label == "VLM model":
+                try:
+                    model_type = json.loads((root / "config.json").read_text()).get("model_type")
+                    expected = "internvl" if args.model_family == "internvl3" else "qwen3_vl"
+                    if model_type != expected:
+                        errors.append(
+                            f"VLM model type mismatch for {args.model_family}: expected {expected!r}, "
+                            f"got {model_type!r}; path={root}"
+                        )
+                except (OSError, ValueError, TypeError) as exc:
+                    errors.append(f"Cannot read VLM model type: {exc}")
             elif label == "BLIP model":
                 try:
                     architectures = json.loads((root / "config.json").read_text()).get("architectures") or []
