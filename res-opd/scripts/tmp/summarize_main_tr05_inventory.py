@@ -291,20 +291,24 @@ def collect_specs(specs, oss_root, issues):
     return rows, mounted
 
 
-def external_rows(issues):
-    root = ROOT / "res-opd/eval_results"
+def external_rows(issues, eval_root=None):
+    root = eval_root or ROOT / "res-opd/eval_results"
     configs = []
     for pattern in ("external_baselines/**/*_config.json", "chair_external_*/*_config.json"):
         configs.extend(root.glob(pattern))
     rows = []
     seen = set()
     for config_path in sorted(set(configs)):
-        if ".shards" in config_path.parts or config_path.parent in seen:
+        relative = config_path.relative_to(root)
+        if (any(part.startswith(".") or part.startswith("presentation_")
+                for part in relative.parts) or config_path.parent in seen):
             continue
         try:
             config = read_json(config_path)
         except (OSError, ValueError) as error:
             issues.append(f"External config {config_path}: {error}")
+            continue
+        if config.get("presentation_only") or config.get("not_for_paper"):
             continue
         model = config.get("model_name") or Path(config.get("model_path", "")).name
         if model not in {"Qwen3VL-2B-Instruct", "Qwen3VL-4B-Instruct", "Qwen3VL-8B-Instruct", "InternVL3-2B-hf"}:

@@ -125,7 +125,8 @@ class HALCPresentationHybridTest(unittest.TestCase):
     def test_aux_runs_pope_and_amber_in_hybrid_directory(self):
         output = self.root / "eval_results" / "presentation_mixed_8192_2048"
         args = SimpleNamespace(python_bin=Path(sys.executable), model_path=self.model,
-                               detector_config=self.root / "dino.py", gpu_list="0,1",
+                               detector_config=self.root / "dino.py", data_root=self.root / "data",
+                               gpu_list="0,1",
                                aux_base_port=28100, aux_min_free_mib=36000,
                                aux_wait_seconds=7200, aux_startup_timeout=1200)
         with patch.object(hybrid.subprocess, "run") as run:
@@ -133,8 +134,19 @@ class HALCPresentationHybridTest(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(command[command.index("--benchmarks") + 1], "pope,amber")
         self.assertEqual(command[command.index("--halc-dir") + 1], str(output))
+        self.assertEqual(command[command.index("--data-root") + 1], str(args.data_root.resolve()))
         self.assertNotIn("--standalone", command)
         self.assertTrue(run.call_args.kwargs["check"])
+
+    def test_missing_coco_images_are_rejected_before_worker_launch(self):
+        data_root = self.root / "data"
+        sample = {"image_id": 10, "image_path": "/missing/000000000010.jpg"}
+        with self.assertRaisesRegex(FileNotFoundError, "continuation COCO images"):
+            hybrid.validate_image_paths([sample], data_root)
+        image = data_root / "COCO/coco2017val/val2017/000000000010.jpg"
+        image.parent.mkdir(parents=True)
+        image.write_bytes(b"image")
+        hybrid.validate_image_paths([sample], data_root)
 
     def test_complete_continuation_worker_is_not_restarted(self):
         output = self.root / "eval_results/presentation_mixed_8192_2048"

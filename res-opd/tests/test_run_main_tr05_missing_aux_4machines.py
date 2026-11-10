@@ -91,6 +91,14 @@ class FourMachineAuxTest(unittest.TestCase):
             self.assertEqual(batch.output_dir(batch.INTERNVL_VISION, root / "eval").name,
                              "main_tr05_base_vision_official_v2")
 
+    def test_internvl_base_vision_uses_base_model_without_checkpoint_lookup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            args = SimpleNamespace(model_root=Path(temporary))
+            with mock.patch.object(batch, "checkpoint_path") as checkpoint:
+                with batch.staged_checkpoint(batch.INTERNVL_VISION, args) as model:
+                    self.assertEqual(model, Path(temporary) / "internvl/InternVL3-2B-hf")
+            checkpoint.assert_not_called()
+
     def test_pending_checks_each_benchmark_independently(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

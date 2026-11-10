@@ -198,6 +198,9 @@ def preflight(args, jobs):
 
 @contextmanager
 def staged_checkpoint(target_id, args):
+    if target_id == INTERNVL_VISION:
+        yield model_path(target_id, args.model_root)
+        return
     source = checkpoint_path(target_id, args.oss_root)
     if source is None:
         yield model_path(target_id, args.model_root)

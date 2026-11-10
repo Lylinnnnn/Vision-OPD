@@ -104,6 +104,23 @@ def partition_missing(samples, old_rows, worker_count):
     return missing, groups
 
 
+def validate_image_paths(samples, data_root):
+    image_root = data_root / "COCO/coco2017val/val2017"
+    missing = []
+    for sample in samples:
+        current = Path(str(sample.get("image_path", "")))
+        if current.is_file():
+            continue
+        candidate = image_root / str(sample.get("file_name") or current.name)
+        if not candidate.is_file():
+            missing.append(str(candidate))
+    if missing:
+        raise FileNotFoundError(
+            f"Cannot resolve {len(missing)} continuation COCO images under {image_root}; "
+            f"first missing: {missing[0]}"
+        )
+
+
 def ensure_not_running_on_this_host(old_root):
     result = subprocess.run(["ps", "-eo", "args"], text=True, capture_output=True, check=True)
     active = [line for line in result.stdout.splitlines()
@@ -146,6 +163,7 @@ def launch_missing(args, groups, gpu_list, output_dir, old_config):
                 command.extend([flag, str(old_config["parameters"][name])])
             env = os.environ.copy()
             env["CUDA_VISIBLE_DEVICES"] = gpu
+            env["RES_OPD_DATA_ROOT"] = str(args.data_root.resolve())
             log_path = worker / "eval.log"
             with log_path.open("a", encoding="utf-8") as log:
                 process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=log,
@@ -262,6 +280,7 @@ def run_aux(args, output_dir):
         "--model-path", str(args.model_path), "--methods", "halc",
         "--benchmarks", "pope,amber", "--halc-dir", str(output_dir),
         "--detector-config", str(args.detector_config),
+        "--data-root", str(args.data_root.resolve()),
         "--gpu-list", args.gpu_list, "--base-port", str(args.aux_base_port),
         "--min-free-mib", str(args.aux_min_free_mib),
         "--wait-seconds", str(args.aux_wait_seconds),
@@ -286,6 +305,7 @@ def main():
     parser.add_argument("--detector-weights", type=Path, required=True)
     parser.add_argument("--blip-model-path", type=Path, required=True)
     parser.add_argument("--test-json", type=Path, default=DEFAULT_TEST_JSON)
+    parser.add_argument("--data-root", type=Path, default=Path("/data/oss_bucket_0/yanlin"))
     parser.add_argument("--python-bin", type=Path, default=Path(sys.executable))
     parser.add_argument("--gpu-list", default="0,1,2,3,4,5,6,7")
     parser.add_argument("--prompt", default="Describe the image.")
@@ -325,6 +345,7 @@ def main():
             or Path(old_config["blip_model_path"]).resolve() != args.blip_model_path.resolve()):
         raise RuntimeError("GroundingDINO or BLIP weights differ from the original run")
     missing, groups = partition_missing(samples, old_rows, len(gpu_list))
+    validate_image_paths(missing, args.data_root)
     print(f"PRESENTATION_ONLY old={len(old_rows)} missing={len(missing)} "
           f"old_cap=8192 new_cap={args.new_max_tokens} workers={len(gpu_list)}", flush=True)
     if args.preflight_only:

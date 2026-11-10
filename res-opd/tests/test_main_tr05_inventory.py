@@ -38,6 +38,27 @@ class MainTr05InventoryTest(unittest.TestCase):
         self.assertEqual(len(header.split("|")), len(data.split("|")))
         self.assertIn("| 53.50 | 312.00 | 1234 | 56 |", data)
 
+    def test_presentation_halc_is_not_added_to_formal_inventory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "eval_results"
+            formal = (root / "external_baselines/full/Qwen3VL-8B-Instruct" /
+                      "train5000_test1000_original_sr1p0" /
+                      "chair_external_halc_qwen3vl_adapted_official")
+            formal.mkdir(parents=True)
+            (formal / "halc_config.json").write_text(json.dumps({
+                "model_path": "/models/Qwen3VL-8B-Instruct"}), encoding="utf-8")
+            presentation = formal / "presentation_mixed_8192_2048"
+            presentation.mkdir()
+            (presentation / "halc_config.json").write_text(json.dumps({
+                "model_path": "/models/Qwen3VL-8B-Instruct",
+                "presentation_only": True, "not_for_paper": True}), encoding="utf-8")
+            issues = []
+            rows = MODULE["external_rows"](issues, root)
+            formal_rows = [row for row in rows if row["spec"].size == "8B" and
+                           row["spec"].method == "HALC (external)"]
+            self.assertEqual(len(formal_rows), 1)
+            self.assertEqual(formal_rows[0]["dataset"], str(formal))
+
 
 if __name__ == "__main__":
     unittest.main()
