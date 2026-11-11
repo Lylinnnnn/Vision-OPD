@@ -21,6 +21,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 from collections import defaultdict
 from typing import Any
@@ -31,11 +32,17 @@ sys.path.insert(0, PROBE_DIR)
 sys.path.insert(0, os.path.join(os.path.dirname(PROBE_DIR), "eval"))
 
 from probe_same_image_rkl_signal import (  # noqa: E402
-    build_canonical_synonym_map,
+    bounded_context,
+    build_token_char_spans,
     bool_finite,
-    find_object_mentions,
+    token_indices_for_char_span,
+)
+from robust_chair_analysis import (  # noqa: E402
+    build_double_word_dict,
+    caption_to_words,
     parse_official_synonyms,
 )
+from chair_singularize import singularize  # noqa: E402
 from score_opd_eval_trace import load_jsonl  # noqa: E402
 
 
@@ -265,19 +272,57 @@ def record_image_id(record: dict[str, Any]) -> Any:
 
 
 def attach_mentions(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    _, inverse_synonym_dict = parse_official_synonyms()
-    canonical_synonym_map = build_canonical_synonym_map(inverse_synonym_dict)
+    coco_words, inverse = parse_official_synonyms()
+    double_words = build_double_word_dict()
     mentions: list[dict[str, Any]] = []
     for record in records:
-        record_mentions = record.get("object_mentions")
-        if not record_mentions:
-            record_mentions = find_object_mentions(record, canonical_synonym_map)
-        for mention in record_mentions:
-            row = dict(mention)
-            row["_record_index"] = record["_record_index"]
-            row["image_id"] = row.get("image_id", record_image_id(record))
-            row["caption_source"] = row.get("caption_source") or record.get("caption_source")
-            mentions.append(row)
+        metadata = (record.get("metadata") or {}).get("extra_info") or {}
+        if not metadata.get("captions"):
+            fail(f"Missing reference captions for image_id={record_image_id(record)}")
+        gt = {inverse.get(str(obj).lower(), str(obj).lower()) for obj in metadata.get("objects", [])}
+        for caption in metadata["captions"]:
+            gt.update(caption_to_words(caption, coco_words, inverse, double_words)[1])
+        token_text, token_spans = build_token_char_spans(record.get("token_records") or [])
+        official = caption_to_words(record.get("response_text", ""), coco_words, inverse, double_words)[1]
+        if not token_text or caption_to_words(token_text, coco_words, inverse, double_words)[1] != official:
+            fail(f"Token reconstruction differs from official caption objects: image_id={record_image_id(record)}")
+        raw = list(re.finditer(r"[a-z0-9]+(?:'[a-z]+)?", token_text.lower()))
+        words = [singularize(match.group()) for match in raw]
+        spans = []
+        i = 0
+        while i < len(words):
+            pair = " ".join(words[i:i + 2])
+            if pair in double_words:
+                spans.append((double_words[pair], raw[i].start(), raw[i + 1].end()))
+                i += 2
+            else:
+                spans.append((words[i], raw[i].start(), raw[i].end()))
+                i += 1
+        if any(term == "toilet" for term, _, _ in spans) and any(term == "seat" for term, _, _ in spans):
+            spans = [item for item in spans if item[0] != "seat"]
+        extracted = [inverse[term] for term, _, _ in spans if term in coco_words]
+        if extracted != official:
+            fail(f"Official span extraction mismatch: image_id={record_image_id(record)}")
+        for term, start, end in spans:
+            if term not in coco_words:
+                continue
+            token_indices = token_indices_for_char_span(token_spans, start, end)
+            if not token_indices:
+                fail(f"Object mention has no scored tokens: image_id={record_image_id(record)}")
+            canonical = inverse[term]
+            mentions.append({
+                "_record_index": record["_record_index"],
+                "image_id": record_image_id(record),
+                "caption_source": record.get("caption_source"),
+                "canonical_object": canonical,
+                "mention_text": token_text[start:end],
+                "context": bounded_context(token_text, start, end),
+                "object_type": "correct_object" if canonical in gt else "hallucinated_object",
+                "char_start": start,
+                "char_end": end,
+                "token_start": min(token_indices),
+                "token_end": max(token_indices) + 1,
+            })
     return mentions
 
 
@@ -408,10 +453,22 @@ def write_markdown(summary: dict[str, Any], path: str) -> None:
         f"- tokens: {summary['num_tokens']}",
         f"- labeled object mentions: {summary['num_labeled_object_mentions']}",
         f"- base hallucination rate: {fmt(summary['base_hallucination_rate'])}",
+        "- labels: official CHAIR synonyms/double-word rules; GT = instances + reference captions",
+        "",
+        "## Paper Table (2B Base, teacher tr=0.50)",
+        "",
+    ]
+    paper_rows = [["Full probe pool", "100%", f"{100 * summary['base_hallucination_rate']:.2f}%", "100.00%", "1.00x"]]
+    for label, mode in (("Random", "random"), ("RKL x NLL", "riskmask_nll")):
+        stats = summary["mention_selection"][mode]["span_top_p"]
+        lift = stats["precision_lift"]
+        paper_rows.append([label, f"{100 * summary['top_p']:.0f}%", f"{100 * stats['hallucination_precision']:.2f}%", f"{100 * stats['hallucination_recall']:.2f}%", f"{lift:.2f}x" if lift is not None else "n/a"])
+    lines.extend([
+        markdown_table(["Selection", "Budget", "Prec.", "Recall", "Lift"], paper_rows),
         "",
         "## Token Selection",
         "",
-    ]
+    ])
     token_rows = []
     for mode in SCORE_MODES:
         stats = summary["token_selection"].get(mode, {})

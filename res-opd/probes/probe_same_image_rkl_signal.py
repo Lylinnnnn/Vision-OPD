@@ -49,8 +49,8 @@ sys.path.insert(0, EVAL_DIR)
 
 from robust_chair_analysis import (  # noqa: E402
     parse_official_synonyms,
-    try_singularize,
 )
+from chair_singularize import singularize as try_singularize  # noqa: E402
 from score_opd_eval_trace import (  # noqa: E402
     DEFAULT_COCO_VAL_ROOT,
     PROMPT_TEXT,
