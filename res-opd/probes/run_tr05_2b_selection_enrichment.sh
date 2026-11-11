@@ -26,6 +26,7 @@ EVAL_RESULTS="$BASE_EVAL_RESULTS" \
 IMAGE_ROOT="${IMAGE_ROOT:-/data/oss_bucket_0/yanlin/COCO/coco2017val/val2017}" \
 OUTPUT_DIR="$OUTPUT_DIR" \
 TEACHER_RATIO=0.5 STUDENT_RATIO=1.0 TOP_P=0.30 RANK_SCOPE=global \
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-32768}" \
 GPU_IDS="${GPU_IDS:-0,1,2,3,4,5,6,7}" \
 PYTHON_BIN="$PYTHON_BIN" \
 bash res-opd/probes/run_base_dual_view_kl_probe.sh

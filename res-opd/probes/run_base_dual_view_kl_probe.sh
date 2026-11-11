@@ -123,6 +123,14 @@ PAIR_SUMMARY_MD="${PAIR_SUMMARY_MD:-${OUTPUT_DIR}/pair_kl_summary.md}"
 
 mkdir -p "$OUTPUT_DIR" "$SHARD_DIR" "$LOG_DIR" "${RES_OPD_ROOT}/logs"
 
+"$PYTHON_BIN" "${SCRIPT_DIR}/restore_rkl_trace_shards.py" \
+  --eval-results "$EVAL_RESULTS" \
+  --merged-trace "$MERGED_TRACE" \
+  --shard-dir "$SHARD_DIR" \
+  --num-shards "$NUM_SHARDS" \
+  --student-ratio "$STUDENT_RATIO" \
+  --teacher-ratio "$TEACHER_RATIO"
+
 echo "============================================================"
 echo " Base Dual-View KL/RKL Probe"
 echo "============================================================"
@@ -214,6 +222,8 @@ for shard in $(seq 0 $((NUM_SHARDS - 1))); do
 done
 mv "$tmp_merged" "$MERGED_TRACE"
 echo "Merged trace: $MERGED_TRACE"
+
+"$PYTHON_BIN" -c 'import json,sys; from pathlib import Path; expected={json.loads(s)["image_id"] for s in Path(sys.argv[1]).read_text().splitlines() if s.strip()}; actual=[json.loads(s)["metadata"]["image_id"] for s in Path(sys.argv[2]).read_text().splitlines() if s.strip()]; missing=expected-set(actual); assert not missing and len(actual)==len(expected), "Incomplete scoring: %s/%s; missing image IDs=%s" % (len(actual),len(expected),sorted(missing))' "$EVAL_RESULTS" "$MERGED_TRACE"
 
 "$PYTHON_BIN" "${SCRIPT_DIR}/probe_same_image_rkl_signal.py" \
   --pair-mode dual_view_same_model \
