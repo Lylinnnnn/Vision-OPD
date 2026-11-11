@@ -33,7 +33,10 @@ METHOD_SUFFIX = {
 POPE_SPLITS = ("pope_adv", "pope_pop", "pope_random")
 VISION_COUNTS = {"mmstar": 1500, "cv-bench": 2638}
 BENCHMARKS = ("pope", "amber", "mmstar", "cv-bench")
-SUPPORTED_MODELS = {f"Qwen3VL-{size}-Instruct" for size in ("2B", "4B", "8B")}
+MODEL_FAMILIES = {
+    **{f"Qwen3VL-{size}-Instruct": "qwen3vl" for size in ("2B", "4B", "8B")},
+    "InternVL3-2B-hf": "internvl3",
+}
 
 
 def parse_benchmarks(value):
@@ -114,11 +117,14 @@ def validate_chair_anchor(directory, method, model_path):
 
 
 def standalone_config(args, method, existing, shard_count):
+    model_family = getattr(args, "model_family", None) or MODEL_FAMILIES.get(args.model_path.name)
+    if model_family is None:
+        raise ValueError(f"Unsupported model: {args.model_path.name}")
     if method == "opera":
         from eval_opera_chair import opera_config
 
         return opera_config(SimpleNamespace(
-            model_path=str(args.model_path), model_family="qwen3vl",
+            model_path=str(args.model_path), model_family=model_family,
             prompt="Describe the image.", max_new_tokens=args.max_new_tokens,
             num_beams=5, scale_factor=50.0, threshold=15,
             num_attn_candidates=5, penalty_weights=1.0, window_size=512,
@@ -137,8 +143,8 @@ def standalone_config(args, method, existing, shard_count):
     parameters = HALCConfig(max_new_tokens=args.max_new_tokens)
     parameters.validate()
     registry = read_json(RES_OPD / "baselines/registry.json")
-    return {
-        "method": "halc_qwen3vl_adaptation",
+    config = {
+        "method": f"halc_{model_family}_adaptation",
         "adapter_revision": ADAPTER_REVISION,
         "source_commit": registry["baselines"]["halc"]["commit"],
         "model_path": str(args.model_path.resolve()),
@@ -150,12 +156,23 @@ def standalone_config(args, method, existing, shard_count):
         "shard_count": shard_count,
         "shard_index": 0,
     }
+    if model_family != "qwen3vl":
+        config["model_family"] = model_family
+    return config
 
 
 def validate_inputs(args, methods, benchmarks=BENCHMARKS, shard_count=4):
     standalone = getattr(args, "standalone", False)
-    if args.model_path.name not in SUPPORTED_MODELS:
+    if args.model_path.name not in MODEL_FAMILIES:
         raise ValueError(f"Unsupported model: {args.model_path.name}")
+    expected_family = MODEL_FAMILIES[args.model_path.name]
+    model_family = getattr(args, "model_family", None) or expected_family
+    if model_family != expected_family:
+        raise ValueError(
+            f"Model family mismatch: {args.model_path.name} requires {expected_family}, "
+            f"got {args.model_family}"
+        )
+    args.model_family = model_family
     if not (args.model_path / "config.json").is_file():
         raise FileNotFoundError(args.model_path / "config.json")
     if not any((args.model_path / name).is_file() for name in (
@@ -230,7 +247,8 @@ def start_servers(args, method, directory, gpus, max_tokens, shard_root):
             command = [sys.executable, str(RES_OPD / "baselines/external_decode_api.py"),
                        "--method", method, "--model-path", str(args.model_path),
                        "--config", str(directory / f"{method}_config.json"),
-                       "--model-id", model_id, "--port", str(port)]
+                       "--model-id", model_id, "--port", str(port),
+                       "--model-family", args.model_family]
             if method == "halc":
                 command += ["--detector-config", str(args.detector_config)]
             env = os.environ.copy()
@@ -431,6 +449,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-path", type=Path,
                         default=Path("/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct"))
+    parser.add_argument("--model-family", choices=("qwen3vl", "internvl3"))
     parser.add_argument("--data-root", type=Path, default=Path("/data/oss_bucket_0/yanlin"))
     parser.add_argument("--results-root", type=Path)
     parser.add_argument("--vcd-dir", type=Path)
@@ -452,6 +471,7 @@ def main():
     parser.add_argument("--startup-timeout", type=int, default=1200)
     parser.add_argument("--preflight-only", action="store_true")
     args = parser.parse_args()
+    args.model_family = args.model_family or MODEL_FAMILIES.get(args.model_path.name)
     if args.results_root is None:
         args.results_root = (RES_OPD / "eval_results/external_baselines/full" /
                              args.model_path.name / "train5000_test1000_original_sr1p0")

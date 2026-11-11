@@ -40,11 +40,12 @@ def parse_request(payload):
 
 
 class Decoder:
-    def __init__(self, method, model_path, config_path, detector_config=None):
+    def __init__(self, method, model_path, config_path, model_family, detector_config=None):
         import torch
-        from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+        from transformers import AutoProcessor
 
         self.method = method
+        self.model_family = model_family
         self.config = json.loads(config_path.read_text(encoding="utf-8"))
         if method in ("vcd", "opera"):
             if self.config.get("model_name") != model_path.name:
@@ -52,14 +53,18 @@ class Decoder:
         elif Path(self.config.get("model_path", "")).resolve() != model_path.resolve():
             raise ValueError(f"HALC model path mismatch in {config_path}")
         self.args = SimpleNamespace(**self.config)
-        self.args.model_family = "qwen3vl"
+        self.args.model_family = model_family
         self.device = torch.device("cuda:0")
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is required for external decoding")
         dtype_name = self.config.get("torch_dtype", "bfloat16")
         dtype = torch.bfloat16 if dtype_name == "bfloat16" else torch.float16
         model_kwargs = {"attn_implementation": "eager"} if method == "opera" else {}
-        self.model = Qwen3VLForConditionalGeneration.from_pretrained(
+        if model_family == "internvl3":
+            from transformers import InternVLForConditionalGeneration as ModelClass
+        else:
+            from transformers import Qwen3VLForConditionalGeneration as ModelClass
+        self.model = ModelClass.from_pretrained(
             model_path, torch_dtype=dtype, low_cpu_mem_usage=True, trust_remote_code=True,
             **model_kwargs,
         ).to(self.device).eval()
@@ -78,17 +83,27 @@ class Decoder:
             from halc_qwen3vl import HALCConfig, HALCDecoder
 
             preflight(SimpleNamespace(
-                model_family="qwen3vl", model_path=str(model_path),
+                model_family=model_family, model_path=str(model_path),
                 test_json=str(Path(__file__).resolve().parents[1] / "data/test_1000.json"),
                 detector_config=str(detector_config),
                 detector_weights=self.config["detector_weights"],
                 blip_model_path=self.config["blip_model_path"],
             ))
             halc_config = HALCConfig(**self.config["parameters"])
+            adapter = {}
+            if model_family == "internvl3":
+                from internvl3_inputs import build_inputs, next_token_logits
+
+                adapter = {
+                    "input_builder": lambda proc, image, prompt, device: build_inputs(
+                        proc, image, prompt, device, self.model.dtype
+                    ),
+                    "logits_fn": next_token_logits,
+                }
             self.halc = HALCDecoder(
                 self.model, self.processor, str(detector_config),
                 self.config["detector_weights"], self.config["blip_model_path"],
-                halc_config, self.device,
+                halc_config, self.device, **adapter,
             )
         self.scratch = tempfile.TemporaryDirectory(prefix=f"resopd_{method}_api_")
 
@@ -185,10 +200,12 @@ def main():
     parser.add_argument("--detector-config", type=Path)
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--model-family", choices=("qwen3vl", "internvl3"), required=True)
     args = parser.parse_args()
     if not args.config.is_file() or not args.model_path.is_dir():
         parser.error("Model and pinned CHAIR configuration must exist")
-    decoder = Decoder(args.method, args.model_path, args.config, args.detector_config)
+    decoder = Decoder(args.method, args.model_path, args.config, args.model_family,
+                      args.detector_config)
     server = HTTPServer(("127.0.0.1", args.port), Handler)
     server.decoder = decoder
     server.model_id = args.model_id
