@@ -457,10 +457,15 @@ def write_markdown(summary: dict[str, Any], path: str) -> None:
         "",
         "## Paper Table (2B Base, teacher tr=0.50)",
         "",
+        "All rows use the same Base-generated captions. Budget is 30% of valid response tokens;",
+        "a COCO object mention is selected when at least one of its scored tokens is selected.",
+        "Precision = selected hallucinated mentions / selected object mentions; recall = selected",
+        "hallucinated mentions / all hallucinated mentions; lift = precision / full-pool precision.",
+        "",
     ]
     paper_rows = [["Full probe pool", "100%", f"{100 * summary['base_hallucination_rate']:.2f}%", "100.00%", "1.00x"]]
-    for label, mode in (("Random", "random"), ("RKL x NLL", "riskmask_nll")):
-        stats = summary["mention_selection"][mode]["span_top_p"]
+    for label, mode in (("RandomMask", "random"), ("RiskMask (RKL x NLL)", "riskmask_nll"), ("EntropyMask", "entropy_only")):
+        stats = summary["mention_selection"][mode]["token_overlap"]
         lift = stats["precision_lift"]
         paper_rows.append([label, f"{100 * summary['top_p']:.0f}%", f"{100 * stats['hallucination_precision']:.2f}%", f"{100 * stats['hallucination_recall']:.2f}%", f"{lift:.2f}x" if lift is not None else "n/a"])
     lines.extend([
