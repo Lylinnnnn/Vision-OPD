@@ -291,7 +291,7 @@ def collect_specs(specs, oss_root, issues):
     return rows, mounted
 
 
-def external_rows(issues, eval_root=None):
+def external_rows(issues, eval_root=None, include_presentation_halc=False):
     root = eval_root or ROOT / "res-opd/eval_results"
     configs = []
     for pattern in ("external_baselines/**/*_config.json", "chair_external_*/*_config.json"):
@@ -300,15 +300,18 @@ def external_rows(issues, eval_root=None):
     seen = set()
     for config_path in sorted(set(configs)):
         relative = config_path.relative_to(root)
-        if (any(part.startswith(".") or part.startswith("presentation_")
-                for part in relative.parts) or config_path.parent in seen):
+        presentation = any(part.startswith("presentation_") for part in relative.parts)
+        if (any(part.startswith(".") for part in relative.parts) or
+                (presentation and not include_presentation_halc) or
+                config_path.parent in seen):
             continue
         try:
             config = read_json(config_path)
         except (OSError, ValueError) as error:
             issues.append(f"External config {config_path}: {error}")
             continue
-        if config.get("presentation_only") or config.get("not_for_paper"):
+        if ((config.get("presentation_only") or config.get("not_for_paper"))
+                and not (presentation and include_presentation_halc)):
             continue
         model = config.get("model_name") or Path(config.get("model_path", "")).name
         if model not in {"Qwen3VL-2B-Instruct", "Qwen3VL-4B-Instruct", "Qwen3VL-8B-Instruct", "InternVL3-2B-hf"}:
@@ -321,9 +324,11 @@ def external_rows(issues, eval_root=None):
         family = "InternVL3" if model.startswith("InternVL") else "Qwen3VL"
         size = "2B" if family == "InternVL3" else model.split("-")[1]
         spec = Spec(family, size, method + " (external)", model)
+        status = "齐全" if all(key in values for key in METRICS) else "待补推理"
+        if presentation:
+            status = "混合解码展示（8192+2048）" if status == "齐全" else "混合解码展示，待补推理"
         rows.append({"spec": spec, "step": None, "checkpoint": "base model", "values": values,
-                     "sources": sources, "dataset": str(config_path.parent),
-                     "status": "齐全" if all(key in values for key in METRICS) else "待补推理",
+                     "sources": sources, "dataset": str(config_path.parent), "status": status,
                      "config": str(config_path)})
         seen.add(config_path.parent)
     for family, size, model in (("Qwen3VL", "2B", "Qwen3VL-2B-Instruct"),
@@ -343,7 +348,13 @@ def fmt(value, percent=False):
     return f"{value * 100 if percent else value:.2f}"
 
 
-def render(rows, externals, issues, mounted, oss_root):
+def render(rows, externals, issues, mounted, oss_root, include_presentation_halc=False):
+    chair_note = (
+        "本次显式纳入 HALC 的展示性混合 CHAIR：旧 8192-token 行与 2048-token 续跑行合并；"
+        "对应行会标为“混合解码展示”，不可与统一解码上限结果混作正式比较。"
+        if include_presentation_halc else
+        "每个指标均有独立来源，不把旧 CHAIR 与新 CHAIR 混用。"
+    )
     lines = ["# 主实验 tr=0.50 全 step 结果与缺口", "",
              "仅使用同一 checkpoint 的原图 student 推理结果；所有已有 step 均列出，不按指标挑选 checkpoint。",
              "Checkpoint 以实验脚本生成的规范名称精确匹配；未找到仅说明该名称下没有完整模型，不排除历史别名。",
@@ -351,7 +362,7 @@ def render(rows, externals, issues, mounted, oss_root):
              "POPE 为三个 split 的 macro F1；AMBER 为官方 generative A-CHAIR/A-HAL；",
              "MMStar/CV-Bench 为完整 judge 输出。CHAIR/POPE/MMStar/CV-Bench 显示百分数，AMBER 保留点数。",
              "Words/img 和 Chars/img 来自最终 `generated_caption`，不是 tokenizer token 数；correct/hall mentions 均包含重复 mention。",
-             "`--` 表示未找到可核实的结果，不是零。每个指标均有独立来源，不把旧 CHAIR 与新 CHAIR 混用。",
+             "`--` 表示未找到可核实的结果，不是零。" + chair_note,
              "同一指标若有多个不同的有效结果，使用表中来源列所列的优先结果，同时在末尾报告冲突。", "",
              f"OSS 挂载检查：`{oss_root}` {'可用' if mounted else '不可用；不能据此断言缺少训练'}。", "",
              "## 逐 checkpoint 主表", "",
@@ -404,12 +415,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--oss-root", type=Path, default=Path("/data/oss_bucket_0/yanlin/ckpt/OPD/v4"))
     parser.add_argument("--output-md", type=Path, default=Path("res-opd/plan/main_tr05_results_inventory_zh.md"))
+    parser.add_argument("--include-presentation-halc", action="store_true",
+                        help="Include exploratory HALC CHAIR rows mixed from legacy 8192-token and 2048-token continuation outputs")
     args = parser.parse_args()
     issues = []
     rows, mounted = collect_specs(build_specs(), args.oss_root, issues)
-    externals = external_rows(issues)
+    externals = external_rows(issues, include_presentation_halc=args.include_presentation_halc)
     args.output_md.parent.mkdir(parents=True, exist_ok=True)
-    args.output_md.write_text(render(rows, externals, issues, mounted, args.oss_root), encoding="utf-8")
+    args.output_md.write_text(render(rows, externals, issues, mounted, args.oss_root,
+                                    args.include_presentation_halc), encoding="utf-8")
     print(f"MAIN_TR05_INVENTORY=WRITTEN rows={len(rows)} external={len(externals)} "
           f"oss_mounted={mounted} warnings={len(issues)} path={args.output_md}")
 

@@ -59,6 +59,13 @@ class MainTr05InventoryTest(unittest.TestCase):
             self.assertEqual(len(formal_rows), 1)
             self.assertEqual(formal_rows[0]["dataset"], str(formal))
 
+            rows = MODULE["external_rows"](issues, root, include_presentation_halc=True)
+            mixed_rows = [row for row in rows if row["spec"].size == "8B" and
+                          row["spec"].method == "HALC (external)" and
+                          row["dataset"] == str(presentation)]
+            self.assertEqual(len(mixed_rows), 1)
+            self.assertEqual(mixed_rows[0]["status"], "混合解码展示，待补推理")
+
 
 if __name__ == "__main__":
     unittest.main()
