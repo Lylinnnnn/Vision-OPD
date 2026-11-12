@@ -34,7 +34,7 @@ def line(row):
     results = row["results"]
     cells = [row["student"], row["teacher"], row["view"], str(row["step"])]
     cells += [value(chair.get(key), True) for key in ("CHAIRi", "CHAIRs", "ObjF1")]
-    cells += [f"{chair['chars_per_image']:.2f}" if "chars_per_image" in chair else "--",
+    cells += [f"{chair['words_per_image']:.2f}" if "words_per_image" in chair else "--",
               str(chair.get("correct_mentions", "--")), str(chair.get("hall_mentions", "--"))]
     cells += [results["POPE"].values[0], results["AMBER"].values[1]]
     cells += ["; ".join(f"{key}:{state}" for key, state in row["states"].items()
@@ -70,10 +70,10 @@ def main():
              "`tr=0.50`: original student view (`sr=1.0`); `sr=0.5`: compressed student view (`tr=1.0`).",
              "Same-size teacher is frozen; larger teacher is fixed. All use uniform RKL, no RiskMask.",
              "Latest means highest step with valid official CHAIR, or highest discovered step if none is valid; never best score.",
-             "Resp. Len. is mean final-answer characters per image. POPE F1 is three-split macro F1; A-HAL is official AMBER percentage.",
+             "Words/img is mean final-answer word count per image (not tokens or characters). POPE F1 is three-split macro F1; A-HAL is official AMBER percentage.",
              "`--` means no protocol-verified result; it is not zero. CHAIR/ObjF1/POPE are displayed as percentages.",
              "", "## Main Table", "",
-             "| Student | Teacher | View | Step | CHAIRi↓ | CHAIRs↓ | ObjF1↑ | Resp. Len. | Correct↑ | Hall.↓ | POPE F1↑ | A-HAL↓ | Status |",
+             "| Student | Teacher | View | Step | CHAIRi↓ | CHAIRs↓ | ObjF1↑ | Words/img | Correct↑ | Hall.↓ | POPE F1↑ | A-HAL↓ | Status |",
              "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |"]
     lines += [line(row) for row in ordered]
     lines += ["", "## All Steps And Sources", "",

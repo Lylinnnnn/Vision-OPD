@@ -199,7 +199,7 @@ def table_cells(row):
     results = row["results"]
     cells = [row["student"], row["teacher"], row["view"], str(row["step"])]
     cells.extend(format_ratio(chair.get(key)) for key in ("CHAIRi", "CHAIRs", "ObjF1"))
-    length = chair.get("chars_per_image")
+    length = chair.get("words_per_image")
     cells.append("--" if length is None else f"{length:.2f}")
     cells.extend(str(chair.get(key, "--")) for key in ("correct_mentions", "hall_mentions"))
     cells.extend((results["POPE"].values[0], results["AMBER"].values[1],
@@ -209,7 +209,7 @@ def table_cells(row):
 
 HEADER = (
     "| Student | Teacher | View | Step | CHAIRi↓ | CHAIRs↓ | ObjF1↑ | "
-    "Resp. Len. | Correct↑ | Hall.↓ | POPE F1↑ | A-HAL↓ | MMStar Acc.↑ | "
+    "Words/img | Correct↑ | Hall.↓ | POPE F1↑ | A-HAL↓ | MMStar Acc.↑ | "
     "CV-Bench Acc.↑ | Checkpoint | 缺口 |"
 )
 RULE = "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |"
@@ -252,7 +252,7 @@ def render(groups, step_rows, issues, oss_root, matched_suffix):
         "评测输入只按学生视角：前组原图 `sr=1.0`，后组降采样再放大的模糊图 `sr=0.5`；推理不加载教师。",
         "原表并未统一选训练最终 step；本清单逐一展示实际发现的 step，不自动挑选论文代表 checkpoint。",
         "CHAIR 必须是 1000 张、`Describe the image.`、与该行 `sr` 一致、official caption/mention 口径。",
-        "Resp. Len. 为最终回答平均字符数/图，不是 token；Correct/Hall. 为含重复的对象 mention 总数。",
+        "Words/img 为最终回答平均词数/图，不是 token 或字符数；Correct/Hall. 为含重复的对象 mention 总数。",
         "POPE F1 为三个 5223 条 split 的 macro F1；AMBER A-HAL 为官方点数。百分数列均以百分数显示。",
         "有 `[ERROR]` 回答、缺少原始推理或只有孤立指标的目录不视为有效结果；`--` 不代表零。",
         f"两种视角的 POPE/A-HAL 均仅从 `{matched_suffix}` 读取匹配复评；其他目录仅作旧结果线索，不填表。",
