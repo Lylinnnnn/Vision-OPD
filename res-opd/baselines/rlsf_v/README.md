@@ -47,6 +47,7 @@ PYTHON_BIN="$CONDA_PREFIX/bin/python3" bash res-opd/baselines/rlsf_v/run_coco5k.
 PYTHON_BIN="$CONDA_PREFIX/bin/python3" bash res-opd/baselines/rlsf_v/run_coco5k.sh qwen2b convert
 PYTHON_BIN="$CONDA_PREFIX/bin/python3" bash res-opd/baselines/rlsf_v/run_coco5k.sh qwen2b train
 PYTHON_BIN="$CONDA_PREFIX/bin/python3" bash res-opd/baselines/rlsf_v/run_coco5k.sh qwen2b export
+PYTHON_BIN="$CONDA_PREFIX/bin/python3" bash res-opd/baselines/rlsf_v/run_coco5k.sh qwen2b infer-smoke
 PYTHON_BIN="$CONDA_PREFIX/bin/python3" bash res-opd/baselines/rlsf_v/run_coco5k.sh qwen2b eval
 ```
 
@@ -55,6 +56,14 @@ Replace `qwen2b` with `qwen4b`, `qwen8b`, or `internvl2b`. The shared
 server's model tree and `/data/oss_bucket_0/yanlin`; override `MODEL_PATH`,
 `RES_OPD_DATA_ROOT`, or `RLSF_V_WORK_ROOT` if necessary. Generated artifacts
 are stored under `res-opd/checkpoints/rlsf_v_coco5k/` by default.
+The `train` phase first writes locally, then automatically uploads and checks
+every adapter/checkpoint file under
+`oss://industry-algo/yanlin/ckpt/OPD/v4/RLSF_V_COCO5K/rlsf_v_coco5k/<model>/adapter/`.
+It leaves local files intact. Upload failure makes the phase fail; `sync-adapter`
+retries the upload without retraining. Set `RLSF_V_SYNC_OSS=0` for a local-only
+smoke run. Exported full merged weights remain local by default because they
+can be regenerated from Base + adapter; set `RLSF_V_SYNC_MERGED_OSS=1` before
+`export` to upload them as well. Each uploaded file is verified by OSS size.
 
 Before a full run, use a separate work root for a two-image smoke test:
 
@@ -65,7 +74,11 @@ RLSF_V_WORK_ROOT="$PWD/res-opd/checkpoints/rlsf_v_smoke" \
   PYTHON_BIN="$CONDA_PREFIX/bin/python3" bash res-opd/baselines/rlsf_v/run_coco5k.sh qwen2b generate
 ```
 
-Run `convert`, `train`, and `export` in the smoke work root before attempting a
-full run. The upstream Qwen3-VL generator was released for 8B and the InternVL
+Run `convert`, `train` (in the separate LlamaFactory environment with
+`RLSF_V_SYNC_OSS=0`), `export`, then `infer-smoke` (in the generation
+environment) in the smoke work root before attempting a full run.
+`infer-smoke` generates one short answer for each of two COCO train images;
+it is only a model-load/response check, not a benchmark score.
+The upstream Qwen3-VL generator was released for 8B and the InternVL
 generator for InternVL3.5-8B. Their 2B/4B and InternVL3-2B use here are ports,
 not upstream-validated reproductions; GPU smoke is required before full runs.

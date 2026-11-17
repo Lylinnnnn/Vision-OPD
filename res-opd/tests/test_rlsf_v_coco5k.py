@@ -21,9 +21,15 @@ prepare = load_script("prepare_coco5k")
 audit = load_script("audit_generation")
 materialize = load_script("materialize")
 check_env = load_script("check_env")
+sync_oss = load_script("sync_oss")
 
 
 class RlsfCoco5kTests(unittest.TestCase):
+    def test_oss_stat_content_length(self):
+        self.assertEqual(sync_oss.content_length("Content-Length : 4877470336\n"), 4877470336)
+        with self.assertRaises(ValueError):
+            sync_oss.content_length("Last-Modified : today")
+
     def test_preflight_covers_generation_and_conversion_dependencies(self):
         self.assertIn("shortuuid", check_env.MODULES["pipeline"])
         self.assertIn("spacy", check_env.MODULES["pipeline"])

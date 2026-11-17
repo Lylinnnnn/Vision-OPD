@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODEL="${1:?Usage: $0 <qwen2b|qwen4b|qwen8b|internvl2b> <prepare|generate|convert|train|export|eval>}"
-PHASE="${2:?Specify a phase: prepare, preflight, generate, convert, train, export, eval}"
+MODEL="${1:?Usage: $0 <qwen2b|qwen4b|qwen8b|internvl2b> <prepare|generate|convert|train|export|infer-smoke|eval>}"
+PHASE="${2:?Specify a phase: prepare, preflight, generate, convert, train, sync-adapter, export, infer-smoke, eval}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RES_OPD_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
@@ -16,6 +16,14 @@ DATA_ROOT="${RES_OPD_DATA_ROOT:-/data/oss_bucket_0/yanlin}"
 QUESTIONS="$WORK_ROOT/questions.jsonl"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 NUM_SAMPLES="${RLSF_V_NUM_SAMPLES:-10}"
+OSS_BASE="${RLSF_V_OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4/RLSF_V_COCO5K}"
+OSS_RUN="$OSS_BASE/$(basename "$WORK_ROOT")/$MODEL"
+
+sync_artifact() {
+    local artifact="$1"
+    "$PYTHON_BIN" "$SCRIPT_DIR/sync_oss.py" \
+        --source "$RUN_DIR/$artifact" --destination "$OSS_RUN/$artifact"
+}
 
 case "$MODEL" in
     qwen2b) SPEC=qwen3-8b; DEFAULT_MODEL_PATH=/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct ;;
@@ -110,6 +118,20 @@ case "$PHASE" in
             --upstream "$UPSTREAM" --run-dir "$RUN_DIR" --questions "$QUESTIONS"
         cd "$UPSTREAM/train/hf_series/LlamaFactory"
         llamafactory-cli train "$RUN_DIR/train.yaml"
+        test -s "$RUN_DIR/adapter/adapter_config.json" || {
+            echo "Training returned success without an adapter checkpoint" >&2; exit 1;
+        }
+        if [[ "${RLSF_V_SYNC_OSS:-1}" == "1" ]]; then
+            sync_artifact adapter
+        else
+            echo "WARNING: adapter remains local; RLSF_V_SYNC_OSS=0"
+        fi
+        ;;
+    sync-adapter)
+        test -s "$RUN_DIR/adapter/adapter_config.json" || {
+            echo "No completed adapter checkpoint to sync" >&2; exit 1;
+        }
+        sync_artifact adapter
         ;;
     export)
         "$PYTHON_BIN" "$SCRIPT_DIR/check_env.py" export --model "$MODEL"
@@ -122,6 +144,49 @@ case "$PHASE" in
         fi
         cd "$UPSTREAM/train/hf_series/LlamaFactory"
         llamafactory-cli export "$RUN_DIR/export.yaml"
+        test -s "$RUN_DIR/merged/config.json" || {
+            echo "Export returned success without merged config.json" >&2; exit 1;
+        }
+        if [[ "${RLSF_V_SYNC_MERGED_OSS:-0}" == "1" ]]; then
+            sync_artifact merged
+        fi
+        ;;
+    infer-smoke)
+        "$PYTHON_BIN" "$SCRIPT_DIR/check_env.py" generate --model "$MODEL"
+        test -s "$RUN_DIR/merged/config.json" || { echo "Run export first" >&2; exit 1; }
+        test -s "$QUESTIONS" || { echo "Run prepare first" >&2; exit 1; }
+        SMOKE_DIR="$RUN_DIR/infer_smoke"
+        if [[ -e "$SMOKE_DIR/answers.jsonl" ]]; then
+            echo "Smoke answers already exist; refusing to overwrite $SMOKE_DIR" >&2
+            exit 1
+        fi
+        mkdir -p "$SMOKE_DIR"
+        "$PYTHON_BIN" - "$QUESTIONS" "$SMOKE_DIR/questions.jsonl" <<'PY'
+import sys
+from pathlib import Path
+
+rows = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+if len(rows) < 2:
+    raise SystemExit("Need at least two questions for inference smoke")
+Path(sys.argv[2]).write_text("\n".join(rows[:2]) + "\n", encoding="utf-8")
+PY
+        if [[ "$MODEL" == internvl2b ]]; then
+            INFER_SCRIPT="$HF_DIR/generate/internvl3_5_infer.py"
+        else
+            INFER_SCRIPT="$HF_DIR/generate/qwen3_infer.py"
+        fi
+        CUDA_VISIBLE_DEVICES="${RLSF_V_SMOKE_GPU:-0}" "$PYTHON_BIN" "$INFER_SCRIPT" \
+            --model-name "$RUN_DIR/merged" \
+            --question-file "$SMOKE_DIR/questions.jsonl" \
+            --answers-file "$SMOKE_DIR/answers.jsonl" \
+            --num-chunks 1 --chunk-idx 0 --num-samples 1 --batch-size 1 \
+            --temperature 0 --max-new-tokens "${RLSF_V_INFER_MAX_NEW_TOKENS:-128}"
+        "$PYTHON_BIN" "$SCRIPT_DIR/audit_generation.py" \
+            --questions "$SMOKE_DIR/questions.jsonl" \
+            --answers "$SMOKE_DIR/answers.jsonl" \
+            --logits "$SMOKE_DIR/all_logits_chunk0_merged.pt" \
+            --num-samples 1
+        echo "INFER_SMOKE=PASS answers=$SMOKE_DIR/answers.jsonl"
         ;;
     eval)
         test -s "$RUN_DIR/merged/config.json" || { echo "Run export first" >&2; exit 1; }
