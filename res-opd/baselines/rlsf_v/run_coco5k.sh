@@ -57,6 +57,7 @@ case "$PHASE" in
         cd "$HF_DIR"
         MODEL_PATH="$MODEL_PATH" QUESTION_FILE="$QUESTIONS" \
         OUTPUT_DIR="$RUN_DIR/generate" PYTHON_BIN="$PYTHON_BIN" DRY_RUN=1 \
+        NUM_SAMPLES="$NUM_SAMPLES" BATCH_SIZE="${RLSF_V_BATCH_SIZE:-1}" \
         CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}" \
         bash generate/generate_hf.sh "$SPEC"
         ;;
