@@ -514,6 +514,37 @@ if [[ "${#GPUS[@]}" -lt "$EVAL_SHARD_COUNT" ]]; then
     exit 1
 fi
 
+if has_eval_task "$EVAL_MODE" "chair"; then
+    if [[ -z "${RES_OPD_DATA_ROOT:-}" ]]; then
+        for data_root in /data/oss_bucket_0/yanlin /data/oss_bucket_0/yanlin/data; do
+            if [[ -d "${data_root}/COCO/coco2017val/val2017" ]]; then
+                RES_OPD_DATA_ROOT="$data_root"
+                break
+            fi
+        done
+    fi
+    export RES_OPD_DATA_ROOT="${RES_OPD_DATA_ROOT:-$DEFAULT_BENCHMARK_DATA_DIR}"
+    "$PYTHON_BIN" - "$TEST_FILE" "$RES_OPD_DATA_ROOT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+samples = json.loads(Path(sys.argv[1]).read_text())
+root = Path(sys.argv[2]) / "COCO/coco2017val/val2017"
+missing = []
+for sample in samples:
+    current = Path(str(sample.get("image_path", "")))
+    if current.is_file():
+        continue
+    candidate = root / str(sample.get("file_name") or current.name)
+    if not candidate.is_file():
+        missing.append(str(candidate))
+if missing:
+    raise SystemExit(f"CHAIR image preflight failed: {len(missing)}/{len(samples)} missing under {root}; first: {missing[0]}")
+print(f"CHAIR image preflight passed: {len(samples)} images; data root={sys.argv[2]}")
+PY
+fi
+
 require_tmux
 prepare_vision_benchmark_data_once
 
