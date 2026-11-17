@@ -30,6 +30,10 @@ generation/conversion environment (`transformers==4.57.3`, spaCy
 vendored LlamaFactory from its own directory in that second environment.
 `prepare` needs pandas/pyarrow; `train` and `export` need PyYAML and the
 `llamafactory-cli` executable. `eval` uses the existing `vision-opd` environment.
+The `preflight` phase checks all generation/conversion imports and the spaCy
+model before starting GPU workers. It reports every missing dependency found.
+If `conda activate rlsf-v-train` fails, stop there; do not silently continue in
+`vision-opd`.
 
 ## Per-Model Phases
 

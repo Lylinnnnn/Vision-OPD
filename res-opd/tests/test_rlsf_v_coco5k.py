@@ -20,9 +20,15 @@ def load_script(name):
 prepare = load_script("prepare_coco5k")
 audit = load_script("audit_generation")
 materialize = load_script("materialize")
+check_env = load_script("check_env")
 
 
 class RlsfCoco5kTests(unittest.TestCase):
+    def test_preflight_covers_generation_and_conversion_dependencies(self):
+        self.assertIn("shortuuid", check_env.MODULES["pipeline"])
+        self.assertIn("spacy", check_env.MODULES["pipeline"])
+        self.assertIn("pyarrow", check_env.MODULES["pipeline"])
+
     def test_converter_keeps_training_prompt_and_mounted_image(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -46,6 +46,7 @@ fi
 
 case "$PHASE" in
     prepare)
+        "$PYTHON_BIN" "$SCRIPT_DIR/check_env.py" prepare --model "$MODEL"
         "$PYTHON_BIN" "$SCRIPT_DIR/prepare_coco5k.py" \
             --train-parquet "$RES_OPD_ROOT/data/train_5k.parquet" \
             --test-json "$RES_OPD_ROOT/data/test_1000.json" \
@@ -54,6 +55,7 @@ case "$PHASE" in
         ;;
     preflight)
         test -s "$QUESTIONS" || { echo "Run prepare first: $QUESTIONS" >&2; exit 1; }
+        "$PYTHON_BIN" "$SCRIPT_DIR/check_env.py" pipeline --model "$MODEL"
         cd "$HF_DIR"
         MODEL_PATH="$MODEL_PATH" QUESTION_FILE="$QUESTIONS" \
         OUTPUT_DIR="$RUN_DIR/generate" PYTHON_BIN="$PYTHON_BIN" DRY_RUN=1 \
@@ -63,6 +65,7 @@ case "$PHASE" in
         ;;
     generate)
         test -s "$QUESTIONS" || { echo "Run prepare first: $QUESTIONS" >&2; exit 1; }
+        "$PYTHON_BIN" "$SCRIPT_DIR/check_env.py" generate --model "$MODEL"
         if [[ -e "$RUN_DIR/generate/answers.jsonl" || -e "$RUN_DIR/generate/logits_merged.pt" ]]; then
             echo "Generation outputs already exist; refusing to overwrite $RUN_DIR/generate" >&2
             exit 1
@@ -80,6 +83,7 @@ case "$PHASE" in
             --num-samples "$NUM_SAMPLES"
         ;;
     convert)
+        "$PYTHON_BIN" "$SCRIPT_DIR/check_env.py" convert --model "$MODEL"
         "$PYTHON_BIN" "$SCRIPT_DIR/audit_generation.py" \
             --questions "$QUESTIONS" \
             --answers "$RUN_DIR/generate/answers.jsonl" \
@@ -96,6 +100,7 @@ case "$PHASE" in
         bash generate/run_hf_dpo_pipeline.sh "$SPEC"
         ;;
     train)
+        "$PYTHON_BIN" "$SCRIPT_DIR/check_env.py" train --model "$MODEL"
         if [[ -e "$RUN_DIR/adapter/adapter_config.json" ]]; then
             echo "Adapter already exists; refusing to retrain over it" >&2
             exit 1
@@ -107,6 +112,7 @@ case "$PHASE" in
         llamafactory-cli train "$RUN_DIR/train.yaml"
         ;;
     export)
+        "$PYTHON_BIN" "$SCRIPT_DIR/check_env.py" export --model "$MODEL"
         "$PYTHON_BIN" "$SCRIPT_DIR/materialize.py" export \
             --model "$MODEL" --model-path "$MODEL_PATH" \
             --upstream "$UPSTREAM" --run-dir "$RUN_DIR" --questions "$QUESTIONS"
