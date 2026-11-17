@@ -1,0 +1,42 @@
+### model
+model_name_or_path: Qwen/Qwen2.5-VL-3B-Instruct
+trust_remote_code: true
+
+### method
+stage: dpo
+do_train: true
+finetuning_type: lora
+lora_target: all
+lora_rank: 256
+lora_alpha: 512
+pref_beta: 0.1
+pref_loss: sigmoid
+
+### dataset
+dataset: qwen2.5_vl_3b_rlaif_10k_r20
+template: qwen2_vl
+cutoff_len: 2048
+max_samples: 100000
+overwrite_cache: true
+preprocessing_num_workers: 8
+
+### output
+output_dir: saves/qwen2.5_vl_3b_rlaif_10k_r20
+logging_steps: 10
+save_strategy: "no"
+save_steps: 500
+save_only_model: true
+plot_loss: true
+overwrite_output_dir: true
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 16
+learning_rate: 4.0e-6
+num_train_epochs: 2.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.05
+weight_decay: 0.01
+bf16: true
+ddp_timeout: 18000000
+flash_attn: fa2

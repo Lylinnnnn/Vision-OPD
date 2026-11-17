@@ -1,0 +1,30 @@
+compute_environment: LOCAL_MACHINE
+debug: true # Whether to checked the distributed operations while running for errors.
+deepspeed_config:
+  deepspeed_multinode_launcher: standard
+  offload_optimizer_device: none # cpu
+  offload_param_device: none # cpu
+  # If using ZeRO-3 and wanting to load big models in, this should be set to `true` so
+  # `transformers` uses the right `init` function
+  zero3_init_flag: true
+  zero3_save_16bit_model: true
+  zero_stage: 3
+distributed_type: DEEPSPEED
+downcast_bf16: "no"
+# dynamo_config: # To make unmodified PyTorch programs faster.
+#   dynamo_backend: INDUCTOR
+#   dynamo_mode: default
+#   dynamo_use_dynamic: false
+#   dynamo_use_fullgraph: false
+enable_cpu_affinity: false
+machine_rank: 0
+main_training_function: main
+mixed_precision: "no"
+num_machines: 1
+num_processes: 2 # How many GPUs to use.
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+use_cpu: false
