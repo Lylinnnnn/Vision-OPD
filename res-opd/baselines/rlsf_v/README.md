@@ -58,17 +58,21 @@ server's model tree and `/data/oss_bucket_0/yanlin`; override `MODEL_PATH`,
 are stored under `res-opd/checkpoints/rlsf_v_coco5k/` by default.
 The `train` phase saves once per epoch (two epochs), keeps at most one
 intermediate checkpoint, and omits optimizer state from saved checkpoints.
-It first writes locally, then automatically uploads and checks every
-adapter/checkpoint file under
+It uploads all adapter files under
 `oss://industry-algo/yanlin/ckpt/OPD/v4/RLSF_V_COCO5K/rlsf_v_coco5k/<model>/adapter/`.
-After a verified upload, it removes only `adapter/checkpoint-*` directories;
-the final adapter in `adapter/` stays local for `export`. Set
-`RLSF_V_PRUNE_CHECKPOINTS_AFTER_SYNC=0` to keep intermediates. Upload failure
-makes the phase fail without pruning; `sync-adapter` retries the upload without
-retraining. Set `RLSF_V_SYNC_OSS=0` for a local-only smoke run. Exported full
-merged weights remain local by default because they
-can be regenerated from Base + adapter; set `RLSF_V_SYNC_MERGED_OSS=1` before
-`export` to upload them as well. Each uploaded file is verified by OSS size.
+After every file and the completion manifest are verified on OSS, it deletes
+only this model's local `adapter/` tree, including the final adapter. If upload
+fails, it deletes nothing; `sync-adapter` retries without retraining. `export`
+restores the final adapter from OSS (without epoch checkpoints), merges it with
+Base, then uploads the merged model and deletes its local copy after verification.
+`infer-smoke` and `eval` each restore the merged model to a model-specific
+temporary directory and remove that directory on exit. Set
+`RLSF_V_KEEP_LOCAL_AFTER_SYNC=1` to retain local uploaded artifacts, or
+`RLSF_V_SYNC_MERGED_OSS=0` to keep the merged model local after export; the
+latter disables OSS-backed inference until `sync-merged` succeeds. Generated
+preferences, logs, and training configuration are not deleted. The automatic
+cleanup is restricted to the four model names under `rlsf_v_coco5k` or
+`rlsf_v_smoke`; it never scans other checkpoint directories.
 
 Before a full run, use a separate work root for a two-image smoke test:
 
@@ -79,8 +83,8 @@ RLSF_V_WORK_ROOT="$PWD/res-opd/checkpoints/rlsf_v_smoke" \
   PYTHON_BIN="$CONDA_PREFIX/bin/python3" bash res-opd/baselines/rlsf_v/run_coco5k.sh qwen2b generate
 ```
 
-Run `convert`, `train` (in the separate LlamaFactory environment with
-`RLSF_V_SYNC_OSS=0`), `export`, then `infer-smoke` (in the generation
+Run `convert`, `train` (in the separate LlamaFactory environment), `export`,
+then `infer-smoke` (in the generation
 environment) in the smoke work root before attempting a full run.
 `infer-smoke` generates one short answer for each of two COCO train images;
 it is only a model-load/response check, not a benchmark score.

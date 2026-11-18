@@ -1,8 +1,11 @@
 import importlib.util
 import json
+import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -52,6 +55,79 @@ class RlsfCoco5kTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Refusing to prune"):
                 sync_oss.prune_training_checkpoints(root)
             self.assertTrue(checkpoint.is_dir())
+
+    def test_upload_restore_and_cleanup_touch_only_selected_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            work = base / "rlsf_v_coco5k"
+            adapter = work / "qwen2b/adapter"
+            adapter.mkdir(parents=True)
+            (adapter / "adapter_config.json").write_text("{}")
+            (adapter / "adapter_model.safetensors").write_bytes(b"weights")
+            checkpoint = adapter / "checkpoint-50"
+            checkpoint.mkdir()
+            (checkpoint / "optimizer.pt").write_bytes(b"old")
+            other = work / "qwen4b/adapter"
+            other.mkdir(parents=True)
+            (other / "keep.txt").write_text("untouched")
+            remote = base / "fake_oss"
+            uri = "oss://test/rlsf_v_coco5k/qwen2b/adapter"
+
+            def mapped(value):
+                value = str(value)
+                return remote / value.removeprefix("oss://test/") if value.startswith("oss://") else Path(value)
+
+            def copy(source, destination):
+                target = mapped(destination)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(mapped(source), target)
+
+            with patch.object(sync_oss, "require_ossutil"), \
+                    patch.object(sync_oss, "oss_copy", side_effect=copy), \
+                    patch.object(sync_oss, "oss_size", side_effect=lambda value: mapped(value).stat().st_size):
+                sync_oss.sync_tree(adapter, uri, "adapter")
+                sync_oss.remove_owned_tree(adapter, work, "qwen2b", "adapter")
+                self.assertFalse(adapter.exists())
+                self.assertTrue((other / "keep.txt").is_file())
+                sync_oss.restore_tree(uri, adapter, "adapter")
+            self.assertEqual((adapter / "adapter_model.safetensors").read_bytes(), b"weights")
+            self.assertFalse((adapter / "checkpoint-50").exists())
+            self.assertTrue((other / "keep.txt").is_file())
+            with self.assertRaisesRegex(ValueError, "outside"):
+                sync_oss.remove_owned_tree(other, work, "qwen2b", "adapter")
+
+    def test_upload_failure_does_not_delete_local_adapter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory) / "rlsf_v_smoke"
+            adapter = work / "qwen2b/adapter"
+            adapter.mkdir(parents=True)
+            (adapter / "adapter_config.json").write_text("{}")
+            (adapter / "adapter_model.safetensors").write_bytes(b"weights")
+            argv = ["sync_oss.py", "upload", "--source", str(adapter),
+                    "--destination", "oss://test/adapter", "--work-root", str(work),
+                    "--model", "qwen2b", "--artifact", "adapter", "--delete-source-after-sync"]
+            with patch.object(sys, "argv", argv), patch.object(sync_oss, "require_ossutil"), \
+                    patch.object(sync_oss, "oss_copy", side_effect=RuntimeError("network failed")):
+                with self.assertRaisesRegex(RuntimeError, "network failed"):
+                    sync_oss.main()
+            self.assertTrue((adapter / "adapter_model.safetensors").is_file())
+
+    def test_restore_rejects_manifest_traversal(self):
+        with self.assertRaisesRegex(ValueError, "Unsafe"):
+            sync_oss.valid_manifest({"schema_version": 1, "files": [
+                {"path": "../other/adapter_model.safetensors", "size": 1}
+            ]}, "adapter")
+
+    def test_merged_manifest_requires_model_weights(self):
+        with self.assertRaisesRegex(ValueError, "missing merged weights"):
+            sync_oss.valid_manifest({"schema_version": 1, "files": [
+                {"path": "config.json", "size": 2},
+                {"path": "training_args.bin", "size": 4},
+            ]}, "merged")
+        self.assertEqual(len(sync_oss.valid_manifest({"schema_version": 1, "files": [
+            {"path": "config.json", "size": 2},
+            {"path": "model-00001-of-00002.safetensors", "size": 4},
+        ]}, "merged")), 2)
 
     def test_preflight_covers_generation_and_conversion_dependencies(self):
         self.assertIn("shortuuid", check_env.MODULES["pipeline"])

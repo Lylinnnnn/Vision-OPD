@@ -2,7 +2,7 @@
 set -euo pipefail
 
 MODEL="${1:?Usage: $0 <qwen2b|qwen4b|qwen8b|internvl2b> <prepare|generate|convert|train|export|infer-smoke|eval>}"
-PHASE="${2:?Specify a phase: prepare, preflight, generate, convert, train, sync-adapter, export, infer-smoke, eval}"
+PHASE="${2:?Specify a phase: prepare, preflight, generate, convert, train, sync-adapter, sync-merged, export, infer-smoke, eval}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RES_OPD_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VISION_OPD_ROOT="$(cd "$RES_OPD_ROOT/.." && pwd)"
@@ -22,12 +22,35 @@ OSS_RUN="$OSS_BASE/$(basename "$WORK_ROOT")/$MODEL"
 sync_artifact() {
     local artifact="$1"
     local extra_args=()
-    if [[ "$artifact" == adapter && "${RLSF_V_PRUNE_CHECKPOINTS_AFTER_SYNC:-1}" == "1" ]]; then
+    if [[ "${RLSF_V_KEEP_LOCAL_AFTER_SYNC:-0}" != "1" ]]; then
+        extra_args+=(--delete-source-after-sync)
+    elif [[ "$artifact" == adapter && "${RLSF_V_PRUNE_CHECKPOINTS_AFTER_SYNC:-1}" == "1" ]]; then
         extra_args+=(--prune-checkpoints)
     fi
-    "$PYTHON_BIN" "$SCRIPT_DIR/sync_oss.py" \
+    "$PYTHON_BIN" "$SCRIPT_DIR/sync_oss.py" upload \
         --source "$RUN_DIR/$artifact" --destination "$OSS_RUN/$artifact" \
+        --work-root "$WORK_ROOT" --model "$MODEL" --artifact "$artifact" \
         "${extra_args[@]}"
+}
+
+restore_artifact() {
+    local artifact="$1" target="${2:-$RUN_DIR/$1}"
+    "$PYTHON_BIN" "$SCRIPT_DIR/sync_oss.py" restore \
+        --source "$OSS_RUN/$artifact" --destination "$target" \
+        --work-root "$WORK_ROOT" --model "$MODEL" --artifact "$artifact"
+}
+
+cleanup_artifact() {
+    local artifact="$1" target="${2:-$RUN_DIR/$1}"
+    "$PYTHON_BIN" "$SCRIPT_DIR/sync_oss.py" cleanup \
+        --destination "$target" --work-root "$WORK_ROOT" \
+        --model "$MODEL" --artifact "$artifact"
+}
+
+stage_merged() {
+    STAGED_MERGED="$RUN_DIR/.merged_stage_$$"
+    restore_artifact merged "$STAGED_MERGED"
+    trap 'cleanup_artifact merged "$STAGED_MERGED"' EXIT
 }
 
 case "$MODEL" in
@@ -114,6 +137,11 @@ case "$PHASE" in
         ;;
     train)
         "$PYTHON_BIN" "$SCRIPT_DIR/check_env.py" train --model "$MODEL"
+        if [[ "${RLSF_V_SYNC_OSS:-1}" == "1" ]] && \
+            ossutil stat "$OSS_RUN/adapter/adapter_config.json" >/dev/null 2>&1; then
+            echo "Adapter already exists on OSS; refusing to retrain over it: $OSS_RUN/adapter" >&2
+            exit 1
+        fi
         if [[ -e "$RUN_DIR/adapter/adapter_config.json" ]]; then
             echo "Adapter already exists; refusing to retrain over it" >&2
             exit 1
@@ -138,8 +166,25 @@ case "$PHASE" in
         }
         sync_artifact adapter
         ;;
+    sync-merged)
+        test -s "$RUN_DIR/merged/config.json" || {
+            echo "No completed merged model to sync" >&2; exit 1;
+        }
+        sync_artifact merged
+        ;;
     export)
         "$PYTHON_BIN" "$SCRIPT_DIR/check_env.py" export --model "$MODEL"
+        STAGED_ADAPTER=0
+        if [[ ! -e "$RUN_DIR/adapter" ]]; then
+            restore_artifact adapter
+            STAGED_ADAPTER=1
+        fi
+        cleanup_export() {
+            if [[ "$STAGED_ADAPTER" == "1" ]]; then
+                cleanup_artifact adapter
+            fi
+        }
+        trap cleanup_export EXIT
         "$PYTHON_BIN" "$SCRIPT_DIR/materialize.py" export \
             --model "$MODEL" --model-path "$MODEL_PATH" \
             --upstream "$UPSTREAM" --run-dir "$RUN_DIR" --questions "$QUESTIONS"
@@ -152,14 +197,14 @@ case "$PHASE" in
         test -s "$RUN_DIR/merged/config.json" || {
             echo "Export returned success without merged config.json" >&2; exit 1;
         }
-        if [[ "${RLSF_V_SYNC_MERGED_OSS:-0}" == "1" ]]; then
+        if [[ "${RLSF_V_SYNC_MERGED_OSS:-1}" == "1" ]]; then
             sync_artifact merged
         fi
         ;;
     infer-smoke)
         "$PYTHON_BIN" "$SCRIPT_DIR/check_env.py" generate --model "$MODEL"
-        test -s "$RUN_DIR/merged/config.json" || { echo "Run export first" >&2; exit 1; }
         test -s "$QUESTIONS" || { echo "Run prepare first" >&2; exit 1; }
+        stage_merged
         SMOKE_DIR="$RUN_DIR/infer_smoke"
         if [[ -e "$SMOKE_DIR/answers.jsonl" ]]; then
             echo "Smoke answers already exist; refusing to overwrite $SMOKE_DIR" >&2
@@ -181,7 +226,7 @@ PY
             INFER_SCRIPT="$HF_DIR/generate/qwen3_infer.py"
         fi
         CUDA_VISIBLE_DEVICES="${RLSF_V_SMOKE_GPU:-0}" "$PYTHON_BIN" "$INFER_SCRIPT" \
-            --model-name "$RUN_DIR/merged" \
+            --model-name "$STAGED_MERGED" \
             --question-file "$SMOKE_DIR/questions.jsonl" \
             --answers-file "$SMOKE_DIR/answers.jsonl" \
             --num-chunks 1 --chunk-idx 0 --num-samples 1 --batch-size 1 \
@@ -194,7 +239,7 @@ PY
         echo "INFER_SMOKE=PASS answers=$SMOKE_DIR/answers.jsonl"
         ;;
     eval)
-        test -s "$RUN_DIR/merged/config.json" || { echo "Run export first" >&2; exit 1; }
+        stage_merged
         OUT="$RES_OPD_ROOT/eval_results/external_baselines/full/$(basename "$MODEL_PATH")/train5000_test1000_original_sr1p0/rlsf_v_coco5k_official_v2"
         cd "$VISION_OPD_ROOT"
         PYTHON_BIN="$PYTHON_BIN" RES_OPD_DATA_ROOT="$DATA_ROOT" \
@@ -207,7 +252,7 @@ PY
         VLLM_BASE_PORT="${VLLM_BASE_PORT:-34100}" \
         VLLM_STARTUP_TIMEOUT="${VLLM_STARTUP_TIMEOUT:-3600}" \
         bash "$RES_OPD_ROOT/scripts/eval_after_merge_sharded_8gpu.sh" \
-            "$RUN_DIR/merged" "$MODEL" chair,pope,amber
+            "$STAGED_MERGED" "$MODEL" chair,pope,amber
         ;;
     *) echo "Unsupported phase: $PHASE" >&2; exit 2 ;;
 esac
