@@ -53,6 +53,45 @@ stage_merged() {
     trap 'cleanup_artifact merged "$STAGED_MERGED"' EXIT
 }
 
+ensure_preferences() {
+    local dpo="$RUN_DIR/generate/${MODEL}_dpo_data.json"
+    local answers="$RUN_DIR/generate/answers.jsonl"
+    local logits="$RUN_DIR/generate/logits_merged.pt"
+    local generation_python="${RLSF_V_GENERATION_PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
+    test -s "$QUESTIONS" || { echo "Missing questions: run prepare first: $QUESTIONS" >&2; return 1; }
+    if [[ "$(basename "$WORK_ROOT")" == rlsf_v_coco5k ]] &&
+        [[ "$(wc -l < "$QUESTIONS")" -ne 5000 ]]; then
+        echo "Refusing full training: questions.jsonl must contain 5000 rows: $QUESTIONS" >&2
+        return 1
+    fi
+    if [[ -s "$dpo" ]]; then
+        return 0
+    fi
+    test -x "$generation_python" || {
+        echo "Missing generation Python: $generation_python (set RLSF_V_GENERATION_PYTHON_BIN)" >&2
+        return 1
+    }
+    if [[ -e "$answers" || -e "$logits" ]]; then
+        if [[ ! -s "$answers" || ! -s "$logits" ]]; then
+            echo "Partial generation outputs; refusing to overwrite $RUN_DIR/generate" >&2
+            return 1
+        fi
+        "$generation_python" "$SCRIPT_DIR/audit_generation.py" \
+            --questions "$QUESTIONS" --answers "$answers" \
+            --logits "$logits" --num-samples "$NUM_SAMPLES"
+    else
+        if compgen -G "$RUN_DIR/generate/temp_*.jsonl" >/dev/null ||
+            compgen -G "$RUN_DIR/generate/all_logits_chunk*_merged.pt" >/dev/null; then
+            echo "Partial generation shards found; refusing to overwrite $RUN_DIR/generate" >&2
+            return 1
+        fi
+        echo "DPO preferences missing; generating $MODEL responses first" >&2
+        PYTHON_BIN="$generation_python" bash "$SCRIPT_DIR/run_coco5k.sh" "$MODEL" generate
+    fi
+    PYTHON_BIN="$generation_python" bash "$SCRIPT_DIR/run_coco5k.sh" "$MODEL" convert
+    test -s "$dpo" || { echo "Conversion did not create $dpo" >&2; return 1; }
+}
+
 case "$MODEL" in
     qwen2b) SPEC=qwen3-8b; DEFAULT_MODEL_PATH=/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-2B-Instruct ;;
     qwen4b) SPEC=qwen3-8b; DEFAULT_MODEL_PATH=/home/liuyanlin.lyl/notebook/model/qwen/Qwen3VL-4B-Instruct ;;
@@ -146,6 +185,7 @@ case "$PHASE" in
             echo "Adapter already exists; refusing to retrain over it" >&2
             exit 1
         fi
+        ensure_preferences
         "$PYTHON_BIN" "$SCRIPT_DIR/materialize.py" train \
             --model "$MODEL" --model-path "$MODEL_PATH" \
             --upstream "$UPSTREAM" --run-dir "$RUN_DIR" --questions "$QUESTIONS"

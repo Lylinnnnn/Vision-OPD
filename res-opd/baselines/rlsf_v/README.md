@@ -58,6 +58,12 @@ server's model tree and `/data/oss_bucket_0/yanlin`; override `MODEL_PATH`,
 are stored under `res-opd/checkpoints/rlsf_v_coco5k/` by default.
 The `train` phase saves once per epoch (two epochs), keeps at most one
 intermediate checkpoint, and omits optimizer state from saved checkpoints.
+If this model's DPO file is absent, `train` first runs `generate` and `convert`
+with the `vision-opd` Python at
+`/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3` (override with
+`RLSF_V_GENERATION_PYTHON_BIN`). A full work root requires exactly 5000
+questions. Existing incomplete generation outputs are never overwritten;
+inspect or resume them before restarting training.
 It uploads all adapter files under
 `oss://industry-algo/yanlin/ckpt/OPD/v4/RLSF_V_COCO5K/rlsf_v_coco5k/<model>/adapter/`.
 After every file and the completion manifest are verified on OSS, it deletes
