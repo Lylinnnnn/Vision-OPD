@@ -90,7 +90,8 @@ def main():
             "dataset_dir": str(dataset_dir),
             "output_dir": str(adapter_dir),
             "save_strategy": "epoch",
-            "save_only_model": False,
+            "save_total_limit": 1,
+            "save_only_model": True,
             "overwrite_output_dir": False,
         })
         destination = args.run_dir / "train.yaml"

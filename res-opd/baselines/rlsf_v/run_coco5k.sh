@@ -21,8 +21,13 @@ OSS_RUN="$OSS_BASE/$(basename "$WORK_ROOT")/$MODEL"
 
 sync_artifact() {
     local artifact="$1"
+    local extra_args=()
+    if [[ "$artifact" == adapter && "${RLSF_V_PRUNE_CHECKPOINTS_AFTER_SYNC:-1}" == "1" ]]; then
+        extra_args+=(--prune-checkpoints)
+    fi
     "$PYTHON_BIN" "$SCRIPT_DIR/sync_oss.py" \
-        --source "$RUN_DIR/$artifact" --destination "$OSS_RUN/$artifact"
+        --source "$RUN_DIR/$artifact" --destination "$OSS_RUN/$artifact" \
+        "${extra_args[@]}"
 }
 
 case "$MODEL" in

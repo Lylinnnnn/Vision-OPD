@@ -32,7 +32,7 @@ vendored LlamaFactory from its own directory in that second environment.
 `llamafactory-cli` executable. `eval` uses the existing `vision-opd` environment.
 The `preflight` phase checks all generation/conversion imports and the spaCy
 model before starting GPU workers. It reports every missing dependency found.
-If `conda activate rlsf-v-train` fails, stop there; do not silently continue in
+If `conda activate rlsf-v-lf` fails, stop there; do not silently continue in
 `vision-opd`.
 
 ## Per-Model Phases
@@ -56,12 +56,17 @@ Replace `qwen2b` with `qwen4b`, `qwen8b`, or `internvl2b`. The shared
 server's model tree and `/data/oss_bucket_0/yanlin`; override `MODEL_PATH`,
 `RES_OPD_DATA_ROOT`, or `RLSF_V_WORK_ROOT` if necessary. Generated artifacts
 are stored under `res-opd/checkpoints/rlsf_v_coco5k/` by default.
-The `train` phase first writes locally, then automatically uploads and checks
-every adapter/checkpoint file under
+The `train` phase saves once per epoch (two epochs), keeps at most one
+intermediate checkpoint, and omits optimizer state from saved checkpoints.
+It first writes locally, then automatically uploads and checks every
+adapter/checkpoint file under
 `oss://industry-algo/yanlin/ckpt/OPD/v4/RLSF_V_COCO5K/rlsf_v_coco5k/<model>/adapter/`.
-It leaves local files intact. Upload failure makes the phase fail; `sync-adapter`
-retries the upload without retraining. Set `RLSF_V_SYNC_OSS=0` for a local-only
-smoke run. Exported full merged weights remain local by default because they
+After a verified upload, it removes only `adapter/checkpoint-*` directories;
+the final adapter in `adapter/` stays local for `export`. Set
+`RLSF_V_PRUNE_CHECKPOINTS_AFTER_SYNC=0` to keep intermediates. Upload failure
+makes the phase fail without pruning; `sync-adapter` retries the upload without
+retraining. Set `RLSF_V_SYNC_OSS=0` for a local-only smoke run. Exported full
+merged weights remain local by default because they
 can be regenerated from Base + adapter; set `RLSF_V_SYNC_MERGED_OSS=1` before
 `export` to upload them as well. Each uploaded file is verified by OSS size.
 

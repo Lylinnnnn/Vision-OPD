@@ -30,6 +30,29 @@ class RlsfCoco5kTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sync_oss.content_length("Last-Modified : today")
 
+    def test_prune_keeps_final_adapter_and_unrelated_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "adapter_config.json").write_text("{}")
+            (root / "adapter_model.safetensors").write_bytes(b"weights")
+            (root / "notes.txt").write_text("keep")
+            checkpoint = root / "checkpoint-50"
+            checkpoint.mkdir()
+            (checkpoint / "optimizer.pt").write_bytes(b"optimizer")
+            sync_oss.prune_training_checkpoints(root)
+            self.assertFalse(checkpoint.exists())
+            self.assertTrue((root / "adapter_model.safetensors").is_file())
+            self.assertTrue((root / "notes.txt").is_file())
+
+    def test_prune_requires_final_adapter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoint = root / "checkpoint-50"
+            checkpoint.mkdir()
+            with self.assertRaisesRegex(RuntimeError, "Refusing to prune"):
+                sync_oss.prune_training_checkpoints(root)
+            self.assertTrue(checkpoint.is_dir())
+
     def test_preflight_covers_generation_and_conversion_dependencies(self):
         self.assertIn("shortuuid", check_env.MODULES["pipeline"])
         self.assertIn("spacy", check_env.MODULES["pipeline"])

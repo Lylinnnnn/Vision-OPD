@@ -43,12 +43,29 @@ def sync_tree(source, destination):
     print(f"OSS_SYNC=PASS files={len(files)} destination={destination}")
 
 
+def prune_training_checkpoints(source):
+    if not (source / "adapter_config.json").is_file() or not any(
+        (source / name).is_file() for name in ("adapter_model.safetensors", "adapter_model.bin")
+    ):
+        raise RuntimeError(f"Refusing to prune without a final adapter in {source}")
+    checkpoints = sorted(path for path in source.iterdir() if re.fullmatch(r"checkpoint-\d+", path.name))
+    for path in checkpoints:
+        if path.is_symlink() or not path.is_dir():
+            raise RuntimeError(f"Refusing to prune unexpected checkpoint path: {path}")
+        shutil.rmtree(path)
+        print(f"PRUNED {path}", flush=True)
+    print(f"CHECKPOINT_PRUNE=PASS count={len(checkpoints)}", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--destination", required=True)
+    parser.add_argument("--prune-checkpoints", action="store_true")
     args = parser.parse_args()
     sync_tree(args.source, args.destination)
+    if args.prune_checkpoints:
+        prune_training_checkpoints(args.source)
 
 
 if __name__ == "__main__":
