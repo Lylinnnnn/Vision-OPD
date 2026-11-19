@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pandas as pd
@@ -181,6 +182,36 @@ class RlsfCoco5kTests(unittest.TestCase):
             }]))
             with self.assertRaisesRegex(ValueError, "not from the COCO 5k"):
                 materialize.load_preferences(preferences, questions)
+
+    def test_one_epoch_control_reuses_original_preferences(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            full = root / "rlsf_v_coco5k"
+            control = root / "rlsf_v_coco5k_e1/qwen2b"
+            template = root / "upstream/train/hf_series/LlamaFactory/qwen3.yaml"
+            template.parent.mkdir(parents=True)
+            template.write_text(json.dumps({"num_train_epochs": 2.0}), encoding="utf-8")
+            image = root / "image.jpg"
+            image.touch()
+            questions = full / "questions.jsonl"
+            questions.parent.mkdir(parents=True)
+            questions.write_text(json.dumps({"image_path": str(image), "question": "Describe the image."}) + "\n")
+            dpo = full / "qwen2b/generate/qwen2b_dpo_data.json"
+            dpo.parent.mkdir(parents=True)
+            dpo.write_text(json.dumps([{
+                "img_path": str(image), "prompt": "Describe the image.",
+                "chosen": "A cat.", "rejected": "A dog.",
+            }]), encoding="utf-8")
+            yaml_stub = SimpleNamespace(safe_load=json.loads, safe_dump=lambda data, **kwargs: json.dumps(data))
+            argv = ["materialize.py", "train", "--model", "qwen2b", "--model-path", str(root),
+                    "--upstream", str(root / "upstream"), "--run-dir", str(control),
+                    "--questions", str(questions)]
+            with patch.dict(sys.modules, {"yaml": yaml_stub}), patch.object(sys, "argv", argv), \
+                    patch.dict("os.environ", {"RLSF_V_DPO_DATA": str(dpo), "RLSF_V_TRAIN_EPOCHS": "1"}):
+                materialize.main()
+            config = json.loads((control / "train.yaml").read_text(encoding="utf-8"))
+            self.assertEqual(config["num_train_epochs"], 1.0)
+            self.assertEqual(len(json.loads((control / "dataset/preferences.json").read_text())), 1)
 
 
 if __name__ == "__main__":

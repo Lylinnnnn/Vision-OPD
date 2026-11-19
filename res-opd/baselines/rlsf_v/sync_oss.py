@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 
 MANIFEST = ".rlsf_v_complete.json"
 MODELS = {"qwen2b", "qwen4b", "qwen8b", "internvl2b"}
-WORK_ROOTS = {"rlsf_v_coco5k", "rlsf_v_smoke"}
+WORK_ROOTS = {"rlsf_v_coco5k", "rlsf_v_coco5k_e1", "rlsf_v_smoke"}
 
 
 def content_length(output):

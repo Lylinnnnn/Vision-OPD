@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 
@@ -65,7 +66,9 @@ def main():
     args.run_dir.mkdir(parents=True, exist_ok=True)
 
     if args.phase == "train":
-        dpo_path = args.run_dir / "generate" / f"{args.model}_dpo_data.json"
+        dpo_path = Path(os.environ.get(
+            "RLSF_V_DPO_DATA", args.run_dir / "generate" / f"{args.model}_dpo_data.json"
+        ))
         records = load_preferences(dpo_path, args.questions)
         dataset_dir = args.run_dir / "dataset"
         dataset_dir.mkdir(parents=True, exist_ok=True)
@@ -94,6 +97,11 @@ def main():
             "save_only_model": True,
             "overwrite_output_dir": False,
         })
+        if "RLSF_V_TRAIN_EPOCHS" in os.environ:
+            epochs = float(os.environ["RLSF_V_TRAIN_EPOCHS"])
+            if epochs <= 0:
+                raise ValueError("RLSF_V_TRAIN_EPOCHS must be positive")
+            config["num_train_epochs"] = epochs
         destination = args.run_dir / "train.yaml"
         print(f"Validated {len(records)} matched COCO 5k preference pairs")
     else:

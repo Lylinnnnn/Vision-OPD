@@ -77,8 +77,8 @@ temporary directory and remove that directory on exit. Set
 `RLSF_V_SYNC_MERGED_OSS=0` to keep the merged model local after export; the
 latter disables OSS-backed inference until `sync-merged` succeeds. Generated
 preferences, logs, and training configuration are not deleted. The automatic
-cleanup is restricted to the four model names under `rlsf_v_coco5k` or
-`rlsf_v_smoke`; it never scans other checkpoint directories.
+cleanup is restricted to the four model names under `rlsf_v_coco5k`,
+`rlsf_v_coco5k_e1`, or `rlsf_v_smoke`; it never scans other checkpoint directories.
 
 Before a full run, use a separate work root for a two-image smoke test:
 
@@ -102,6 +102,12 @@ inference and official-synonym metrics. Its output is under
 `eval_results/external_baselines/full/<base-model>/train5000_test1000_original_sr1p0/rlsf_v_coco5k_official_v2/`.
 After CHAIR, `RLSF_V_EVAL_MODE=pope,amber` runs just those two benchmarks and
 adds their official metrics to the same directory without redoing CHAIR.
+For a matched one-epoch control, set `RLSF_V_WORK_ROOT` to the sibling
+`rlsf_v_coco5k_e1` directory and run `train`, `export`, then `eval` with
+`RLSF_V_EVAL_MODE=chair,pope,amber`. The control reads the original 5k questions
+and per-model DPO file without regenerating preferences, fixes training to one
+epoch, uses a separate OSS prefix, and writes metrics under
+`rlsf_v_coco5k_e1_official_v2`. The two-epoch adapter is never modified.
 The upstream Qwen3-VL generator was released for 8B and the InternVL
 generator for InternVL3.5-8B. Their 2B/4B and InternVL3-2B use here are ports,
 not upstream-validated reproductions; GPU smoke is required before full runs.

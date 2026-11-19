@@ -13,11 +13,28 @@ mkdir -p "$WORK_ROOT"
 WORK_ROOT="$(cd "$WORK_ROOT" && pwd)"
 RUN_DIR="$WORK_ROOT/$MODEL"
 DATA_ROOT="${RES_OPD_DATA_ROOT:-/data/oss_bucket_0/yanlin}"
-QUESTIONS="$WORK_ROOT/questions.jsonl"
+QUESTIONS="${RLSF_V_QUESTIONS_FILE:-$WORK_ROOT/questions.jsonl}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 NUM_SAMPLES="${RLSF_V_NUM_SAMPLES:-10}"
 OSS_BASE="${RLSF_V_OSS_BASE:-oss://industry-algo/yanlin/ckpt/OPD/v4/RLSF_V_COCO5K}"
 OSS_RUN="$OSS_BASE/$(basename "$WORK_ROOT")/$MODEL"
+if [[ "$(basename "$WORK_ROOT")" == rlsf_v_coco5k_e1 ]]; then
+    SOURCE_ROOT="$(dirname "$WORK_ROOT")/rlsf_v_coco5k"
+    SOURCE_QUESTIONS="$SOURCE_ROOT/questions.jsonl"
+    SOURCE_DPO="$SOURCE_ROOT/$MODEL/generate/${MODEL}_dpo_data.json"
+    if [[ "$PHASE" == prepare || "$PHASE" == generate || "$PHASE" == convert ]]; then
+        echo "1-epoch control reuses existing preferences; do not run $PHASE in $WORK_ROOT" >&2
+        exit 2
+    fi
+    if [[ "${RLSF_V_QUESTIONS_FILE:-$SOURCE_QUESTIONS}" != "$SOURCE_QUESTIONS" ||
+          "${RLSF_V_DPO_DATA:-$SOURCE_DPO}" != "$SOURCE_DPO" ||
+          "${RLSF_V_TRAIN_EPOCHS:-1}" != "1" ]]; then
+        echo "1-epoch control must use the original 5k questions/preferences and exactly one epoch" >&2
+        exit 2
+    fi
+    QUESTIONS="$SOURCE_QUESTIONS"
+    export RLSF_V_DPO_DATA="$SOURCE_DPO" RLSF_V_TRAIN_EPOCHS=1
+fi
 
 sync_artifact() {
     local artifact="$1"
@@ -54,12 +71,12 @@ stage_merged() {
 }
 
 ensure_preferences() {
-    local dpo="$RUN_DIR/generate/${MODEL}_dpo_data.json"
+    local dpo="${RLSF_V_DPO_DATA:-$RUN_DIR/generate/${MODEL}_dpo_data.json}"
     local answers="$RUN_DIR/generate/answers.jsonl"
     local logits="$RUN_DIR/generate/logits_merged.pt"
     local generation_python="${RLSF_V_GENERATION_PYTHON_BIN:-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3}"
     test -s "$QUESTIONS" || { echo "Missing questions: run prepare first: $QUESTIONS" >&2; return 1; }
-    if [[ "$(basename "$WORK_ROOT")" == rlsf_v_coco5k ]] &&
+    if [[ "$(basename "$WORK_ROOT")" == rlsf_v_coco5k* ]] &&
         [[ "$(wc -l < "$QUESTIONS")" -ne 5000 ]]; then
         echo "Refusing full training: questions.jsonl must contain 5000 rows: $QUESTIONS" >&2
         return 1
@@ -176,6 +193,11 @@ case "$PHASE" in
         ;;
     train)
         "$PYTHON_BIN" "$SCRIPT_DIR/check_env.py" train --model "$MODEL"
+        if [[ "$(basename "$WORK_ROOT")" == rlsf_v_coco5k_e1 ]]; then
+            test -s "$RLSF_V_DPO_DATA" || {
+                echo "Missing full-run preferences: $RLSF_V_DPO_DATA" >&2; exit 1;
+            }
+        fi
         if [[ "${RLSF_V_SYNC_OSS:-1}" == "1" ]] && \
             ossutil stat "$OSS_RUN/adapter/adapter_config.json" >/dev/null 2>&1; then
             echo "Adapter already exists on OSS; refusing to retrain over it: $OSS_RUN/adapter" >&2
@@ -285,7 +307,7 @@ PY
             *) echo "Unsupported RLSF_V_EVAL_MODE: $EVAL_MODE" >&2; exit 2 ;;
         esac
         stage_merged
-        OUT="$RES_OPD_ROOT/eval_results/external_baselines/full/$(basename "$MODEL_PATH")/train5000_test1000_original_sr1p0/rlsf_v_coco5k_official_v2"
+        OUT="$RES_OPD_ROOT/eval_results/external_baselines/full/$(basename "$MODEL_PATH")/train5000_test1000_original_sr1p0/$(basename "$WORK_ROOT")_official_v2"
         cd "$VISION_OPD_ROOT"
         PYTHON_BIN="$PYTHON_BIN" RES_OPD_DATA_ROOT="$DATA_ROOT" \
         EVAL_OUTPUT_DIR="$OUT" DATASET_VERSION=full \
