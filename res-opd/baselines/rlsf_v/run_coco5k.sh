@@ -306,8 +306,17 @@ PY
             chair|pope,amber|chair,pope,amber) ;;
             *) echo "Unsupported RLSF_V_EVAL_MODE: $EVAL_MODE" >&2; exit 2 ;;
         esac
+        EVAL_SUFFIX="${RLSF_V_EVAL_SUFFIX:-}"
+        if [[ -n "$EVAL_SUFFIX" && ! "$EVAL_SUFFIX" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            echo "Invalid RLSF_V_EVAL_SUFFIX: $EVAL_SUFFIX" >&2
+            exit 2
+        fi
+        OUT="$RES_OPD_ROOT/eval_results/external_baselines/full/$(basename "$MODEL_PATH")/train5000_test1000_original_sr1p0/$(basename "$WORK_ROOT")_official_v2${EVAL_SUFFIX:+_$EVAL_SUFFIX}"
+        if [[ -n "$EVAL_SUFFIX" && -e "$OUT" ]]; then
+            echo "Refusing to overwrite prior RLSF-V evaluation: $OUT" >&2
+            exit 2
+        fi
         stage_merged
-        OUT="$RES_OPD_ROOT/eval_results/external_baselines/full/$(basename "$MODEL_PATH")/train5000_test1000_original_sr1p0/$(basename "$WORK_ROOT")_official_v2"
         cd "$VISION_OPD_ROOT"
         PYTHON_BIN="$PYTHON_BIN" RES_OPD_DATA_ROOT="$DATA_ROOT" \
         EVAL_OUTPUT_DIR="$OUT" DATASET_VERSION=full \

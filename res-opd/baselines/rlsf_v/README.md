@@ -108,6 +108,9 @@ For a matched one-epoch control, set `RLSF_V_WORK_ROOT` to the sibling
 and per-model DPO file without regenerating preferences, fixes training to one
 epoch, uses a separate OSS prefix, and writes metrics under
 `rlsf_v_coco5k_e1_official_v2`. The two-epoch adapter is never modified.
+To reevaluate an existing adapter without overwriting prior metrics, set
+`RLSF_V_EVAL_SUFFIX` to a unique alphanumeric label. The label is appended
+to the result directory; an existing labeled directory is never reused.
 The upstream Qwen3-VL generator was released for 8B and the InternVL
 generator for InternVL3.5-8B. Their 2B/4B and InternVL3-2B use here are ports,
 not upstream-validated reproductions; GPU smoke is required before full runs.
