@@ -134,6 +134,17 @@ def main():
         ):
             raise ValueError(f"Invalid phrase pair for image {row.get('image_id')}")
     if args.preflight_only:
+        from PIL import Image
+        from transformers import AutoProcessor
+
+        processor = AutoProcessor.from_pretrained(str(args.model_path), trust_remote_code=True, local_files_only=True)
+        with Image.open(rows[0]["image_path"]) as picture:
+            image = picture.convert("RGB")
+        for answer, phrase in (("chosen", "chosen_phrase"), ("rejected", "rejected_phrase")):
+            encoded, positions, _ = encode_pair(
+                processor, image, rows[0]["prompt"], rows[0][answer], rows[0][phrase], args.max_length
+            )
+            print(f"{answer}: tokens={encoded['input_ids'].shape[-1]} phrase_tokens={len(positions)}")
         print(f"HALVA_TRAIN_PREFLIGHT=PASS pairs={len(rows)} model={args.model}")
         return
 
@@ -166,8 +177,8 @@ def main():
                 negative, neg_positions, _ = encode_pair(
                     processor, image, row["prompt"], row["rejected"], row["rejected_phrase"], args.max_length
                 )
-            positive = {key: value.to("cuda:0") for key, value in positive.items()}
-            negative = {key: value.to("cuda:0") for key, value in negative.items()}
+            positive = {key: value.to("cuda:0") if hasattr(value, "to") else value for key, value in positive.items()}
+            negative = {key: value.to("cuda:0") if hasattr(value, "to") else value for key, value in negative.items()}
             pos_logits = model(**positive, use_cache=False).logits
             pos_logp = phrase_logprob(pos_logits, positive["input_ids"], pos_positions)
             with torch.no_grad(), model.disable_adapter():

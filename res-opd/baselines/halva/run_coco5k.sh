@@ -43,7 +43,8 @@ preflight() {
     test -s "$PAIRS" || { echo "Run prepare first: $PAIRS" >&2; exit 1; }
     test -s "$MODEL_PATH/config.json" || { echo "Missing model config: $MODEL_PATH" >&2; exit 1; }
     "$TRAIN_PY" "$SCRIPT_DIR/train.py" --model "$MODEL" --model-path "$MODEL_PATH" \
-        --pairs "$PAIRS" --output-dir "$ADAPTER" --preflight-only
+        --pairs "$PAIRS" --output-dir "$ADAPTER" \
+        --max-length "${HALVA_MAX_LENGTH:-4096}" --preflight-only
 }
 
 train() {
