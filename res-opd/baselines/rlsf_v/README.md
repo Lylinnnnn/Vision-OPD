@@ -100,6 +100,8 @@ merge it with Base, verify its upload, and remove the local merged model. Run
 temporarily and reuse `eval_after_merge_sharded_8gpu.sh` for 1000-image CHAIR
 inference and official-synonym metrics. Its output is under
 `eval_results/external_baselines/full/<base-model>/train5000_test1000_original_sr1p0/rlsf_v_coco5k_official_v2/`.
+After CHAIR, `RLSF_V_EVAL_MODE=pope,amber` runs just those two benchmarks and
+adds their official metrics to the same directory without redoing CHAIR.
 The upstream Qwen3-VL generator was released for 8B and the InternVL
 generator for InternVL3.5-8B. Their 2B/4B and InternVL3-2B use here are ports,
 not upstream-validated reproductions; GPU smoke is required before full runs.

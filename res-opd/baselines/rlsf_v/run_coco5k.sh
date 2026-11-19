@@ -281,7 +281,7 @@ PY
     eval)
         EVAL_MODE="${RLSF_V_EVAL_MODE:-chair}"
         case "$EVAL_MODE" in
-            chair|chair,pope,amber) ;;
+            chair|pope,amber|chair,pope,amber) ;;
             *) echo "Unsupported RLSF_V_EVAL_MODE: $EVAL_MODE" >&2; exit 2 ;;
         esac
         stage_merged
