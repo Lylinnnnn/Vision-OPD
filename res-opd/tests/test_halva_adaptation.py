@@ -24,6 +24,9 @@ class Tokenizer:
     def encode(self, text, add_special_tokens=False):
         return [ord(char) for char in text]
 
+    def decode(self, ids, **kwargs):
+        return "".join(chr(value) for value in ids)
+
 
 class HalvaAdaptationTest(unittest.TestCase):
     def test_matched_pair_uses_absent_same_group_object(self):
@@ -125,6 +128,15 @@ class HalvaAdaptationTest(unittest.TestCase):
         self.assertEqual(training.phrase_token_positions(Tokenizer(), ids, "dog", 7), (8, 9, 10, 11))
         with self.assertRaisesRegex(ValueError, "got 0"):
             training.phrase_token_positions(Tokenizer(), ids, "cat", 7)
+
+    def test_phrase_span_rejects_plural_prefix_match(self):
+        text = "prompt A toothbrushes and a toothbrush."
+        ids = [ord(char) for char in text]
+        start = text.rfind(" toothbrush")
+        self.assertEqual(
+            training.phrase_token_positions(Tokenizer(), ids, "toothbrush", 7),
+            tuple(range(start, start + len(" toothbrush"))),
+        )
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@
 import argparse
 import json
 import math
+import re
 from pathlib import Path
 
 
@@ -12,12 +13,28 @@ LANGUAGE_LINEAR_SUFFIXES = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj",
 
 def phrase_token_positions(tokenizer, input_ids, phrase, response_start):
     ids = input_ids.tolist() if hasattr(input_ids, "tolist") else list(input_ids)
+    response = tokenizer.decode(ids[response_start:], skip_special_tokens=False, clean_up_tokenization_spaces=False)
+
+    def whole_word(start, end):
+        before = tokenizer.decode(ids[response_start:start], skip_special_tokens=False, clean_up_tokenization_spaces=False)
+        through = tokenizer.decode(ids[response_start:end], skip_special_tokens=False, clean_up_tokenization_spaces=False)
+        segment = through[len(before):]
+        offset = segment.casefold().find(phrase.casefold())
+        if offset < 0:
+            return False
+        left = len(before) + offset
+        right = left + len(phrase)
+        return (response[left:right].casefold() == phrase.casefold()
+                and (left == 0 or not re.match(r"\w", response[left - 1]))
+                and (right == len(response) or not re.match(r"\w", response[right])))
+
     for prefix in (" ", ""):
         candidate = tokenizer.encode(prefix + phrase, add_special_tokens=False)
         matches = [
             tuple(range(start, start + len(candidate)))
             for start in range(response_start, len(ids) - len(candidate) + 1)
             if ids[start:start + len(candidate)] == candidate
+            and whole_word(start, start + len(candidate))
         ]
         if len(matches) == 1:
             return matches[0]
@@ -118,6 +135,7 @@ def main():
     parser.add_argument("--lr", type=float, default=5e-6)
     parser.add_argument("--loss-alpha", type=float, default=0.4)
     parser.add_argument("--preflight-only", action="store_true")
+    parser.add_argument("--preflight-all", action="store_true")
     args = parser.parse_args()
     rows = [json.loads(line) for line in args.pairs.read_text(encoding="utf-8").splitlines() if line]
     if not rows or args.grad_accum < 1 or args.epochs < 1 or args.max_steps < 0:
@@ -138,14 +156,24 @@ def main():
         from transformers import AutoProcessor
 
         processor = AutoProcessor.from_pretrained(str(args.model_path), trust_remote_code=True, local_files_only=True)
-        with Image.open(rows[0]["image_path"]) as picture:
-            image = picture.convert("RGB")
-        for answer, phrase in (("chosen", "chosen_phrase"), ("rejected", "rejected_phrase")):
-            encoded, positions, _ = encode_pair(
-                processor, image, rows[0]["prompt"], rows[0][answer], rows[0][phrase], args.max_length
+        checked = rows if args.preflight_all else rows[:1]
+        errors = []
+        for index, row in enumerate(checked, 1):
+            try:
+                with Image.open(row["image_path"]) as picture:
+                    image = picture.convert("RGB")
+                for answer, phrase in (("chosen", "chosen_phrase"), ("rejected", "rejected_phrase")):
+                    encode_pair(processor, image, row["prompt"], row[answer], row[phrase], args.max_length)
+            except Exception as error:
+                errors.append(f"image_id={row['image_id']}: {type(error).__name__}: {error}")
+            if args.preflight_all and index % 100 == 0:
+                print(f"HALVA_TRAIN_PREFLIGHT_PROGRESS={index}/{len(checked)} errors={len(errors)}", flush=True)
+        if errors:
+            raise RuntimeError(
+                f"HALVA_TRAIN_PREFLIGHT=FAIL checked={len(checked)} errors={len(errors)}\n"
+                + "\n".join(errors[:20])
             )
-            print(f"{answer}: tokens={encoded['input_ids'].shape[-1]} phrase_tokens={len(positions)}")
-        print(f"HALVA_TRAIN_PREFLIGHT=PASS pairs={len(rows)} model={args.model}")
+        print(f"HALVA_TRAIN_PREFLIGHT=PASS checked={len(checked)} pairs={len(rows)} model={args.model}")
         return
 
     import torch
