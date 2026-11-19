@@ -23,10 +23,17 @@ appends a short class-name clause to a reference caption. When every annotated
 class name already occurs multiple times, it uses only the class-name clause
 so phrase alignment remains unambiguous. Each pair records its `strategy`, and
 `prepare` prints the strategy counts. Images without an annotated object or a
-reference caption still fail preparation; the script never silently trains on
+reference caption cannot yield a pair; the script never silently trains on
 fewer than the requested 5k images. This is a reproducible substitution
 baseline, not a claim that the original generative augmentation distribution
 was reproduced exactly.
+
+For the current matched COCO 5k list, 38 images have no instance annotations.
+To deliberately use the other 4,962 images, set `HALVA_EXPECTED_QUESTIONS=5000`
+and `HALVA_EXPECTED_PAIRS=4962` for `prepare`. The preparation only accepts
+this reduced count when every skipped image lacks instance annotations; any
+other mismatch still fails. Report the pair count and strategy breakdown with
+results, rather than describing the run as 5k training pairs.
 
 Required files on the server:
 

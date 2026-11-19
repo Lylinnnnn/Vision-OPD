@@ -204,7 +204,8 @@ def main():
     model.save_pretrained(str(args.output_dir))
     processor.save_pretrained(str(args.output_dir))
     (args.output_dir / "halva_run.json").write_text(json.dumps({
-        "base_model": str(args.model_path), "pairs": str(args.pairs), "steps": step,
+        "base_model": str(args.model_path), "pairs": str(args.pairs),
+        "pair_count": len(rows), "epochs": args.epochs, "steps": step,
         "loss_alpha": args.loss_alpha, "method": "HALVA phrase alignment + reference KL",
     }, indent=2), encoding="utf-8")
     print(f"HALVA_TRAIN=PASS steps={step} adapter={args.output_dir}")

@@ -36,7 +36,9 @@ prepare() {
     test ! -e "$PAIRS" || { echo "Pairs already exist: $PAIRS" >&2; exit 1; }
     "$TRAIN_PY" "$SCRIPT_DIR/prepare.py" --questions "$QUESTIONS" \
         --captions "$CAPTIONS" --instances "$INSTANCES" --output "$PAIRS" \
-        --max-samples "${HALVA_MAX_SAMPLES:-0}"
+        --max-samples "${HALVA_MAX_SAMPLES:-0}" \
+        --expected-questions "${HALVA_EXPECTED_QUESTIONS:-0}" \
+        --expected-pairs "${HALVA_EXPECTED_PAIRS:-0}"
 }
 
 preflight() {
@@ -84,6 +86,8 @@ case "$PHASE" in
     smoke)
         test "${HALVA_RUN_NAME:-}" != "" || { echo "Set a unique HALVA_RUN_NAME for smoke" >&2; exit 2; }
         HALVA_MAX_SAMPLES=2
+        HALVA_EXPECTED_QUESTIONS=0
+        HALVA_EXPECTED_PAIRS=0
         HALVA_MAX_STEPS=1
         HALVA_GRAD_ACCUM=1
         HALVA_EVAL_MAX_SAMPLES=2

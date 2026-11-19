@@ -81,7 +81,10 @@ def choose_pair(question, captions, objects, categories):
     return None
 
 
-def build(questions, captions_data, instances_data, max_samples=0):
+def build(questions, captions_data, instances_data, max_samples=0, expected_pairs=0):
+    target = max_samples or len(questions)
+    if expected_pairs < 0 or expected_pairs > target or (max_samples and expected_pairs not in (0, max_samples)):
+        raise ValueError("Expected pair count must be within the requested sample count")
     captions = defaultdict(list)
     for item in captions_data["annotations"]:
         captions[int(item["image_id"])].append(item["caption"].strip())
@@ -105,15 +108,16 @@ def build(questions, captions_data, instances_data, max_samples=0):
             pairs.append(pair)
             if max_samples and len(pairs) >= max_samples:
                 break
-    if len(pairs) < (max_samples or len(questions)):
+    if len(pairs) != (expected_pairs or target) or (expected_pairs and expected_pairs < target):
         matched_ids = {pair["image_id"] for pair in pairs}
         unmatched = [int(row["image_id"]) for row in questions if int(row["image_id"]) not in matched_ids]
         no_instances = sum(not objects.get(image_id) for image_id in unmatched)
-        raise ValueError(
-            f"Only {len(pairs)}/{max_samples or len(questions)} images yielded a valid phrase pair; "
-            f"unmatched={len(unmatched)}, without_instances={no_instances}, "
-            f"example_ids={unmatched[:10]}"
-        )
+        if len(pairs) != (expected_pairs or target) or len(unmatched) != no_instances:
+            raise ValueError(
+                f"Only {len(pairs)}/{target} images yielded a valid phrase pair; "
+                f"expected_pairs={expected_pairs or target}, unmatched={len(unmatched)}, "
+                f"without_instances={no_instances}, example_ids={unmatched[:10]}"
+            )
     return pairs
 
 
@@ -124,15 +128,26 @@ def main():
     parser.add_argument("--instances", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-samples", type=int, default=0)
+    parser.add_argument("--expected-questions", type=int, default=0)
+    parser.add_argument("--expected-pairs", type=int, default=0)
     args = parser.parse_args()
     questions = [json.loads(line) for line in args.questions.read_text(encoding="utf-8").splitlines() if line]
-    pairs = build(questions, load_annotations(args.captions), load_annotations(args.instances), args.max_samples)
+    if args.expected_questions and len(questions) != args.expected_questions:
+        raise ValueError(f"Expected {args.expected_questions} questions, got {len(questions)}")
+    pairs = build(
+        questions, load_annotations(args.captions), load_annotations(args.instances),
+        args.max_samples, args.expected_pairs,
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("w", encoding="utf-8") as stream:
         for pair in pairs:
             stream.write(json.dumps(pair, ensure_ascii=False) + "\n")
     strategies = dict(Counter(pair["strategy"] for pair in pairs))
-    print(f"HALVA_PAIRS=PASS count={len(pairs)} strategies={strategies} output={args.output}")
+    print(
+        f"HALVA_PAIRS=PASS count={len(pairs)} requested={args.max_samples or len(questions)} "
+        f"skipped={len(questions) - len(pairs) if not args.max_samples else 0} "
+        f"strategies={strategies} output={args.output}"
+    )
 
 
 if __name__ == "__main__":

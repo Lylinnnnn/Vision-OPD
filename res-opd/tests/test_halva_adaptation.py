@@ -89,6 +89,37 @@ class HalvaAdaptationTest(unittest.TestCase):
             self.assertEqual(pair["rejected"], "Visible object: cat.")
             self.assertEqual(pair["strategy"], "annotated_object_clause_only")
 
+    def test_explicit_partial_count_allows_only_unannotated_images(self):
+        with tempfile.TemporaryDirectory() as directory:
+            images = [Path(directory) / f"{image_id:012d}.jpg" for image_id in (4, 5)]
+            for image in images:
+                image.touch()
+            questions = [
+                {"image_id": str(image_id), "image_path": str(image), "question": "Describe the image."}
+                for image_id, image in zip((4, 5), images)
+            ]
+            captions = {"annotations": [
+                {"image_id": 4, "caption": "A dog rests."},
+                {"image_id": 5, "caption": "An empty scene."},
+            ]}
+            instances = {
+                "categories": [
+                    {"id": 1, "name": "dog", "supercategory": "animal"},
+                    {"id": 2, "name": "cat", "supercategory": "animal"},
+                ],
+                "annotations": [{"image_id": 4, "category_id": 1}],
+            }
+            with self.assertRaisesRegex(ValueError, "Only 1/2"):
+                prepare.build(questions, captions, instances)
+            pair, = prepare.build(questions, captions, instances, expected_pairs=1)
+            self.assertEqual(pair["image_id"], 4)
+            with self.assertRaisesRegex(ValueError, "expected_pairs=2"):
+                prepare.build(questions, captions, instances, expected_pairs=2)
+
+            instances["annotations"].append({"image_id": 5, "category_id": 1})
+            with self.assertRaisesRegex(ValueError, "without_instances=0"):
+                prepare.build(questions, captions, instances, expected_pairs=1)
+
     def test_phrase_span_in_response(self):
         ids = [ord(char) for char in "prompt A dog rests."]
         self.assertEqual(training.phrase_token_positions(Tokenizer(), ids, "dog", 7), (8, 9, 10, 11))
