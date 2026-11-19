@@ -279,6 +279,11 @@ PY
         echo "INFER_SMOKE=PASS answers=$SMOKE_DIR/answers.jsonl"
         ;;
     eval)
+        EVAL_MODE="${RLSF_V_EVAL_MODE:-chair}"
+        case "$EVAL_MODE" in
+            chair|chair,pope,amber) ;;
+            *) echo "Unsupported RLSF_V_EVAL_MODE: $EVAL_MODE" >&2; exit 2 ;;
+        esac
         stage_merged
         OUT="$RES_OPD_ROOT/eval_results/external_baselines/full/$(basename "$MODEL_PATH")/train5000_test1000_original_sr1p0/rlsf_v_coco5k_official_v2"
         cd "$VISION_OPD_ROOT"
@@ -292,7 +297,7 @@ PY
         VLLM_BASE_PORT="${VLLM_BASE_PORT:-34100}" \
         VLLM_STARTUP_TIMEOUT="${VLLM_STARTUP_TIMEOUT:-3600}" \
         bash "$RES_OPD_ROOT/scripts/eval_after_merge_sharded_8gpu.sh" \
-            "$STAGED_MERGED" "$MODEL" chair,pope,amber
+            "$STAGED_MERGED" 0 rlsf_v "$EVAL_MODE"
         ;;
     *) echo "Unsupported phase: $PHASE" >&2; exit 2 ;;
 esac

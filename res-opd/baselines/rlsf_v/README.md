@@ -94,6 +94,12 @@ then `infer-smoke` (in the generation
 environment) in the smoke work root before attempting a full run.
 `infer-smoke` generates one short answer for each of two COCO train images;
 it is only a model-load/response check, not a benchmark score.
+After training, run `export` in `rlsf-v-lf` to restore the adapter from OSS,
+merge it with Base, verify its upload, and remove the local merged model. Run
+`eval` in `vision-opd` with `RLSF_V_EVAL_MODE=chair` to restore the merged model
+temporarily and reuse `eval_after_merge_sharded_8gpu.sh` for 1000-image CHAIR
+inference and official-synonym metrics. Its output is under
+`eval_results/external_baselines/full/<base-model>/train5000_test1000_original_sr1p0/rlsf_v_coco5k_official_v2/`.
 The upstream Qwen3-VL generator was released for 8B and the InternVL
 generator for InternVL3.5-8B. Their 2B/4B and InternVL3-2B use here are ports,
 not upstream-validated reproductions; GPU smoke is required before full runs.
