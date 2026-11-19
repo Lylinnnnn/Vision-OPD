@@ -5,7 +5,7 @@ import argparse
 import hashlib
 import json
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 
@@ -16,39 +16,68 @@ def load_annotations(path):
     return data
 
 
+def choose_distractor(image_id, name, present, caption, categories):
+    absent = sorted(
+        candidate for candidate in categories
+        if candidate not in present
+        and not re.search(r"(?<!\w)" + re.escape(candidate) + r"(?!\w)", caption, re.I)
+    )
+    alternatives = [candidate for candidate in absent if categories[candidate] == categories[name]]
+    if not alternatives:
+        alternatives = absent
+    if not alternatives:
+        return None
+    digest = hashlib.sha256(f"{image_id}:{name}".encode()).digest()
+    return alternatives[int.from_bytes(digest[:4], "big") % len(alternatives)]
+
+
+def pair_record(question, caption, wrong, correct_phrase, rejected_phrase, strategy):
+    return {
+        "image_id": int(question["image_id"]),
+        "image_path": question["image_path"],
+        "prompt": question["question"],
+        "chosen": caption,
+        "rejected": wrong,
+        "chosen_phrase": correct_phrase,
+        "rejected_phrase": rejected_phrase,
+        "source": "COCO train2017 captions and instances",
+        "strategy": strategy,
+    }
+
+
 def choose_pair(question, captions, objects, categories):
     image_id = int(question["image_id"])
     present = objects.get(image_id, set())
-    for caption in captions.get(image_id, []):
+    image_captions = captions.get(image_id, [])
+    for caption in image_captions:
         for name in sorted(present, key=lambda value: (-len(value), value)):
             matches = list(re.finditer(r"(?<!\w)" + re.escape(name) + r"(?!\w)", caption, re.I))
             if len(matches) != 1:
                 continue
-            absent = sorted(
-                candidate for candidate in categories
-                if candidate not in present
-                and not re.search(r"(?<!\w)" + re.escape(candidate) + r"(?!\w)", caption, re.I)
-            )
-            alternatives = [candidate for candidate in absent if categories[candidate] == categories[name]]
-            if not alternatives:
-                alternatives = absent
-            if not alternatives:
+            distractor = choose_distractor(image_id, name, present, caption, categories)
+            if distractor is None:
                 continue
-            digest = hashlib.sha256(f"{image_id}:{name}".encode()).digest()
-            distractor = alternatives[int.from_bytes(digest[:4], "big") % len(alternatives)]
             match = matches[0]
             correct_phrase = caption[match.start():match.end()]
             wrong = caption[:match.start()] + distractor + caption[match.end():]
-            return {
-                "image_id": image_id,
-                "image_path": question["image_path"],
-                "prompt": question["question"],
-                "chosen": caption,
-                "rejected": wrong,
-                "chosen_phrase": correct_phrase,
-                "rejected_phrase": distractor,
-                "source": "COCO train2017 captions and instances; same-supercategory substitution",
-            }
+            return pair_record(question, caption, wrong, correct_phrase, distractor, "caption_replacement")
+
+    if not present or not image_captions:
+        return None
+    caption = image_captions[0]
+    for name in sorted(present, key=lambda value: (-len(value), value)):
+        distractor = choose_distractor(image_id, name, present, caption, categories)
+        if distractor is None:
+            continue
+        if re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", caption, re.I):
+            chosen = f"Visible object: {name}."
+            rejected = f"Visible object: {distractor}."
+            strategy = "annotated_object_clause_only"
+        else:
+            chosen = f"{caption.rstrip()} Visible object: {name}."
+            rejected = f"{caption.rstrip()} Visible object: {distractor}."
+            strategy = "annotated_object_clause_added"
+        return pair_record(question, chosen, rejected, name, distractor, strategy)
     return None
 
 
@@ -77,7 +106,14 @@ def build(questions, captions_data, instances_data, max_samples=0):
             if max_samples and len(pairs) >= max_samples:
                 break
     if len(pairs) < (max_samples or len(questions)):
-        raise ValueError(f"Only {len(pairs)}/{max_samples or len(questions)} images yielded a valid phrase pair")
+        matched_ids = {pair["image_id"] for pair in pairs}
+        unmatched = [int(row["image_id"]) for row in questions if int(row["image_id"]) not in matched_ids]
+        no_instances = sum(not objects.get(image_id) for image_id in unmatched)
+        raise ValueError(
+            f"Only {len(pairs)}/{max_samples or len(questions)} images yielded a valid phrase pair; "
+            f"unmatched={len(unmatched)}, without_instances={no_instances}, "
+            f"example_ids={unmatched[:10]}"
+        )
     return pairs
 
 
@@ -95,7 +131,8 @@ def main():
     with args.output.open("w", encoding="utf-8") as stream:
         for pair in pairs:
             stream.write(json.dumps(pair, ensure_ascii=False) + "\n")
-    print(f"HALVA_PAIRS=PASS count={len(pairs)} output={args.output}")
+    strategies = dict(Counter(pair["strategy"] for pair in pairs))
+    print(f"HALVA_PAIRS=PASS count={len(pairs)} strategies={strategies} output={args.output}")
 
 
 if __name__ == "__main__":

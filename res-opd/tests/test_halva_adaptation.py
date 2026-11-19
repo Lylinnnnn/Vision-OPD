@@ -53,6 +53,42 @@ class HalvaAdaptationTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Only 0/1"):
                 prepare.build(questions, {"annotations": []}, {"categories": [], "annotations": []})
 
+    def test_annotated_object_clause_preserves_caption_when_name_is_absent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / "000000000002.jpg"
+            image.touch()
+            questions = [{"image_id": "2", "image_path": str(image), "question": "Describe the image."}]
+            captions = {"annotations": [{"image_id": 2, "caption": "A puppy sleeps on grass."}]}
+            instances = {
+                "categories": [
+                    {"id": 1, "name": "dog", "supercategory": "animal"},
+                    {"id": 2, "name": "cat", "supercategory": "animal"},
+                ],
+                "annotations": [{"image_id": 2, "category_id": 1}],
+            }
+            pair, = prepare.build(questions, captions, instances)
+            self.assertEqual(pair["chosen"], "A puppy sleeps on grass. Visible object: dog.")
+            self.assertEqual(pair["rejected"], "A puppy sleeps on grass. Visible object: cat.")
+            self.assertEqual(pair["strategy"], "annotated_object_clause_added")
+
+    def test_repeated_object_name_uses_single_phrase_clause(self):
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / "000000000003.jpg"
+            image.touch()
+            questions = [{"image_id": "3", "image_path": str(image), "question": "Describe the image."}]
+            captions = {"annotations": [{"image_id": 3, "caption": "A dog and another dog play."}]}
+            instances = {
+                "categories": [
+                    {"id": 1, "name": "dog", "supercategory": "animal"},
+                    {"id": 2, "name": "cat", "supercategory": "animal"},
+                ],
+                "annotations": [{"image_id": 3, "category_id": 1}],
+            }
+            pair, = prepare.build(questions, captions, instances)
+            self.assertEqual(pair["chosen"], "Visible object: dog.")
+            self.assertEqual(pair["rejected"], "Visible object: cat.")
+            self.assertEqual(pair["strategy"], "annotated_object_clause_only")
+
     def test_phrase_span_in_response(self):
         ids = [ord(char) for char in "prompt A dog rests."]
         self.assertEqual(training.phrase_token_positions(Tokenizer(), ids, "dog", 7), (8, 9, 10, 11))

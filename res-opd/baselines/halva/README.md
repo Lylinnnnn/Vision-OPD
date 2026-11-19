@@ -17,8 +17,16 @@ Genome augmented samples and a separate LLaVA reference subset; here we use
 the matched Res-OPD COCO 5k training images, their COCO train2017 reference
 captions and instance categories, and the same training prompt. We replace
 one annotated object phrase with an absent object from the same COCO
-supercategory. This is a reproducible substitution baseline, not a claim that
-the original generative augmentation distribution was reproduced exactly.
+supercategory when available (otherwise another unannotated COCO class). If
+no reference caption contains a unique annotated class name, preparation
+appends a short class-name clause to a reference caption. When every annotated
+class name already occurs multiple times, it uses only the class-name clause
+so phrase alignment remains unambiguous. Each pair records its `strategy`, and
+`prepare` prints the strategy counts. Images without an annotated object or a
+reference caption still fail preparation; the script never silently trains on
+fewer than the requested 5k images. This is a reproducible substitution
+baseline, not a claim that the original generative augmentation distribution
+was reproduced exactly.
 
 Required files on the server:
 
