@@ -40,7 +40,27 @@ def phrase_token_positions(tokenizer, input_ids, phrase, response_start):
             return matches[0]
         if len(matches) > 1:
             raise ValueError(f"Ambiguous tokenized phrase occurrence for {phrase!r}")
-    raise ValueError(f"Expected one tokenized phrase occurrence, got 0 for {phrase!r}")
+
+    words = list(re.finditer(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", response, re.I))
+    if len(words) != 1:
+        raise ValueError(f"Expected one whole-word phrase occurrence, got {len(words)} for {phrase!r}")
+    start_char, end_char = words[0].span()
+    lengths = [0]
+    for end in range(response_start + 1, len(ids) + 1):
+        decoded = tokenizer.decode(
+            ids[response_start:end], skip_special_tokens=False, clean_up_tokenization_spaces=False
+        )
+        lengths.append(len(decoded))
+    start_token = next((index for index in range(len(ids) - response_start)
+                        if lengths[index + 1] > start_char), None)
+    end_token = next((index + 1 for index in range(len(ids) - response_start)
+                      if lengths[index + 1] >= end_char), None)
+    if start_token is None or end_token is None:
+        raise ValueError(f"Cannot align phrase {phrase!r} to response tokens")
+    covered = response[lengths[start_token]:lengths[end_token]]
+    if re.search(r"\w", covered[:start_char - lengths[start_token]] + covered[end_char - lengths[start_token]:]):
+        raise ValueError(f"Phrase {phrase!r} shares a token with other words")
+    return tuple(range(response_start + start_token, response_start + end_token))
 
 
 def encode_pair(processor, image, prompt, caption, phrase, max_length):

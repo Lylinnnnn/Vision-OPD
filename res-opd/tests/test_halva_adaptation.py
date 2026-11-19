@@ -138,6 +138,19 @@ class HalvaAdaptationTest(unittest.TestCase):
             tuple(range(start, start + len(" toothbrush"))),
         )
 
+    def test_phrase_span_falls_back_to_decoded_response(self):
+        class ContextTokenizer(Tokenizer):
+            def encode(self, text, add_special_tokens=False):
+                return [-1]
+
+        text = "prompt A man wears a tie."
+        ids = [ord(char) for char in text]
+        start = text.index("tie")
+        self.assertEqual(
+            training.phrase_token_positions(ContextTokenizer(), ids, "tie", 7),
+            tuple(range(start, start + len("tie"))),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
