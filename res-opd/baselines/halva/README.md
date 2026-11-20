@@ -68,3 +68,38 @@ pipeline and writes under
 Current adapter and merged checkpoint artifacts stay in the run-specific local
 directory. They are **not** automatically uploaded or deleted; do not start
 large full runs until OSS retention is arranged.
+
+## Resume an interrupted evaluation
+
+`resume_eval.py` reuses the original eight shard answer directories and writes
+the merged metrics to the same formal `eval_results` directory. It locates one
+shard run under the formal `.shards` directory or an already staged
+`/tmp/halva_*_resume_*` directory. If several are found, pass the exact path
+with `--shard-root`; it never combines runs. Shared-home shard data is moved
+to `/tmp` before resuming to avoid filling the home quota. The script repairs
+an incomplete final JSONL line, reconstructs AMBER's response index from
+valid raw answers, and archives old exit codes and logs. CHAIR and POPE use
+their existing resume logic. It does not export a model again.
+
+First inspect what will be used:
+
+```bash
+python3 res-opd/baselines/halva/resume_eval.py qwen2b --dry-run
+```
+
+On a machine dedicated to this evaluation, use the following command. The
+explicit cleanup flag stops **all GPU processes owned by the current user on
+that machine**, plus current-user services listening on the chosen eight shard
+ports. Do not use it while another training or evaluation job is running.
+
+```bash
+python3 res-opd/baselines/halva/resume_eval.py qwen2b --clear-user-gpus
+```
+
+Replace `qwen2b` with `qwen4b`, `qwen8b`, or `internvl2b` on the other machines.
+Use `--run-name`, `--base-port`, `--gpu-list`, or `--shard-root` when the original
+run used non-default values. The merged model must still be available under
+`res-opd/checkpoints/halva_coco5k/<run>/<model>/merged`. The script keeps the
+staged `/tmp` shard answers after a successful run for auditing. A `PASS`
+requires all expected CHAIR, POPE, and AMBER rows and successful official
+AMBER scoring; error-derived answers require a separate quality audit.
