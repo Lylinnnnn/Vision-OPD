@@ -51,7 +51,7 @@ def main() -> None:
     parser.add_argument("--model", choices=MODELS, required=True)
     parser.add_argument("--artifact", choices=("adapter", "merged"), required=True)
     parser.add_argument("--run-name", required=True)
-    parser.add_argument("--work-root", type=Path, default=ROOT / "checkpoints/apasi_coco5k")
+    parser.add_argument("--work-root", type=Path, default=Path("/tmp/apasi_coco5k"))
     parser.add_argument("--stage", default="")
     parser.add_argument("--keep-local", action="store_true")
     args = parser.parse_args()

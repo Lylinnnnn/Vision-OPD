@@ -42,6 +42,16 @@ and data changes must be disclosed alongside any comparison. Override
 - `ossutil` for verified upload/restore. The APASI storage wrapper accepts
   only `apasi_coco5k` or `apasi_smoke` work roots and these four model names.
 
+All disposable run data defaults to machine-local `/tmp`: full runs use
+`/tmp/apasi_coco5k/<run>/<model>`, smoke runs use
+`/tmp/apasi_smoke/<run>/<model>`, model staging and evaluation shards use
+`/tmp/apasi_eval/`, and process caches use `/tmp/apasi_runtime/`. The base
+model, code, and final metrics remain in their existing locations. `/tmp`
+is not shared across machines and may be cleared on restart; run `prepare`,
+`generate`, and `train` on the same machine. Finished adapters and merged
+models are verified on OSS before their local copies are removed. Override
+`APASI_WORK_ROOT` only when a different scratch filesystem has enough space.
+
 The default COCO image root is `/data/oss_bucket_0/yanlin`; set
 `RES_OPD_DATA_ROOT` to a different mounted root if needed. `prepare` checks
 every training image and rejects overlap with `test_1000.json`. The graph
@@ -83,7 +93,7 @@ interruption; do not change the shard count/list when resuming. Each phase
 has logs under its own run directory. Training and export upload verified
 artifacts to `oss://industry-algo/yanlin/ckpt/OPD/v4/APASI_COCO5K/<run>/<model>/`
 and then delete only that artifact's local directory. Evaluation restores the
-merged weights under `/tmp/apasi_coco5k`, picks an unused port block, invokes
+merged weights under `/tmp/apasi_eval/`, picks an unused port block, invokes
 the existing eight-shard CHAIR/POPE/AMBER script, and cleans the staged model
 only after success. A failed evaluation retains the staged model and shard
 answers for diagnosis; no other GPU processes are killed.

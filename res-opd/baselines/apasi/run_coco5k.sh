@@ -7,8 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 RUN_NAME="${APASI_RUN_NAME:-apasi_base_coco5k}"
-WORK_ROOT="${APASI_WORK_ROOT:-$ROOT/checkpoints/apasi_coco5k}"
-EVAL_WORK_ROOT="${APASI_EVAL_WORK_ROOT:-/tmp/apasi_coco5k}"
+WORK_ROOT="${APASI_WORK_ROOT:-/tmp/apasi_coco5k}"
+EVAL_WORK_ROOT="${APASI_EVAL_WORK_ROOT:-/tmp/apasi_eval/apasi_coco5k}"
 DATA_ROOT="${RES_OPD_DATA_ROOT:-/data/oss_bucket_0/yanlin}"
 UPSTREAM="$ROOT/third_party/baselines/APASI"
 LF_ROOT="$ROOT/third_party/baselines/RLSF-V/train/hf_series/LlamaFactory"
@@ -26,6 +26,11 @@ case "$MODEL" in
 esac
 [[ "$RUN_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "Invalid APASI_RUN_NAME" >&2; exit 2; }
 test -s "$MODEL_PATH/config.json" || { echo "Missing model config: $MODEL_PATH" >&2; exit 1; }
+SCRATCH_ROOT="${APASI_SCRATCH_ROOT:-/tmp/apasi_runtime/$RUN_NAME/$MODEL}"
+mkdir -p "$SCRATCH_ROOT/tmp" "$SCRATCH_ROOT/cache" "$SCRATCH_ROOT/hf"
+export TMPDIR="$SCRATCH_ROOT/tmp"
+export XDG_CACHE_HOME="$SCRATCH_ROOT/cache"
+export HF_HOME="$SCRATCH_ROOT/hf"
 MODEL_DIR="$WORK_ROOT/$RUN_NAME/$MODEL"
 QUESTIONS="$MODEL_DIR/questions.jsonl"
 SHARDS="${APASI_GENERATION_SHARDS:-8}"
@@ -192,6 +197,7 @@ evaluate() {
     EVAL_SHARD_COUNT="${#GPUS[@]}" GPU_LIST="$GPU_LIST" \
     VLLM_BASE_PORT="$port" VLLM_PORT_CLEANUP=False \
     VLLM_STARTUP_TIMEOUT="${APASI_VLLM_TIMEOUT:-3600}" \
+    SHARDED_EVAL_WORK_DIR="$EVAL_WORK_ROOT/$RUN_NAME/$MODEL/eval_shards/$(date +%Y%m%d_%H%M%S)_$$" \
     bash "$ROOT/scripts/eval_after_merge_sharded_8gpu.sh" "$staged" 0 instruct chair,pope,amber
     storage cleanup merged "$EVAL_WORK_ROOT" --stage "$staged_name"
     echo "APASI_EVAL=PASS output=$output"
@@ -207,8 +213,8 @@ case "$PHASE" in
     smoke)
         [[ -n "${APASI_RUN_NAME:-}" ]] || { echo "Set a unique APASI_RUN_NAME for smoke" >&2; exit 2; }
         [[ "$GPU_LIST" != *,* ]] || { echo "Smoke requires a single APASI_GPU_LIST device" >&2; exit 2; }
-        export APASI_WORK_ROOT="${APASI_WORK_ROOT:-$ROOT/checkpoints/apasi_smoke}"
-        export APASI_EVAL_WORK_ROOT="${APASI_EVAL_WORK_ROOT:-/tmp/apasi_smoke}"
+        export APASI_WORK_ROOT="${APASI_WORK_ROOT:-/tmp/apasi_smoke}"
+        export APASI_EVAL_WORK_ROOT="${APASI_EVAL_WORK_ROOT:-/tmp/apasi_eval/apasi_smoke}"
         export APASI_MAX_QUESTIONS="${APASI_MAX_QUESTIONS:-64}"
         export APASI_GENERATION_SHARDS=1 APASI_GPU_LIST="${APASI_GPU_LIST:-0}"
         export CUDA_VISIBLE_DEVICES="$APASI_GPU_LIST"
