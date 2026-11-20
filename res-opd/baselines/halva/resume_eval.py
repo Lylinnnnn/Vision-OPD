@@ -87,14 +87,6 @@ def gpu_pids() -> set[int]:
             if row and row[0].strip().isdigit()}
 
 
-def port_pids(ports: list[int]) -> set[int]:
-    found = set()
-    for port in ports:
-        output = run_capture(["ss", "-H", "-ltnp", f"( sport = :{port} )"])
-        found.update(int(value) for value in re.findall(r"pid=(\d+)", output))
-    return found
-
-
 def old_parent_pids(merged: Path) -> set[int]:
     found = set()
     for line in run_capture(["ps", "-ww", "-eo", "pid=,uid=,args="]).splitlines():
@@ -123,6 +115,31 @@ def stop_old_tmux_sessions(root: Path) -> None:
 def ports_busy(ports: list[int]) -> list[int]:
     return [port for port in ports
             if run_capture(["ss", "-H", "-ltn", f"( sport = :{port} )"]).strip()]
+
+
+def choose_free_base(preferred: int, count: int, excluded: set[int], blocks: int = 40) -> int:
+    for offset in range(blocks):
+        base = preferred + 100 * offset
+        if base in excluded or base + 10 * (count - 1) > 65535:
+            continue
+        ports = [base + 10 * index for index in range(count)]
+        if not ports_busy(ports):
+            return base
+    raise RuntimeError(f"No free block of {count} shard ports from {preferred}; "
+                       "select another --base-port")
+
+
+def port_conflict_in_logs(root: Path, count: int) -> bool:
+    for index in range(count):
+        path = root / f"shard_{index:02d}" / "eval.log"
+        if not path.is_file():
+            continue
+        log = path.read_text(encoding="utf-8", errors="replace")
+        if "Address already in use" in log or "VLLM_PORT_CLEANUP=False and port" in log:
+            return True
+        if "is already in use" in log and "Port " in log:
+            return True
+    return False
 
 
 def stop_processes(pids: set[int], timeout: float = 15.0) -> None:
@@ -271,6 +288,8 @@ def main() -> None:
     parser.add_argument("--clear-user-gpus", action="store_true",
                         help="Stop ALL GPU processes owned by this user on this machine")
     parser.add_argument("--vllm-timeout", type=int, default=3600)
+    parser.add_argument("--port-attempts", type=int, default=3,
+                        help="Retry with another free port block only after a port-conflict failure")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     gpus = [value.strip() for value in args.gpu_list.split(",") if value.strip()]
@@ -278,6 +297,8 @@ def main() -> None:
         parser.error("Expected eight distinct GPU indices for the existing eight-way shards")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", args.run_name):
         parser.error("--run-name must be one safe path component")
+    if args.port_attempts < 1:
+        parser.error("--port-attempts must be positive")
     model_path = Path(os.environ.get("HALVA_MODEL_PATH") or MODEL_NAMES[args.model])
     output = (ROOT / "eval_results/external_baselines/full" / model_path.name /
               "train5000_test1000_original_sr1p0" / f"{args.run_name}_official_v2")
@@ -300,24 +321,17 @@ def main() -> None:
         raise RuntimeError(f"Another resume is already running on this machine: {lock_path}") from exc
     if args.clear_user_gpus:
         print("WARNING: stopping every current-user GPU process on this machine.", flush=True)
-        stop_processes(gpu_pids() | port_pids(ports) | old_parent_pids(merged.parent))
+        stop_processes(gpu_pids() | old_parent_pids(merged.parent))
         stop_old_tmux_sessions(source)
         remaining = {pid for pid in gpu_pids()
                      if (identity := process_identity(pid)) is not None and identity[0] == os.getuid()}
         if remaining:
             raise RuntimeError(f"Current-user GPU processes remain after cleanup: {sorted(remaining)}")
-    busy = ports_busy(ports)
-    if busy:
-        raise RuntimeError(f"Shard ports remain busy: {busy}. Inspect listeners before retrying.")
     root = stage_root(source, args.tmp_root, args.run_name, args.model)
     validate_shards(root, len(gpus))
-    stamp = f"{time.strftime('%Y%m%d_%H%M%S')}_{time.time_ns() % 1_000_000_000:09d}"
-    recover_amber(root, len(gpus), stamp)
-    archive_status(root, len(gpus), stamp)
     env = os.environ.copy()
     env.update({
         "HALVA_RUN_NAME": args.run_name,
-        "HALVA_BASE_PORT": str(args.base_port),
         "HALVA_GPU_LIST": ",".join(gpus),
         "HALVA_EVAL_SHARDS": str(len(gpus)),
         "HALVA_VLLM_TIMEOUT": str(args.vllm_timeout),
@@ -328,12 +342,28 @@ def main() -> None:
         "SHARDED_EVAL_WORK_DIR": str(root),
         "SHARDED_EVAL_KEEP_SHARDS": "True",
     })
-    result = subprocess.run(["bash", str(RUN_SCRIPT), args.model, "eval"], cwd=REPO, env=env,
-                            check=False)
-    if result.returncode:
-        raise RuntimeError(f"HALVA eval failed (exit={result.returncode}); answers retained at {root}")
-    validate_result(output)
-    print(f"HALVA_RESUME=PASS output={output} shards={root}", flush=True)
+    tried = set()
+    for attempt in range(1, args.port_attempts + 1):
+        base_port = choose_free_base(args.base_port, len(gpus), tried)
+        tried.add(base_port)
+        stamp = f"{time.strftime('%Y%m%d_%H%M%S')}_{time.time_ns() % 1_000_000_000:09d}"
+        recover_amber(root, len(gpus), stamp)
+        archive_status(root, len(gpus), stamp)
+        env["HALVA_BASE_PORT"] = str(base_port)
+        print(f"HALVA_RESUME attempt={attempt}/{args.port_attempts} base_port={base_port}", flush=True)
+        result = subprocess.run(["bash", str(RUN_SCRIPT), args.model, "eval"], cwd=REPO,
+                                env=env, check=False)
+        if result.returncode == 0:
+            validate_result(output)
+            print(f"HALVA_RESUME=PASS output={output} shards={root}", flush=True)
+            return
+        if not port_conflict_in_logs(root, len(gpus)) or attempt == args.port_attempts:
+            raise RuntimeError(f"HALVA eval failed (exit={result.returncode}); answers retained at {root}")
+        print("Port conflict detected; retaining shard answers and selecting another port block.",
+              flush=True)
+        stop_old_tmux_sessions(root)
+        if args.clear_user_gpus:
+            stop_processes(gpu_pids())
 
 
 if __name__ == "__main__":

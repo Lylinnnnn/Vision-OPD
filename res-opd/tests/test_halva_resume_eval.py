@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "baselines/halva/resume_eval.py"
@@ -76,6 +77,22 @@ class HalvaResumeEvalTest(unittest.TestCase):
             self.assertTrue((staged / "shard_00/out").is_dir())
             self.assertFalse(source.exists())
             self.assertTrue(other.exists())
+
+    def test_port_search_skips_busy_block(self):
+        with patch.object(resume, "ports_busy", side_effect=lambda ports: [ports[0]] if ports[0] == 36400 else []):
+            self.assertEqual(resume.choose_free_base(36400, 8, set()), 36500)
+        with patch.object(resume, "ports_busy", return_value=[]):
+            self.assertEqual(resume.choose_free_base(36400, 8, {36400}), 36500)
+
+    def test_retry_only_for_port_conflict(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_shards(root)
+            log = root / "shard_01/eval.log"
+            log.write_text("OSError: [Errno 98] Address already in use")
+            self.assertTrue(resume.port_conflict_in_logs(root, 2))
+            log.write_text("RuntimeError: CUDA out of memory")
+            self.assertFalse(resume.port_conflict_in_logs(root, 2))
 
 
 if __name__ == "__main__":

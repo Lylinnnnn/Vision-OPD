@@ -89,8 +89,9 @@ python3 res-opd/baselines/halva/resume_eval.py qwen2b --dry-run
 
 On a machine dedicated to this evaluation, use the following command. The
 explicit cleanup flag stops **all GPU processes owned by the current user on
-that machine**, plus current-user services listening on the chosen eight shard
-ports. Do not use it while another training or evaluation job is running.
+that machine** and the old sharded parent for this merged model. Occupied ports
+belonging to unrelated services are left alone. Do not use this flag while
+another training or evaluation job is running.
 
 ```bash
 python3 res-opd/baselines/halva/resume_eval.py qwen2b --clear-user-gpus
@@ -103,3 +104,7 @@ run used non-default values. The merged model must still be available under
 staged `/tmp` shard answers after a successful run for auditing. A `PASS`
 requires all expected CHAIR, POPE, and AMBER rows and successful official
 AMBER scoring; error-derived answers require a separate quality audit.
+The script searches subsequent 100-port blocks if any of its eight startup
+ports are occupied. If a port conflict occurs after startup, it preserves the
+shards and retries with another free block (up to three attempts by default,
+configurable with `--port-attempts`). Non-port failures are not retried.
