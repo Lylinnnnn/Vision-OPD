@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MODEL="${1:?Usage: $0 <qwen2b|qwen4b|qwen8b|internvl2b> <prepare|preflight|generate|train|export|eval|smoke>}"
+MODEL="${1:?Usage: $0 <qwen2b|qwen4b|qwen8b|internvl2b> <prepare|preflight|generate|train|full-train|export|eval|smoke>}"
 PHASE="${2:?Specify phase}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -218,6 +218,20 @@ case "$PHASE" in
     preflight) preflight ;;
     generate) generate ;;
     train) train ;;
+    full-train)
+        [[ "${APASI_MAX_QUESTIONS:-0}" == 0 && "${APASI_MAX_STEPS:-0}" == 0 && "${APASI_EPOCHS:-3}" == 3 ]] || {
+            echo "full-train requires all 5000 questions, three epochs, and no max-steps override" >&2; exit 2;
+        }
+        if [[ -e "$QUESTIONS" ]]; then
+            test "$(wc -l < "$QUESTIONS")" -eq 5000 || {
+                echo "Existing questions are not the full COCO 5k set: $QUESTIONS" >&2; exit 1;
+            }
+        else
+            prepare
+        fi
+        generate
+        train
+        ;;
     export) export_model ;;
     eval) evaluate ;;
     smoke)

@@ -91,6 +91,11 @@ bash res-opd/baselines/apasi/run_coco5k.sh qwen2b export
 bash res-opd/baselines/apasi/run_coco5k.sh qwen2b eval
 ```
 
+`full-train` runs `prepare` (or validates an existing 5000-row question file),
+resumable `generate`, and `train` in order. It rejects smoke-sized data or a
+`max_steps` override and requires three epochs. Set `APASI_MODEL_PATH` explicitly for each model to
+avoid accidentally training the wrong Base checkpoint.
+
 Set `APASI_GPU_LIST=0,1,2,3,4,5,6,7` for the full eight-shard run and
 replace `qwen2b` with `qwen4b`, `qwen8b`, or `internvl2b` on separate machines.
 `generate` retains completed JSONL rows by shard and skips them after an
