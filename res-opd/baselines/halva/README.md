@@ -108,3 +108,16 @@ The script searches subsequent 100-port blocks if any of its eight startup
 ports are occupied. If a port conflict occurs after startup, it preserves the
 shards and retries with another free block (up to three attempts by default,
 configurable with `--port-attempts`). Non-port failures are not retried.
+
+## Inspect main-table metrics
+
+After evaluation, print the CHAIR/POPE/AMBER columns for all four models or
+one selected model without modifying result files:
+
+```bash
+/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3 res-opd/baselines/halva/show_main_metrics.py
+/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3 res-opd/baselines/halva/show_main_metrics.py qwen4b --run-name halva_coco5k_e1
+```
+
+Incomplete metrics are shown as `--`. The audit lines show answer counts and
+error-derived answers; such scores remain provisional until reviewed.
