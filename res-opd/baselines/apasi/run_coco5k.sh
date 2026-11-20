@@ -135,7 +135,17 @@ train() {
         --work-dir "$MODEL_DIR" --questions "$QUESTIONS" \
         --epochs "${APASI_EPOCHS:-3}" --cutoff-len "${APASI_CUTOFF_LEN:-4096}" \
         --max-steps "${APASI_MAX_STEPS:-0}"
-    llamafactory-cli train "$MODEL_DIR/train.yaml"
+    local epoch_oss="$OSS_BASE/$RUN_NAME/$MODEL/epochs"
+    if [[ "${#GPUS[@]}" -gt 1 ]]; then
+        CUDA_VISIBLE_DEVICES="$GPU_LIST" PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+        TORCH_NCCL_AVOID_RECORD_STREAMS=1 "$TRAIN_PY" -m torch.distributed.run \
+            --standalone --nproc_per_node="${#GPUS[@]}" \
+            "$SCRIPT_DIR/train_with_oss.py" --config "$MODEL_DIR/train.yaml" \
+            --oss-prefix "$epoch_oss"
+    else
+        CUDA_VISIBLE_DEVICES="$GPU_LIST" "$TRAIN_PY" "$SCRIPT_DIR/train_with_oss.py" \
+            --config "$MODEL_DIR/train.yaml" --oss-prefix "$epoch_oss"
+    fi
     test -s "$MODEL_DIR/adapter/adapter_config.json"
     storage upload adapter "$WORK_ROOT"
 }

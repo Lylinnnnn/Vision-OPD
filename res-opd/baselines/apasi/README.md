@@ -29,6 +29,11 @@ and three epochs to follow the upstream APASI-Base script. The effective
 image processors can expand a single image to over 3000 tokens. These model
 and data changes must be disclosed alongside any comparison. Override
 `APASI_EPOCHS` and `APASI_CUTOFF_LEN` only with a separately named run.
+Each epoch checkpoint is synchronously verified on OSS at
+`<APASI_OSS_BASE>/<run>/<model>/epochs/epoch_NN_step_S/`. Training stops if an
+epoch upload fails. `save_total_limit=1` bounds local checkpoint use; the
+three epoch snapshots remain on OSS. The final adapter is also uploaded to
+`<APASI_OSS_BASE>/<run>/<model>/adapter/` and removed locally after verification.
 
 ## Environment
 

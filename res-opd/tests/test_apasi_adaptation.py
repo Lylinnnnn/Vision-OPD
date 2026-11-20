@@ -20,6 +20,7 @@ prepare = module("prepare")
 materialize = module("materialize")
 storage = module("storage")
 generate = module("generate")
+train_with_oss = module("train_with_oss")
 
 
 def write_jsonl(path, rows):
@@ -110,3 +111,18 @@ def test_plan_reproducible_across_calls():
     synonyms = {"person": ["person"], "cat": ["cat"], "chair": ["chair"], "table": ["table"]}
     first = prepare.make_plan(row, parsed, graph, synonyms, 0.2, 42)
     assert first == prepare.make_plan(row, parsed, graph, synonyms, 0.2, 42)
+
+
+def test_epoch_checkpoint_locations(tmp_path):
+    checkpoint, uri = train_with_oss.checkpoint_info(
+        tmp_path / "adapter", 2.0, 158,
+        "oss://industry-algo/yanlin/ckpt/OPD/v4/APASI_COCO5K/run/qwen2b/epochs",
+    )
+    assert checkpoint == tmp_path / "adapter/checkpoint-158"
+    assert uri.endswith("/epochs/epoch_02_step_158")
+    try:
+        train_with_oss.checkpoint_info(tmp_path, 2.0, 158, "/tmp/not-oss")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Non-OSS epoch destination was accepted")
