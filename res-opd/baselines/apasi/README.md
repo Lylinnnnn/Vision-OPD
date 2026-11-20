@@ -21,6 +21,9 @@ preferred caption and injected response form one DPO pair. This is the
 single-iteration APASI-Base setting (no curriculum); some images may be
 ineligible because their captions are too short or contain no usable object.
 The actual pair count is printed and stored in `dataset/preferences.json`.
+If a blind continuation is empty or only punctuation, generation retries with
+a text-only continuation instruction (first greedy, then sampled). Retry
+events are recorded in the per-shard log; no image is supplied on any retry.
 
 The DPO config uses beta 0.1, learning rate `4e-7`, LoRA rank/alpha 128/256,
 and three epochs to follow the upstream APASI-Base script. The effective
