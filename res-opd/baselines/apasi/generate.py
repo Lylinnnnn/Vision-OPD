@@ -63,14 +63,21 @@ def load_model(path: Path, family: str):
     return model, processor
 
 
-def decode(model, tokenizer, inputs: dict, max_new_tokens: int) -> str:
+def decode(model, tokenizer, inputs: dict, max_new_tokens: int,
+           *, sample: bool = False, seed: int = 42, min_new_tokens: int = 0) -> str:
     import torch
 
     inputs = {key: value.to(model.device) if hasattr(value, "to") else value
               for key, value in inputs.items()}
+    generation = {"do_sample": sample, "max_new_tokens": max_new_tokens,
+                  "repetition_penalty": 1.1}
+    if min_new_tokens:
+        generation["min_new_tokens"] = min(min_new_tokens, max_new_tokens)
+    if sample:
+        generation.update(temperature=0.7, top_p=0.9)
+        torch.manual_seed(seed)
     with torch.inference_mode():
-        output = model.generate(**inputs, do_sample=False,
-                                max_new_tokens=max_new_tokens, repetition_penalty=1.1)
+        output = model.generate(**inputs, **generation)
     tokens = output[0, inputs["input_ids"].shape[-1]:]
     return tokenizer.decode(tokens, skip_special_tokens=True).strip()
 
@@ -91,15 +98,44 @@ def preferred_answer(model, processor, row: dict, max_new_tokens: int) -> str:
     return decode(model, processor.tokenizer, inputs, max_new_tokens)
 
 
+def first_clause(answer: str) -> str:
+    for part in re.split(r"(?<!\d)\.(?!\d)", answer):
+        clause = part.strip(" \t\r\n\"'.,!?;:-")
+        if any(character.isalnum() for character in clause):
+            return clause
+    return ""
+
+
 def blind_completion(model, processor, prompt: str, context: str,
-                     max_new_tokens: int) -> str:
+                     max_new_tokens: int, *, seed: int = 42) -> str:
     messages = [{"role": "user", "content": [{"type": "text", "text": prompt}]}]
     chat = processor.apply_chat_template(messages, add_generation_prompt=True,
                                          tokenize=False)
     inputs = processor.tokenizer(chat + context, return_tensors="pt")
     answer = decode(model, processor.tokenizer, inputs, max_new_tokens)
-    first = re.split(r"(?<!\d)\.(?!\d)", answer, maxsplit=1)[0].strip()
-    return first.rstrip(".!? ")
+    clause = first_clause(answer)
+    if clause:
+        return clause
+    print(f"APASI_BLIND_RETRY empty prefix completion raw={answer[:160]!r}",
+          file=sys.stderr, flush=True)
+    retry_prompt = (
+        "Complete the unfinished last sentence of this description using only its text. "
+        "Write just the missing words, without repeating the description.\n\n"
+        f"Description: {context}"
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": retry_prompt}]}]
+    retry_chat = processor.apply_chat_template(messages, add_generation_prompt=True,
+                                               tokenize=False)
+    retry_inputs = processor.tokenizer(retry_chat, return_tensors="pt")
+    for sample in (False, True):
+        answer = decode(model, processor.tokenizer, retry_inputs, max_new_tokens,
+                        sample=sample, seed=seed, min_new_tokens=8)
+        clause = first_clause(answer)
+        if clause:
+            return clause
+        print(f"APASI_BLIND_RETRY empty text-only completion sample={sample} "
+              f"raw={answer[:160]!r}", file=sys.stderr, flush=True)
+    return ""
 
 
 def inject(model, processor, plan: dict, max_new_tokens: int) -> str:
@@ -108,7 +144,8 @@ def inject(model, processor, plan: dict, max_new_tokens: int) -> str:
         index = int(index_text)
         prefix = " ".join(sentences[:index] + [guide["text"]]) + " "
         completion = blind_completion(model, processor, plan["prompt"],
-                                      prefix, max_new_tokens)
+                                      prefix, max_new_tokens,
+                                      seed=int(plan["image_id"]) * 100 + index)
         if not completion:
             raise RuntimeError(f"Empty blind completion for image_id={plan['image_id']}")
         sentences[index] = f"{guide['text']} {completion}."

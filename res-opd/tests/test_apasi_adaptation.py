@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+from unittest import mock
 
 
 APASI = Path(__file__).resolve().parents[1] / "baselines/apasi"
@@ -126,3 +127,28 @@ def test_epoch_checkpoint_locations(tmp_path):
         pass
     else:
         raise AssertionError("Non-OSS epoch destination was accepted")
+
+
+def test_blind_clause_skips_leading_punctuation():
+    assert generate.first_clause("... A chair stands nearby. Another sentence.") == "A chair stands nearby"
+    assert generate.first_clause(". ! ?") == ""
+
+
+def test_empty_blind_generation_retries_without_an_image():
+    class Processor:
+        def __init__(self):
+            self.tokenizer = lambda text, return_tensors: {"input_ids": [1]}
+            self.messages = []
+
+        def apply_chat_template(self, messages, **kwargs):
+            self.messages.append(messages)
+            return "chat"
+
+    processor = Processor()
+    with mock.patch.object(generate, "decode", side_effect=["", "...", "beside the table."]) as decode:
+        assert generate.blind_completion(None, processor, "Describe it.",
+                                         "There is a chair ", 64, seed=123) == "beside the table"
+    assert decode.call_count == 3
+    assert decode.call_args.kwargs["sample"] is True
+    assert all(item["type"] == "text" for messages in processor.messages
+               for message in messages for item in message["content"])
