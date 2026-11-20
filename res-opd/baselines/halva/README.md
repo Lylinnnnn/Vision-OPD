@@ -111,13 +111,14 @@ configurable with `--port-attempts`). Non-port failures are not retried.
 
 ## Inspect main-table metrics
 
-After evaluation, print the CHAIR/POPE/AMBER columns for all four models or
-one selected model without modifying result files:
+The general read-only viewer under `res-opd/eval/` accepts any combination of
+evaluation directories, not just HALVA runs. Pass an optional label per row:
 
 ```bash
-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3 res-opd/baselines/halva/show_main_metrics.py
-/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3 res-opd/baselines/halva/show_main_metrics.py qwen4b --run-name halva_coco5k_e1
+/home/liuyanlin.lyl/.conda/envs/vision-opd/bin/python3 res-opd/eval/show_eval_metrics.py \
+  "HALVA-4B=res-opd/eval_results/external_baselines/full/Qwen3VL-4B-Instruct/train5000_test1000_original_sr1p0/halva_coco5k_e1_official_v2" \
+  "HALVA-8B=res-opd/eval_results/external_baselines/full/Qwen3VL-8B-Instruct/train5000_test1000_original_sr1p0/halva_coco5k_e1_official_v2"
 ```
 
-Incomplete metrics are shown as `--`. The audit lines show answer counts and
-error-derived answers; such scores remain provisional until reviewed.
+Missing metrics are shown as `--`. The audit lines show answer counts, metric
+schema, and error-derived answers; such scores remain provisional until reviewed.
